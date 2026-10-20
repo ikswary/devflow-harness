@@ -1,0 +1,22 @@
+## 8. 파생 집합
+
+- `STAGE_KINDS`: `merge`, `wrap-up`, `deploy-exec`
+- `AUTO_DEPEND_KINDS`: `implementation`, `fix`
+- `TOUCH_FILES_KINDS`: `implementation`, `fix`
+- `READBACK_KINDS`: `implementation`, `fix`
+- `CODE_DIR_KINDS`: `root-cause`, `implementation`, `fix`, `merge`
+- `CANON_WRITER_KINDS`: `question`, `brief`, `req-overview`, `req-detail`, `ui-design`, `design`, `change`
+- `VERIFY_KINDS`: `flow-verify`, `reverify`, `full-verify`
+- `NOTIFY_KINDS`: `question`, `implementation`, `fix`, `change`, `reverify`, `merge`
+- `NOTIFY_BY_DECIDE_KINDS`: `implementation`, `fix`, `change`
+- `NEVER_NOTIFY_KINDS`: `deploy-plan`, `deploy-exec`
+- `CODE_WRITER_KINDS`: `implementation`, `fix`, `merge`
+- `commit_kinds(1)`: `implementation`, `fix`
+- `commit_kinds(2)`: `implementation`, `fix`, `merge`
+- `SCRIPT_KEYS`: `origin`, `fix_generation`, `started_version`, `rules`, `done_via`, `criteria_amended`, `exported_commit`, `created`, `started`, `approval_requested`, `approved`
+- `OPTION_KEYS`: `kind`, `status`, `retry`
+- `SELFCHECK_KEYS`: `machine_check`
+- `LIST_KEYS`: `depends_on`, `closes_ac`, `partial_ac`
+- `BODY_KEYS`: `범위`, `판정 기준`, `건드릴 파일`, `시그니처와 결정 번호`, `정본의 절`
+- `OWN_SECTIONS`: `판정 기준`, `판정 기준 정정`, `재시도 범위`, `표 밖 전이`, `승인 기록`
+- `LEGEND`: `상태 [v]완료 [>]진행 [~]자체검증 [?]승인대기 [ ]대기 [-]보류 [b]백로그 | 종류 S설계 F수정 V검증 R재검증 M합치기 C원인 X변경 W마무리 D/E배포 Q요구사항`

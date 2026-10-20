@@ -1,0 +1,6 @@
+나눈 기준: 화면과 API를 따로 판정할 수 있게 나눔
+T007 가입 화면 [implementation] 흐름=signup 의존=- (dry-run)
+T008 가입 API [implementation] 흐름=signup 의존=T007 (dry-run)
+T009 [백로그] 가입 통계 [implementation] 흐름=stats 의존=T008 상태=백로그 (dry-run)
+flow.md 만들 것: flows/signup/flow.md (dry-run)
+flow.md 만들 것: flows/signup/flow.md (dry-run)

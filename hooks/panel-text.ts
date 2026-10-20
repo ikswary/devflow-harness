@@ -1,0 +1,107 @@
+// 화면 칸 셈과 줄이기·잇기. 띠(status)와 패널이 함께 쓰는 순수 함수이고 $를 쓰지 않는다.
+// 넓은 글자는 east_asian_width가 W·F인 글자(2칸), 나머지는 1칸이다(scripts/board.py pad와 같은 셈).
+// WIDE는 Python 3.12(unicodedata 15.0.0)에서 아래 명령으로 뽑은 연속 범위다:
+//   python -c "import unicodedata as u;r=[]
+//   for c in range(0x110000):
+//     if u.east_asian_width(chr(c)) in 'WF':
+//       if r and r[-1][1]==c-1: r[-1][1]=c
+//       else: r.append([c,c])
+//   print(len(r)); print(', '.join('[0x%X, 0x%X]'%(a,b) for a,b in r))"
+// 상자 문자(─│┌…), …, ·는 A라 1칸이다.
+
+const WIDE: [number, number][] = [
+  [0x1100, 0x115F], [0x231A, 0x231B], [0x2329, 0x232A], [0x23E9, 0x23EC], [0x23F0, 0x23F0], [0x23F3, 0x23F3],
+  [0x25FD, 0x25FE], [0x2614, 0x2615], [0x2648, 0x2653], [0x267F, 0x267F], [0x2693, 0x2693], [0x26A1, 0x26A1],
+  [0x26AA, 0x26AB], [0x26BD, 0x26BE], [0x26C4, 0x26C5], [0x26CE, 0x26CE], [0x26D4, 0x26D4], [0x26EA, 0x26EA],
+  [0x26F2, 0x26F3], [0x26F5, 0x26F5], [0x26FA, 0x26FA], [0x26FD, 0x26FD], [0x2705, 0x2705], [0x270A, 0x270B],
+  [0x2728, 0x2728], [0x274C, 0x274C], [0x274E, 0x274E], [0x2753, 0x2755], [0x2757, 0x2757], [0x2795, 0x2797],
+  [0x27B0, 0x27B0], [0x27BF, 0x27BF], [0x2B1B, 0x2B1C], [0x2B50, 0x2B50], [0x2B55, 0x2B55], [0x2E80, 0x2E99],
+  [0x2E9B, 0x2EF3], [0x2F00, 0x2FD5], [0x2FF0, 0x2FFB], [0x3000, 0x303E], [0x3041, 0x3096], [0x3099, 0x30FF],
+  [0x3105, 0x312F], [0x3131, 0x318E], [0x3190, 0x31E3], [0x31F0, 0x321E], [0x3220, 0x3247], [0x3250, 0x4DBF],
+  [0x4E00, 0xA48C], [0xA490, 0xA4C6], [0xA960, 0xA97C], [0xAC00, 0xD7A3], [0xF900, 0xFAFF], [0xFE10, 0xFE19],
+  [0xFE30, 0xFE52], [0xFE54, 0xFE66], [0xFE68, 0xFE6B], [0xFF01, 0xFF60], [0xFFE0, 0xFFE6], [0x16FE0, 0x16FE4],
+  [0x16FF0, 0x16FF1], [0x17000, 0x187F7], [0x18800, 0x18CD5], [0x18D00, 0x18D08], [0x1AFF0, 0x1AFF3], [0x1AFF5, 0x1AFFB],
+  [0x1AFFD, 0x1AFFE], [0x1B000, 0x1B122], [0x1B132, 0x1B132], [0x1B150, 0x1B152], [0x1B155, 0x1B155], [0x1B164, 0x1B167],
+  [0x1B170, 0x1B2FB], [0x1F004, 0x1F004], [0x1F0CF, 0x1F0CF], [0x1F18E, 0x1F18E], [0x1F191, 0x1F19A], [0x1F200, 0x1F202],
+  [0x1F210, 0x1F23B], [0x1F240, 0x1F248], [0x1F250, 0x1F251], [0x1F260, 0x1F265], [0x1F300, 0x1F320], [0x1F32D, 0x1F335],
+  [0x1F337, 0x1F37C], [0x1F37E, 0x1F393], [0x1F3A0, 0x1F3CA], [0x1F3CF, 0x1F3D3], [0x1F3E0, 0x1F3F0], [0x1F3F4, 0x1F3F4],
+  [0x1F3F8, 0x1F43E], [0x1F440, 0x1F440], [0x1F442, 0x1F4FC], [0x1F4FF, 0x1F53D], [0x1F54B, 0x1F54E], [0x1F550, 0x1F567],
+  [0x1F57A, 0x1F57A], [0x1F595, 0x1F596], [0x1F5A4, 0x1F5A4], [0x1F5FB, 0x1F64F], [0x1F680, 0x1F6C5], [0x1F6CC, 0x1F6CC],
+  [0x1F6D0, 0x1F6D2], [0x1F6D5, 0x1F6D7], [0x1F6DC, 0x1F6DF], [0x1F6EB, 0x1F6EC], [0x1F6F4, 0x1F6FC], [0x1F7E0, 0x1F7EB],
+  [0x1F7F0, 0x1F7F0], [0x1F90C, 0x1F93A], [0x1F93C, 0x1F945], [0x1F947, 0x1F9FF], [0x1FA70, 0x1FA7C], [0x1FA80, 0x1FA88],
+  [0x1FA90, 0x1FABD], [0x1FABF, 0x1FAC5], [0x1FACE, 0x1FADB], [0x1FAE0, 0x1FAE8], [0x1FAF0, 0x1FAF8], [0x20000, 0x2FFFD],
+  [0x30000, 0x3FFFD],
+]
+
+function charCells(cp: number): number {
+  let lo = 0
+  let hi = WIDE.length - 1
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    const [a, b] = WIDE[mid]!
+    if (cp < a) hi = mid - 1
+    else if (cp > b) lo = mid + 1
+    else return 2
+  }
+  return 1
+}
+
+// 글자(코드 포인트)마다 넓은 글자는 2, 나머지는 1을 더한 화면 칸 수.
+export function cells(s: string): number {
+  let n = 0
+  for (const ch of s) n += charCells(ch.codePointAt(0)!)
+  return n
+}
+
+// 앞에서부터 width칸까지 담고 남은 글을 돌려준다(글자 경계).
+function takeCells(s: string, width: number): [string, string] {
+  let used = 0
+  let i = 0
+  for (const ch of s) {
+    const w = charCells(ch.codePointAt(0)!)
+    if (used + w > width) break
+    used += w
+    i += ch.length
+  }
+  return [s.slice(0, i), s.slice(i)]
+}
+
+// cells(s) ≤ width면 그대로, 아니면 앞에서부터 width − 1칸까지 남기고 "…"를 붙인다.
+export function fitEnd(s: string, width: number): string {
+  if (cells(s) <= width) return s
+  return takeCells(s, Math.max(0, width - 1))[0] + '…'
+}
+
+// 조각을 sep로 이어 붙이다 width를 넘으면 새 줄(앞에 indent칸 공백). 조각 하나가 넘으면 글자 경계에서 끊어 잇는다.
+export function wrapParts(parts: string[], sep: string, width: number, indent: number): string[] {
+  const pad = ' '.repeat(indent)
+  const out: string[] = []
+  let cur: string | null = null
+  const room = () => width - (out.length === 0 ? 0 : indent)
+  const flush = () => {
+    if (cur !== null) out.push((out.length === 0 ? '' : pad) + cur)
+    cur = null
+  }
+  for (const part of parts) {
+    if (cur !== null && cells(cur + sep + part) <= room()) {
+      cur = cur + sep + part
+      continue
+    }
+    flush()
+    let rest = part
+    while (cells(rest) > room()) {
+      let [head, tail] = takeCells(rest, room())
+      if (head === '') {
+        // 줄마다 적어도 한 글자는 담아 끝나게 한다.
+        head = String.fromCodePoint(rest.codePointAt(0)!)
+        tail = rest.slice(head.length)
+      }
+      cur = head
+      flush()
+      rest = tail
+    }
+    cur = rest === '' && part !== '' ? null : rest
+  }
+  flush()
+  return out
+}

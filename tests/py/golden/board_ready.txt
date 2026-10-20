@@ -1,0 +1,7 @@
+지금 시작할 수 있는 task 2개
+- T002 가입 요구사항 질문 [question]
+- T003 로그인 화면 [implementation] (코드 폴더 필요: 흐름 login)
+보류에 막힌 대기 task 1개: T006(← T005)
+
+{VERSION_LINE}
+{CONTEXT_LINE}

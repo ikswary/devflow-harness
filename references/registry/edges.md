@@ -1,0 +1,35 @@
+## 2. 간선
+
+- `question` → `req-overview`
+- `question` → `root-cause`
+- `question` → `design`
+- `brief` → `req-detail`
+- `brief` → `ui-design`
+- `brief` → `design`
+- `req-overview` → `brief`
+- `req-detail` → `design`
+- `root-cause` → `design`
+- `root-cause` → `implementation`
+- `root-cause` → `flow-verify`
+- `root-cause` → `wrap-up`
+- `ui-design` → `design`
+- `design` → `implementation`
+- `design` → `flow-verify`
+- `design` → `full-verify`
+- `design` → `wrap-up`
+- `design` → `deploy-plan`
+- `change` → `brief`
+- `change` → `req-overview`
+- `change` → `req-detail`
+- `change` → `ui-design`
+- `change` → `design`
+- `flow-verify` → `fix`
+- `flow-verify` → `reverify`
+- `reverify` → `fix`
+- `reverify` → `reverify`
+- `full-verify` → `fix`
+- `full-verify` → `reverify`
+- `deploy-plan` → `deploy-exec`
+- `CHANGE_TARGETS`: `req-overview`, `req-detail`, `brief`, `ui-design`, `design`
+- `CHANGE_INHERITS`: `하는 일`, `승인 화면`, `자체 검증`
+

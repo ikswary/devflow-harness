@@ -1,0 +1,131 @@
+# devflow-harness 테스트 시나리오
+
+하네스를 고친 뒤 확인한다. 실제 요청을 돌리기 전에 마른 시험부터 한다.
+
+## 1. 마른 시험 (스크립트와 형식)
+
+가짜 실행 폴더(`{작업 공간}\devflow-dryrun`)에 `run.md`와 task 파일 몇 개를 손으로 만들어 스크립트만 돌린다. 코드는 건드리지 않는다. **끝나면 폴더를 지운다**(남겨 두면 다음 시작 때 "진행 중인 실행"으로 잡힌다).
+
+| # | 확인 | 기대 |
+|---|---|---|
+| 1 | `board.py {폴더}` | 표, 승인 대기열, 시작할 수 있는 task, 고리 검사가 나온다 |
+| 2 | `screen.py {폴더} {id}` (`result.md`와 `judge.md`가 있는 task) | 여섯 칸과 칸별 수, 자식 한 줄, `counts:` 줄, 알림 조건 |
+| 3 | `spawn_children.py … --dry-run` → 실제 실행 | 자식 머리 파일이 생기고, 형제 제목으로 적은 의존이 id로 바뀐다 |
+| 4 | 코드 task 행에서 「건드릴 파일」을 뺀 자식 목록 | 종료 코드 3, 머리 파일을 만들지 않는다 |
+| 5 | 같은 흐름의 구현 행 둘 | 둘째가 첫째에 자동으로 의존한다 |
+| 6 | 승인 대기 둘(하나는 다른 task를 막고, 하나는 정해 주실 것이 있음) | 막고 있는 것이 먼저 |
+| 7 | `board.py --resume` (진행 중 task에 `running_agent`) | "살아 있는지 확인"과 결과 파일의 마지막 수정 시각이 나오고, 30분 넘게 멈췄으면 묻는다는 말이 붙는다 |
+| 8 | 의존에 고리를 만든 뒤 `board.py --cycles` | 고리를 보여 주고 종료 코드 3 |
+| 9 | `board.py {작업 공간} --backlog` | `백로그` task가 실행 이름과 함께 나온다 |
+| 10 | 임시 git 저장소에서 `machine_check.py` | 대상 안의 변경만 있으면 0, 대상 밖·설정 파일·건너뜀 표시가 있으면 3 |
+| 11 | `conventions.py` | 커밋된 코드 task의 「규약 추가」가 모인다 |
+| 12 | `apply_revision.py` | 승인 전에는 옮기지 않고(3), 승인 뒤 정본에 옮기고 변경 이력에 task id를 남긴다 |
+
+## 2. 정상 흐름
+
+요청 크기: 흐름 둘(공통과 기능 하나), 인수 기준 10~15개, 구현 task 5~8개, 배포 없음. 동시에 도는 흐름 2. 지금 원래 폴더에 커밋 안 된 변경이 있는 파일을 건드리는 요청은 피한다.
+
+지나가야 하는 지점: 발견 점검(에이전트 8종) → 프로젝트 설정 한 번 묻기 → 질문 task → 요구사항 개요 → 상세 둘 → 공통 설계(통합 브랜치와 폴더 생성, 기준선) → 구현(알림과 승인이 섞임) → 흐름별 검증 → 합치기 → 기능 흐름 반복 → 전체 검증 관점 둘 → 마무리와 내보내기 → 최종 보고와 사용성 확인.
+
+확인할 것:
+- 승인 화면에 코드나 결과 본문이 올라오지 않는다. 화면 첫 줄에 대기 수와 사람 판단 항목 수가 있다.
+- 구현 task가 자체 검증 뒤에 커밋되고, 커밋에 무관한 파일이 없다.
+- 원래 폴더의 `git status`가 내보내기 전까지 실행 시작 때와 같다.
+- 알림으로 지나간 task가 흐름별 검증의 "다시 읽기" 표에 전부 있다.
+- 알림으로 지나간 구현·수정 task의 「알릴 것」「확인 안 된 것」이 흐름별 검증 승인 화면에 `[T0xx]`와 함께 있다(알림 줄의 건수와 대조).
+
+## 2-1. 흐름 동시 진행과 받아오기 시험 (마른 시험 폴더: `D:\workspace\myapp\_workspace\2026-01-01-example\dryrun\`)
+| # | 상황 | 기대 |
+|---|---|---|
+| N1 | 기능 둘이 config 한 파일에 서로 다른 항목을 더함(각자 진행) | 두 흐름이 동시에 돈다(상한 2). 먼저 끝난 흐름 합치기 뒤 다른 흐름의 `sync_pending`이 채워지고, 쓰는 task가 없을 때 받아온다. 충돌이면 그 흐름에 받아오기 수정 task |
+| N2 | 흐름 B이 흐름 A이 만든 파일을 고침(이어 붙이기) | 흐름 B 첫 task는 흐름 A의 의존한 task에 `depends_on`. 그 task 커밋 뒤 폴더 생성, `flow.md`에 `branched_from`·`depends_on_flows`. 흐름 A 수정 커밋은 흐름 B이 받아온다. 합치기는 흐름 A이 먼저 |
+| N3 | N2 도중 세션 재개 | `flows\*\flow.md`의 `sync_pending`과 `board.py --ascii`로 남은 받아오기·위치를 복원 |
+| N4 | 구현 중 설계에 없던 겹침 | 작성자는 고치지 않고 이상 신호. 메인이 각자 진행 / 이어 붙이기 / 물음으로 가르고 journal에 적음 |
+| N5 | 사용자 질문 직전 | `board.py --ready`를 보고 시작 가능한 task를 먼저 띄움. 같은 흐름의 쓰는 task가 돌면 "폴더 사용 중", 수정이 다음 구현보다 먼저 |
+| N6 | `[백로그]` 수정 행이 있는 자식 목록 | `spawn_children.py`가 백로그 행을 코드 차례에 끼우지 않음 |
+| N7 | 흐름이 다 합쳐지기 전 전체 검증 | `--ready`가 "안 합친 흐름"으로 거름 |
+| N8 | 승인 화면 | 설계·변경 task는 알림 불가. 판정 표의 판정불가, `judge-run.md` 「통과 못 한 기준」, `- ` 아닌 형식의 칸이 있으면 알림 불가. `- 없음 (설명)`은 빈 칸 |
+| N9 | 마무리·흐름 검증 입력 | `collect.py`의 `unverified-list.md`·`backlog-list.md`·`notified-{흐름}.md` 경로만 작성자에게 감 |
+| N10 | 재판정 | 앞 판정이 `judge.r{n}.md`로 남음 |
+| N11 | 백그라운드 명령 | `exec.md`에 PID, 그 PID만 `taskkill /T`로 거둠 |
+| N12 | 개요가 여러 묶음이 쓰는 대상의 이름을 상세에 미룸(대시보드 H-2 "키 이름은 상세에서") | 개요 자체 검증 5 실패. 고친 판은 「용어」에 이름과 뜻을 두고 키 이름은 첫 설계로, 형제 상세 사이 의존이 없음. 다른 상세의 인수 기준 번호를 가리키는 의존은 남음 |
+| N13 | 승인에서 산출물을 바꾸는 답 → 변경 task, 시작 전 형제·자식이 의존 → 변경 task 자체 검증 통과 | 영향 줄이 "그대로"이거나 목록에 없는 시작 전 task만 의존이 빠져 `--ready`에 나오고 「넘길 이상 신호」에 우선 줄, journal 한 줄. "바뀜"(행을 다시 씀, 이상 신호를 넘김) task는 승인까지 의존. 승인에서 새 답이 나오면 먼저 시작한 task의 「넘길 이상 신호」에 더해짐 |
+
+## 2-2. 진행 대시보드 하네스 변경의 시험 (마른 시험 폴더: `D:\workspace\myapp\_workspace\2026-01-01-example\tasks\{task id}\dryrun\`)
+F1: 손으로 만든 같은 실행 폴더 두 벌. 의존이 풀린 `대기` `design` task T와 `승인대기` task U가 있고, 한 벌만 T·U에 `waiting_user: 비밀 파일 .dev.vars 준비(설계 「하실 일」 1)`. F2: 새 키가 없는 실제 실행 폴더의 사본(원본은 읽기만). 커밋 `2efb957` 판 scripts는 `git show 2efb957:scripts/{파일}`로 `dryrun\old-scripts\`에 꺼낸다.
+
+| # | 상황 | 기대 |
+|---|---|---|
+| H1 | F1 두 벌에 `board.py --ready`·`--queue` | 키 있는 벌: T가 "지금 시작할 수 있는 task"에 없고 "의존은 풀렸지만 지금은 못 띄움"에 `(사용자 할 일 대기)`와 함께 있음. 키 없는 벌: T가 시작 가능 목록에 있음. 두 `--queue` 출력이 글자까지 같음. SKILL.md 1절 2의 못 띄움 이유 열거에 "사용자 할 일 대기"가 있음 |
+| H2 | F2에 두 판 scripts로 `board.py` 표·`--queue`·`--ready`·`--ascii`·`--cycles`·`--log`·`--resume` | 옵션마다 출력 `diff` 0, 종료 코드 같음 |
+| H3 | F1 키 있는 벌을 `devflow_lib.load_tasks`로 읽음 | T의 `waiting_user`가 문자열 `비밀 파일 .dev.vars 준비(설계 「하실 일」 1)`와 같음(목록이 아니고 잘리지 않음) |
+| H4 | F1 키 없는 벌에서 SKILL.md 3절 「사용자 할 일 대기」대로 머리 파일을 고쳐 봄: 거부 넘김 / 승인만 묻기 / 했다는 답 / `완료`·`보류`·`백로그`로 바꿈 | 거부 넘김 뒤 `waiting_user`에 할 일 한 줄. 승인만 묻기 뒤 비어 있음. 했다는 답을 「승인 기록」에 적은 뒤 비어 있음. 상태를 바꾼 직후 비어 있음 |
+| H5 | F2 사본에서 SKILL.md 0절 7대로 세션 기록만 해 봄: run.md에 `session_id: A-dummy`를 넣고 재개(0절 4) / `status: 완료`로 바꾸고 다시 열기(0절 5) / formats.md 6절 틀로 새 run.md 머리를 만듦(0절 3의 1) / 값 얻는 명령을 `env -u CLAUDE_CODE_SESSION_ID bash -c '…'`로 감싸 재개 | 앞 셋: `session_id:` 줄이 하나이고 값이 그 Bash의 `$CLAUDE_CODE_SESSION_ID`와 같음. 재개 뒤 `A-dummy`가 파일에 없음. 넷째: `session_id:` 줄 하나가 빈 값이고, 0절 7이 그때 "대시보드(띠·패널)가 이 실행을 보이지 못합니다: 이 세션의 id를 얻지 못했습니다"를 알리라고 지시함 |
+
+## 3. 재개 흐름
+
+구현 task의 작성 에이전트가 도는 중에 세션을 끝내고, 새 세션에서 `devflow-harness 이어서`.
+- 기대: `run.md`가 `진행`인 실행을 찾고, `board.py --resume`에 나온 task만 다시 읽고, 죽은 에이전트의 반쯤 쓰인 변경을 버리지 않고 새 에이전트가 이어 간다. `journal.md`에 재개 한 줄이 남는다.
+- `/clear` 뒤 살아 있는 에이전트: 작성 에이전트가 도는 중에 `/clear` 뒤 `devflow-harness 이어서`. 기대: 메인이 에이전트 목록에서 `running_agent`를 찾아 이어 쓰는 에이전트를 띄우지 않고 반환을 기다린다(한 task에 작성자 둘이 생기지 않음). 목록을 볼 수 없으면 옛 이름을 `TaskStop`한 뒤 띄우고 journal에 적는다.
+
+## 4. 승인이 아닌 답
+
+1. 「정해 주실 것」에서 준비된 선택지를 고름 → 변경 task 없이 그 승인으로 끝난다.
+2. "이 부분은 이렇게 바꿔 줘"(선택지에 없는 답) → 그 task는 닫히고 변경 task가 생기며, 자식이 변경 task에 의존한다. 정본은 변경 task가 승인된 뒤에야 바뀐다.
+3. 되물음 → 상태가 `승인대기` 그대로이고 승인 기록에 되물음 줄이 남는다.
+4. `나눠서 다시` → 변경 task(범위: 다시 나누기).
+
+## 5. 오류 흐름
+
+- 자체 검증 실패 → 새 작성 에이전트가 실패 기준만 고치고 새 판정자가 재판정. 같은 이유로 두 번 실패하면 통과 못 한 채 승인 화면 맨 위에 올라오고, 의존하는 task는 의존 때문에 시작하지 않음(`--queue`에 막고 있는 task로 보임).
+- 에이전트의 명령이 권한 시스템에 거부됨 → 메인이 실행. 메인도 거부되면 「하실 일」로.
+- 합치기에서 충돌 → 구현 작성 에이전트가 고치고 읽기 판정, 결과 승인.
+- 내보내기 직전 겹침 확인에 걸림 → 실행하지 않고 명령과 이유를 안내.
+- 에이전트 8종 가운데 하나라도 보이지 않음 → 진행하지 않고 알린다.
+
+## 배포 task 마른 시험
+| # | 확인 | 기대 |
+|---|---|---|
+| D1 | 설계 결과에 `kind: deploy-plan` 행(마무리에 의존) → `spawn_children.py` | `block: 배포`, 마무리에 의존하는 머리 파일 |
+| D2 | 배포 계획 결과에 `kind: deploy-exec` 행 → `spawn_children.py` | 배포 실행 머리 파일, 부모가 완료면 `--ready`에 나옴 |
+| D3 | `screen.py`로 배포 task | 칸이 비어도 "알림 조건: 미충족(… 알림으로 지나가지 않는다)" |
+
+| # | 확인 (다시 열기·배포 기록) | 기대 |
+|---|---|---|
+| D4 | 설계 결과의 배포 계획 줄에 「배포 뒤 적을 문서」 → 자식 목록 | 배포 결과 문서를 위한 구현·마무리 행이 없고, 배포 계획 → 배포 실행 두 행뿐 |
+| D5 | `status: 완료`인 실행 폴더에서 그 실행 백로그를 이어받는 요청 | 메인이 첫 줄에 다시 연다고 밝히고, `run.md` `진행`·「다시 연 요청」 절, 새 task 번호가 이어짐, `board.py --backlog`에서 이어받은 task가 빠짐 |
+| D6 | 배포만 요청으로 시작 | 질문 task 없이 `deploy-plan`이 첫 task, 메인이 개발 기준 브랜치 끝에서 `deploy` 흐름 폴더를 만든 뒤 작성자를 띄움 |
+| D7 | 설계의 배포 계획 줄이 dev·운영 둘 → 자식 목록, 배포 실행 생성, `board.py --ready` | 두 배포 계획이 마무리에만 기대 함께 시작 가능. 운영 계획의 커밋 = dev 계획의 커밋. 운영 배포 실행 행은 dev 배포 계획에 의존하고, dev 배포 실행이 생기는 단계에서 메인이 그 id를 운영 실행 `depends_on`에 더함(순서가 바뀌어도 같음). dev 결과 승인이 되돌림이면 같은 단계에서 운영 계획·실행이 `보류` |
+| D8 | 배포 실행 단계마다 끊고 재개 | `stage`로 이어 감. `결과승인` 뒤 `완료`가 되지 않음. `확인` 단계면 쓰기 확인을 다시 돌리기 전에 물음. 넣기 실패면 `끝`이 아님 |
+| D9 | dev 확인 실패 → 유지 → 수정이 dev에 들어감 | 낡은 dev·운영 계획·실행이 `보류`, 「배포 다시 계획」으로 새 배포 계획 둘 |
+| D10 | 운영 배포 계획에 쓰기 확인이 있음 | 자체 검증 3 실패(「정해 주실 것」으로 올린 것 제외) |
+| D11 | 프로젝트 설정에 `운영 브랜치: main`, 운영 계획, main이 C의 조상 | 사전 조건에 조상 확인과 O, 명령 끝에 `[유지 뒤]` `update-ref refs/heads/main C O`와 push. 결과 승인 `유지` → `stage: 브랜치`에서 실행, 원래 폴더 꺼낸 브랜치·status 그대로. `되돌림`·`보류` → 실행 안 함, exec.md에 없음 |
+| D12 | D11에서 main에만 커밋이 있음 / 계획 뒤 main이 움직임 | 계획을 쓰지 않고 정해 주실 것 / `update-ref`가 예전 값 불일치로 실패 → push 없이 멈춰 물음 |
+| D13 | dev 결과 승인이 "유지, 확인 하나는 위험 받아들임"이고 사람 확인을 위임 | 운영 계획 사전 조건 맨 앞이 판정 가능(받아들인 위험·위임 기록), 둘 다 운영 계획 「알릴 것」에 |
+| D14 | 실행 판정의 변이(Edit)나 명령이 권한 시스템에 거부됨 | 판정자는 다른 방법 없이 `권한 거부:` 줄로 반환, 그 기준 판정불가·재시도에 안 셈. 메인이 직접 실행 → 거부면 사용자에게 명령 그대로 |
+| D15 | 배포 실행의 확인 단계에서 xjudge 반환 | 판정자가 쓴 judge-run.md(첫 줄 판정자)에 확인마다 한 줄. 자체 검증 1이 그 줄을 계획의 배포 뒤 확인과 대조. 결과 줄에 마지막 전환 버전 |
+| D16 | 결과 승인 화면의 사람 확인에 사용자가 "알아서 해" | 메인이 계획 밖 명령·쓰기를 하지 않음(필요하면 따로 승인). 도구로 볼 항목은 xjudge가 확인, 받은편지함 화면은 확인 안 된 것. 승인 기록에 위임·항목별 확인자. 운영이면 쓰기 없음 |
+| D17 | 실행 중 하네스 커밋이 바뀜(진행 중 배포 실행 `stage: 확인`, 시작 전 배포 계획 하나) | 다음 task를 띄우기 전 판본 비교 → journal·알림 한 줄, run.md 판본 갱신. 배포 실행은 확인 단계를 옛 규칙으로 끝낸 뒤 결과 승인부터 새 규칙. 시작 전 계획의 행이 새 규칙과 다르면 "규칙 바뀜" 질문 |
+
+## 기획·화면 설계 마른 시험 (폴더: `D:\workspace\myapp\_workspace\2026-01-01-example\dryrun\`)
+| # | 상황 | 기대 |
+|---|---|---|
+| P1 | 개요 결과에 `kind: brief` 행 하나(건드릴 파일 `spec/brief.md`) → `spawn_children.py` → 기획 결과에 상세 행 둘(example·core), `화면 설계 — UI 규약` 행(건드릴 파일 `ui/rules.md`, 흐름 없음), `kind: ui-design` example 행(의존 = 상세 example 제목 + UI 규약 제목) → spawn | 기획 `block: 기획`·개요에 의존, 상세 둘·UI 규약이 기획에 의존, example 화면 설계 `depends_on`이 상세 example id와 UI 규약 id, `--ready`에 상세 core·UI 규약이 시작 가능(기획 완료 뒤), 기획·화면 설계는 알림 불가 |
+| U1 | 상세 example 결과에 `kind: design` 행(의존 = `T004, T007` — 자기 id와 화면 설계 id) → spawn; `task_set.py T008 "depends_on=[…]"`로 의존 더하기 | 설계 `depends_on`이 상세·화면 설계 id, 고리 없음, 의존 더하기가 상태를 바꾸지 않고 반영됨, `board_ascii`에 `B`·`U` 기호 |
+| U2 | `devflow_lib.CANON_RE`에 `ui/example.md`·`ui/wireframes/example.html`·`tasks/T009/revised/ui/example.md`·`src/a.kt`; `task_set.py new --kind change`로 「건드릴 파일」 `ui/example.md`인 변경 task; `revised\ui\example.md`와 `revised\ui\wireframes\example.html`을 `apply_revision.py` | 앞 셋 정본, `src/a.kt` 아님. 변경 task가 거부 없이 생김. `.md`에는 「변경 이력」이 붙고 `.html`은 그대로 복사됨 |
+| V1 | `run.md` 판본이 지금 판본과 다른 실행에서 `task_set.py {id} --status 진행` | 거부(종료 코드 3), 머리 파일 그대로, 메시지가 SKILL.md 1절을 가리킴 |
+
+폴더의 `run.md`는 `status: 완료`로 두어 시작 점검에 잡히지 않게 한다.
+
+## 진행 대시보드 판정 마른 시험
+`scripts\board_dash.py`(띠·패널이 함께 쓰는 판정, JSON)의 시험. 재료는 임시 폴더 `dryrun\`에 만들고 저장소에 넣지 않는다. 작업 폴더마다 `dryrun\ac{n}\_workspace\{실행}\`, run.md 머리는 `kind: devflow-harness` / `status: 진행` / `session_id: S`와 표 줄 `| 동시에 도는 흐름 | 2 |`. 판정은 늘 `python -B {코드 폴더}\scripts\board_dash.py dryrun\ac{n} --session S --now "{지금}"`이고 관찰은 출력 JSON의 키다.
+
+| # | 상황 | 기대 |
+|---|---|---|
+| J1 | 실행 고르기: R1(`session_id: S`), R2(`Z`), R3(`kind` 줄 없음), `R4\sub\run.md`(한 단계 더 아래). `session_id:   S  `(앞뒤 공백). 둘 다 S일 때 `완료`가 더 늦게 고쳐짐 / 둘 다 `진행`이고 R2가 1분 늦음(수정 시각은 `os.utime`이나 `(Get-Item …).LastWriteTime`). `--session Q`, `--session` 없음. `session_id` 줄 없는 run.md 하나뿐 | `run.name` R1, R1, R2, R2. Q·`session_id` 없음 → `run` null, `message` `이 세션이 진행하는 실행 없음`, `tasks` 빈 목록. 세션 없음 → `세션 id를 알 수 없어 실행을 고르지 못함`. 최상위 키 `schema now workdir session message run tasks unreadable flows ready held undecidable queue counts folded_by_group unclean` |
+| J2 | 분류·세는 수: 흐름 `a`의 상태 여덟, `block: 설계` `완료`, `flow`·`block` 빈 `보류`. `진행`(`running_agent`)·`승인대기`(`waiting_user`)·`대기`(`external_progress`)에 더해 세 키가 모두 남은 `완료` K, `awaiting_answer_apply: true`만 있는 `완료` M | `class: remaining`이 `a`의 다섯, `folded_by_group` == `{"a":{"완료":1,"보류":1,"백로그":1},"설계":{"완료":1},"기타":{"보류":1}}`. `counts.running_agent`·`waiting_user`·`external_progress` 각 1, `unclean`에 K와 세 키, M 없음 |
+| J3 | `board.py`와 같음: F1(시작 가능 design, 폴더 사용 중, 받아오기 먼저, 흐름 상한 2, 안 합친 흐름, 사용자 할 일 대기, 막는 수·`n_decide`·요청 시각이 다른 `승인대기` 셋). 실제 실행 사본(원본은 읽기만, `run.md`·`tasks\*\task.md`·`flows\*\flow.md`만 복사하고 run.md 머리 `kind:` 뒤에 `session_id: S`) | 같은 실행 폴더에 `board.py {F} --ready`·`--queue`를 돌려 `dryrun\cmp_board.py dash.json ready.txt queue.txt`가 `같음`: 시작 가능 id 집합, 못 띄움 (id, 괄호 안 글자) 쌍, 승인 대기 순서 |
+| J4 | 경과: `approval_requested` 09:00·지금 10:35 / `진행` 23:50·`자체검증` 00:05·지금 00:20 / 부모 `approved` 09:00·의존 09:40·지금 10:00(`created` 빈 값, 09:50, `2026-10-6 9:50`) / 같은 task가 `waiting_user`로 못 띄움 / 의존 `approved` 빈 값, 부모·의존 없이 `created` 빈 값, `2026-10-06 9:5`, 지금보다 뒤 / 지금보다 59·60·1500분 앞 | `elapsed.text` `1시간 35분` / `30분`·`15분` / `20분`·`10분`·`?` / `held`에 있고 `20분` / 넷 다 `?` / `59분`·`1시간 0분`·`1일 1시간` |
+| J5 | 읽지 못함: 정상 T1, `\xff\xfe` 바이트 T2, 닫는 `---` 없는 T3, `status: 진헹` T4, `depends_on: [T2]`인 `대기` T5. 닫는 `---` 없는 흐름 `a`의 flow.md와 그 흐름의 `implementation` I·`design` G. 닫는 `---` 없는 R1 run.md를 `--shown R1`로 | 종료 0, `unreadable` id {T2, T3, T4}, `counts.remaining + folded` 1. T5 `undecidable` `읽지 못한 task에 의존`. `flows`의 a `unreadable: true`, I `flow.md 읽지 못함`, G `ready`. `run.name` R1, `run_md_unreadable: true`, `flow_cap` 2(`--shown` 없으면 R1은 후보가 아님) |
+| J6 | 성능: task 100·흐름 6 가짜 실행 | 판정 명령을 프로세스째 10번, 모두 1초 안 |
+

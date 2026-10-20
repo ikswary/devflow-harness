@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+/tsconfig.json
+/.claude-plugin/types/
+.pytest_cache/
+_workspace/

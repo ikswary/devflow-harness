@@ -1,0 +1,4 @@
+# 줄 끝은 저장소에서 LF로 맞춘다(Windows 도구가 CRLF로 다시 써도 커밋에는 LF). devflow-harness가 넣음
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
