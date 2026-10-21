@@ -108,7 +108,7 @@ KINDS = {
         "none", None, False, False, False, False, False, False, True, "V",
         ("fix", "reverify"), ("start_condition", "generation_zero")),
     "wrap-up": Kind(
-        "마무리", "wrap-up.md", ("release-writer", "main"), "always", "never",
+        "마무리", "wrap-up.md", ("release-writer", "main"), "always", "always",
         "none", MERGE_STAGES, False, False, False, False, False, False, False, "W",
         (), ("stage_rule", "exec_points", "exported_commit", "start_condition", "collect_input")),
     "deploy-plan": Kind(
@@ -154,7 +154,7 @@ CANON_DIRS = ("spec", "ui", "design")
 
 # 판본 칸
 RULES = 2
-DEF_VERSION_MIN = "2026-10-08-bundle2"   # 판정자 정의의 판 표지 `def-version:`의 최소값
+DEF_VERSION_MIN = "2026-10-21-isolation1"   # 판정자 정의의 판 표지 `def-version:`의 최소값
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 

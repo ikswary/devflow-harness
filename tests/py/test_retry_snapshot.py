@@ -339,10 +339,10 @@ def rejudge_sentence(path, start):
 def test_main_selfcheck_gives_rejudge_snapshot_path_and_retry_diff_command():
     line = rejudge_sentence("references/main/selfcheck.md", "재판정은 새 판정자가 하고")
     rest = line.split("재판정은 새 판정자가 하고", 1)[1]
-    assert "범위는 실패 기준 + 수정이 닿은 곳." in rest
+    assert "범위는 실패 기준 + 수정이 닿은 제품 코드·시험·설정·의존성·공용 계약의 검사다." in rest
     assert "읽기 재판정자 프롬프트" in rest and SNAPSHOT_PATH in rest and "`" + COMMAND + "`" in rest
     assert "`${CLAUDE_PLUGIN_ROOT}/" + REJUDGE + "`" in rest and (ROOT / REJUDGE).is_file()
-    assert rest.endswith("기계 기준은 전부 다시 돌린다.")   # 기계 기준을 다시 돌리는 문장은 그대로
+    assert "영향을 가릴 근거가 없으면 더 넓은 묶음 또는 전체 검사를 돌린다." in rest
     assert "상속" not in line and "물려받" not in line
 
 
@@ -352,14 +352,13 @@ def test_rejudge_rule_runs_retry_diff_and_rereads_sources_on_four_markers():
     line = rejudge_sentence(REJUDGE, "**재판정**")
     assert "「재시도 범위」" in line and "`retry_diff.py`" in line
     assert "「확인 방법 요약」에 한 줄로 적고" in line
-    assert "바뀐 파일·덩어리가 닿은 기준을 다시 판정한다" in line
+    assert "바뀐 파일·덩어리가 닿은 제품 코드·시험·설정·의존성·공용 계약의 기준을 다시 판정한다" in line
     tool = (ROOT / "scripts" / "retry_diff.py").read_text(encoding="utf-8")
     for marker in MARKERS:
         assert "`{}`".format(marker) in line, marker
         assert marker in tool, marker   # 도구가 실제로 내는 표지
-    assert "있으면 원천 전부를 다시 읽는다. " in line
-    # 그 밖의 기준은 앞 판정을 옮기지 않고 이 판에서 판정하고, 명령 기준은 전부 다시 돌린다(T098)
-    assert line.endswith("그 밖의 기준도 앞 판정을 옮겨 적지 않고 이 판에서 판정하며, 명령을 돌리는 기준은 전부 다시 돌린다.")
+    assert "영향 범위를 가릴 근거가 없으면 원천과 검사를 더 넓게 본다." in line
+    assert line.endswith("같은 URL이나 같은 tree만으로 DB 상태가 같다고 보지 않는다.")
     text = (ROOT / REJUDGE).read_text(encoding="utf-8")
     assert "상속" not in text and "물려받" not in text and "판정 로그" not in text
 

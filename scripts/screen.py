@@ -381,6 +381,8 @@ def build(run_dir, tid, tasks=None):
     run_failed = ""
     if os.path.isfile(run_md):
         run_failed = devflow_lib.sections(devflow_lib.read_text(run_md), level=2).get("통과 못 한 기준", "")
+    judges_ok, judges_why = devflow_lib.judges_present(t)
+    resource_wait = str(t.get("external_progress", "")).strip() if str(t.get("external_progress", "")).startswith("자원 대기:") else ""
     unparsed = [cell for cell in kinds.COUNT_CELLS if devflow_lib.unparsed_cell(screen.get(cell, ""))]
 
     moved, move_failed = apply_moves(screen, judge_top)
@@ -443,6 +445,7 @@ def build(run_dir, tid, tasks=None):
     # 알림 줄에 건수로 남고 흐름별 검증 승인 화면에 모여 올라간다(첫 실행: 코드 task 15개 중 정해 주실 것이 있던 것 0개인데 전부 승인으로 감).
     # 옮기지 못한 칸 분류는 새 task만 알림을 막는다(옛 판정자는 줄 형식 없이 썼다)
     blocked = bool(devflow_lib.item_count(failed)) or undecided_in_table or bool(missing) or bool(unparsed) \
+        or not judges_ok or bool(resource_wait) \
         or (bool(move_failed) and devflow_lib.is_new_task(t))
     code_task = t.get("kind") in kinds.AUTO_DEPEND_KINDS
     judged = sum(counts.values())
@@ -468,7 +471,8 @@ def build(run_dir, tid, tasks=None):
         "judge_top": judge_top, "counts": counts, "criterion": criterion, "kids": kids, "moved": moved,
         "move_failed": move_failed, "notify_ok": notify_ok and notify_kind, "notify_kind": notify_kind,
         "code_task": code_task, "user_answer": user_answer, "judged": judged, "notes": notes, "env_n": env_n, "commit_hint": commit_hint,
-        "facts": facts, "claims": claims,
+        "facts": facts, "claims": claims, "judges_ok": judges_ok, "judges_why": judges_why,
+        "resource_wait": resource_wait,
     }
 
 
@@ -507,6 +511,14 @@ def main(argv):
         print(failed)
         for line in b["commit_hint"]:
             print("  " + line)
+    if not b["judges_ok"]:
+        print()
+        print("■ 판정 미완료")
+        print("- {}".format(b["judges_why"]))
+    if b["resource_wait"]:
+        print()
+        print("■ 자원 대기")
+        print("- {}".format(b["resource_wait"]))
     signals = t["_sections"].get("넘길 이상 신호", "")
     if signals and signals != "(없음)":
         print()
@@ -556,7 +568,7 @@ def main(argv):
     if not b["notify_kind"]:
         print("알림 조건: 미충족({}는 알림으로 지나가지 않는다)".format(t.get("kind")))
         return 0
-    why = "통과 못 한 기준·판정불가 없음, 형식 문제 없음"
+    why = "통과 못 한 기준·판정불가·판정 미완료·자원 대기 없음, 형식 문제 없음"
     if b["code_task"] and b["user_answer"]:
         print("알림 조건: 미충족(사용자 원문을 계기로 만든 task — origin {})".format(t.get("origin", "")))
     elif b["code_task"]:

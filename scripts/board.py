@@ -479,7 +479,11 @@ def print_resume(tasks, run_dir=None, now=None):
         if t.get("running_agent"):
             notes.append(agent_note(run_dir, t, now))
         if t.get("external_progress"):
-            notes.append("외부 작업 진행: {} (실행 기록을 보여 주고 먼저 묻는다)".format(t.get("external_progress")))
+            progress = str(t.get("external_progress"))
+            if progress.startswith("자원 대기:"):
+                notes.append("{} (메인이 중앙 순서에 넣고, 자원이 비면 실행하지 않은 검사만 계속한다)".format(progress))
+            else:
+                notes.append("외부 작업 진행: {} (실행 기록을 보여 주고 먼저 묻는다)".format(progress))
         if str(t.get("awaiting_answer_apply", "")).lower() in ("true", "예"):
             notes.append("답 반영 대기")
         if notes:

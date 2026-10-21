@@ -447,6 +447,8 @@ KIND_EXCEPTIONS = [
     ("references/formats/task-file.md", "| `exported_commit` | (`wrap-up`)", "E4"),
     ("references/formats/task-file.md", "| `partial_flow` | (`flow-verify`)", "E4"),
     ("references/formats/task-file.md", "| `deploy_outcome`, `deployed_commit` | (`deploy-exec`)", "E4"),
+    ("references/formats/judge-run-file.md", "이번 회차의 마지막 통합과 마무리 내보내기 후보에는 `## 최종 배포 후보 CI`", "E4"),
+    ("references/formats/judge-run-file.md", "배포 결과를 유지하면 `## 배포 대상 동일성`", "E4"),
     # E5: kind 글자와 같은 다른 이름
     ("references/formats/names.md", "`design`(devflow-harness:design-writer)", "E5"),
     ("references/main/loop.md", "「재검증 없는 수정」이 있으면", "E5"),

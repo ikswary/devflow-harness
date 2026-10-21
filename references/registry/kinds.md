@@ -16,7 +16,7 @@
 | reverify | 검증 | verify.md | verify-writer | always | never | 네 칸 모두 0 (`all_cells`) | — | — | — | — | — | — | — | 예 | R | fix, reverify | start_condition, generation_plus_one, over_cap_backlog |
 | merge | 구현 | merge.md | main, code-writer | conditional | always | 단계 (`all_cells`) | 실행승인, 실행, 결과승인, 끝 | 예 | — | — | — | — | rules2 | — | M | — | stage_rule, exec_points, merge_condition, required_judges |
 | full-verify | 검증 | verify.md | verify-writer | always | never | 승인만 (`none`) | — | — | — | — | — | — | — | 예 | V | fix, reverify | start_condition, generation_zero |
-| wrap-up | 마무리 | wrap-up.md | release-writer, main | always | never | 단계 (`none`) | 실행승인, 실행, 결과승인, 끝 | — | — | — | — | — | — | — | W | — | stage_rule, exec_points, exported_commit, start_condition, collect_input |
+| wrap-up | 마무리 | wrap-up.md | release-writer, main | always | always | 단계 (`none`) | 실행승인, 실행, 결과승인, 끝 | — | — | — | — | — | — | — | W | — | stage_rule, exec_points, exported_commit, start_condition, collect_input |
 | deploy-plan | 배포 | deploy-plan.md | release-writer | always | never | 불가 (`never`) | — | — | — | — | — | — | — | — | D | deploy-exec | exec_reads_plan_cmd |
 | deploy-exec | 배포 | deploy-exec.md | main, run-judge, release-writer | conditional | always | 단계 (`never`) | 사전조건, 직전확인, 명령, 확인, 결과승인, 브랜치, 기록, 넣기승인, 넣기, 끝 | — | — | — | — | — | — | — | E | — | stage_rule, exec_parent_plan, deploy_outcome |
 

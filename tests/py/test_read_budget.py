@@ -50,7 +50,7 @@ def test_pending_over_rows_are_baseline_rows_over_their_baseline():
 
 
 def test_read_budget():
-    assert len(reading.BASELINE) == 48
+    assert len(reading.BASELINE) == 49
     assert over_budget() == []
 
 
@@ -151,7 +151,7 @@ def expected(actor):
 
 def test_declared_reads_match_new_reads():
     actors = [a for a in reading.NEW_READS if a != "main"]
-    assert len(actors) == 48
+    assert len(actors) == 49
     problems = {a: (sorted(declared(a) - expected(a)), sorted(expected(a) - declared(a)))
                 for a in actors if declared(a) != expected(a)}
     assert problems == {}

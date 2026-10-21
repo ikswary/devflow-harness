@@ -15,6 +15,7 @@ from conftest import ROOT, run_script, write
 
 OLD_FORM = "0.9.0"   # 지금 판본과 다른 판본 표본
 MANIFEST = ROOT / ".claude-plugin" / "plugin.json"
+MARKETPLACE = ROOT / ".claude-plugin" / "marketplace.json"
 
 
 def repo_version():
@@ -48,6 +49,12 @@ def test_version_is_plugin_json_version(lib, tmp_path):
 
 def test_version_default_dir_reads_repo_manifest(lib):
     assert lib.harness_version() == repo_version()
+
+
+def test_plugin_and_marketplace_versions_match_new_contract(lib):
+    market = json.loads(MARKETPLACE.read_text(encoding="utf-8"))["plugins"][0]["version"]
+    assert market == repo_version()
+    assert lib.version_at_least(repo_version(), lib.ISOLATION_CONTRACT_VERSION)
 
 
 def test_version_without_plugin_json_is_question_mark(lib, tmp_path):
@@ -144,7 +151,7 @@ def write_def(folder, name, marker, tools="Read, Grep, Glob, Bash, Write"):
 
 def test_def_both_present_marker_at_or_above_min_is_clean(lib, tmp_path):
     write_def(tmp_path, "read-judge.md", marker_line(kinds.DEF_VERSION_MIN))   # 최소값과 같음
-    write_def(tmp_path, "run-judge.md", marker_line("2026-10-09-later"))     # 최소값보다 새것
+    write_def(tmp_path, "run-judge.md", marker_line("2099-01-01-later"))     # 최소값보다 새것
     assert lib.agent_def_problems(str(tmp_path)) == []
 
 

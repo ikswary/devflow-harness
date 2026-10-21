@@ -46,7 +46,7 @@ EXPECTED = {
     # merge의 읽기 판정은 exec.md 브랜치 판정 `충돌`이 있을 때
     "merge":          ("구현",     "조건",      "늘", STAGED,     MERGE_STAGES,  "예", "예", "—", "M"),
     "full-verify":    ("검증",     "늘",        "—", ASK_ONLY,    "—",           "—", "—", "—", "V"),
-    "wrap-up":        ("마무리",   "늘",        "—", STAGED,      WRAP_STAGES,   "—", "—", "—", "W"),
+    "wrap-up":        ("마무리",   "늘",        "늘", STAGED,      WRAP_STAGES,   "—", "—", "—", "W"),
     "deploy-plan":    ("배포",     "늘",        "—", NEVER,       "—",           "—", "—", "—", "D"),
     "deploy-exec":    ("배포",     "조건",      "늘", STAGED,      DEPLOY_STAGES, "—", "—", "—", "E"),
 }

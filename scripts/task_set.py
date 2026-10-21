@@ -147,6 +147,9 @@ def check_transition(run_dir, t, old, new, ctx):
         now_v, rec_v = devflow_lib.harness_version(), devflow_lib.run_meta(run_dir).get("harness_version", "")
         if rec_v and not devflow_lib.same_version(now_v, rec_v):
             return "run.md 하네스 판본({})이 지금 판본({})과 다름 — SKILL.md 1절 「하네스가 바뀌었을 때」대로 journal에 적고 run.md 판본을 먼저 고친다".format(rec_v, now_v)
+        defs = devflow_lib.agent_def_problems()
+        if defs:
+            return "판정자 정의 설치 불일치: {} — 두 판정자 정의와 DEF_VERSION_MIN을 함께 설치한 뒤 시작한다".format("; ".join(defs))
         return None
     if pair == ("진행", "자체검증"):
         return None
@@ -211,6 +214,9 @@ def stage_rule(run_dir, t, old, new, ctx):
     if kind == "merge":
         if not ok:
             return "exec.py --verify 실패({}) — stage=결과승인으로 승인을 받는다".format("; ".join(lines))
+        proof = final_candidate_ci_problem(run_dir, t)
+        if proof:
+            return proof
         failed = merge_failed(run_dir, t)
         if failed and not answered:
             # 결과승인에서 사람이 답했으면(위험을 받아들임 = 승인, SKILL.md 2절 「실패 처리」) 실패 수는 보지 않는다
@@ -220,9 +226,137 @@ def stage_rule(run_dir, t, old, new, ctx):
             return "마무리는 결과승인(승인대기)에서 --record와 함께 완료"
         if not ok:
             return "exec.py --verify 실패({})".format("; ".join(lines))
+        proof = final_candidate_ci_problem(run_dir, t, always=True, expected_commit=t.get("exported_commit", ""))
+        if proof:
+            return proof
     if kind == "deploy-exec" and str(t.get("deploy_outcome", "")).strip() == "유지" and not ok \
             and any(n.startswith("approved-cmds-") for n in os.listdir(t["_dir"])):
         return "exec.py --verify 실패({})".format("; ".join(lines))
+    if kind == "deploy-exec" and str(t.get("deploy_outcome", "")).strip() == "유지":
+        proof = deploy_target_problem(run_dir, t)
+        if proof:
+            return proof
+    return None
+
+
+def final_merge_candidate(run_dir, t):
+    """이번 회차의 다른 기능·수정 흐름이 모두 합쳐졌으면 현재 merge가 최종 배포 후보를 만든다."""
+    current, rnd = str(t.get("flow", "") or ""), devflow_lib.run_round(run_dir)
+    flows = []
+    for path in glob.glob(os.path.join(run_dir, "flows", "*", "flow.md")):
+        meta_lines, _ = devflow_lib.split_front_matter(devflow_lib.read_text(path))
+        meta = devflow_lib.parse_meta(meta_lines)
+        name = str(meta.get("flow", "") or os.path.basename(os.path.dirname(path)))
+        if devflow_lib.as_round(meta.get("round", "")) != rnd or devflow_lib.flow_role(name, meta) not in ("feature", "fixes"):
+            continue
+        if str(meta.get("status", "")) == "폴더 없음":
+            continue
+        flows.append((name, str(meta.get("status", ""))))
+    return len(flows) >= 2 and any(name == current for name, _ in flows) \
+        and all(name == current or status in ("합쳐짐", "폴더 지움") for name, status in flows)
+
+
+GIT_SHA = re.compile(r"^[0-9a-fA-F]{7,40}$")
+
+
+def same_git_commit(a, b):
+    a, b = str(a or "").strip(), str(b or "").strip()
+    return bool(GIT_SHA.fullmatch(a) and GIT_SHA.fullmatch(b) and (a.startswith(b) or b.startswith(a)))
+
+
+def final_candidate_ci_problem(run_dir, t, always=False, expected_commit=None):
+    if not devflow_lib.uses_isolation_contract(t) or (not always and not final_merge_candidate(run_dir, t)):
+        return None
+    path = os.path.join(t["_dir"], "judge-run.md")
+    sec = devflow_lib.sections(devflow_lib.read_text(path), level=2) if os.path.isfile(path) else {}
+    text = sec.get("최종 배포 후보 CI")
+    if text is None:
+        return "최종 배포 후보 CI 근거 없음: judge-run.md 「최종 배포 후보 CI」"
+    values = {}
+    for line in text.splitlines():
+        m = re.match(r"^-\s*(범위|검증 commit|검증 artifact)\s*:\s*(.+?)\s*$", line.strip())
+        if m:
+            values[m.group(1)] = m.group(2)
+    missing = [k for k in ("범위", "검증 commit", "검증 artifact") if not values.get(k) or values.get(k) in ("없음", "(없음)")]
+    if missing:
+        return "최종 배포 후보 CI 필수 값 없음: {}".format(", ".join(missing))
+    if values["범위"] != "전체 검증":
+        return "최종 배포 후보 CI 범위가 전체 검증이 아님({})".format(values["범위"])
+    commit = str(t.get("commit", "") if expected_commit is None else expected_commit or "").strip()
+    checked = values["검증 commit"].strip()
+    if not GIT_SHA.fullmatch(checked):
+        return "최종 배포 후보 CI 검증 commit이 유효한 Git SHA가 아님({})".format(checked)
+    if not GIT_SHA.fullmatch(commit):
+        return "최종 배포 후보 commit이 유효한 Git SHA가 아님({})".format(commit or "없음")
+    if not same_git_commit(checked, commit):
+        return "최종 배포 후보 CI 검증 commit({})이 후보 commit({})과 다름".format(checked, commit)
+    return None
+
+
+def ci_proof_values(t):
+    path = os.path.join(t["_dir"], "judge-run.md")
+    sec = devflow_lib.sections(devflow_lib.read_text(path), level=2) if os.path.isfile(path) else {}
+    text = sec.get("최종 배포 후보 CI", "")
+    values = {}
+    for line in text.splitlines():
+        m = re.match(r"^-\s*(범위|검증 commit|검증 artifact)\s*:\s*(.+?)\s*$", line.strip())
+        if m:
+            values[m.group(1)] = m.group(2)
+    return values
+
+
+def canonical_final_ci(run_dir):
+    """현재 실행의 권위 있는 최종 후보: 완료된 1.0.1 wrap-up 가운데 가장 늦게 승인된 것."""
+    wraps = [o for o in devflow_lib.load_tasks(run_dir).values()
+             if o.get("kind") == "wrap-up" and o.get("status") == kinds.DONE
+             and devflow_lib.uses_isolation_contract(o)]
+    if not wraps:
+        return None, "완료된 1.0.1 wrap-up 최종 CI가 없음"
+    wraps.sort(key=lambda o: (str(o.get("approved", "")), str(o.get("id", ""))))
+    authority = wraps[-1]
+    values = ci_proof_values(authority)
+    missing = [k for k in ("범위", "검증 commit", "검증 artifact") if not values.get(k)]
+    if missing:
+        return None, "{}의 최종 CI 필수 값 없음: {}".format(authority.get("id"), ", ".join(missing))
+    return values, ""
+
+
+def deploy_target_problem(run_dir, t):
+    """1.0.1 배포 유지 전에는 검증 대상과 실제 배포 대상의 commit·artifact가 각각 같아야 한다."""
+    if not devflow_lib.uses_isolation_contract(t):
+        return None
+    canonical, why = canonical_final_ci(run_dir)
+    if canonical is None:
+        return "배포할 권위 있는 최종 CI 근거 없음: " + why
+    path = os.path.join(t["_dir"], "judge-run.md")
+    sec = devflow_lib.sections(devflow_lib.read_text(path), level=2) if os.path.isfile(path) else {}
+    text = sec.get("배포 대상 동일성")
+    if text is None:
+        return "배포 대상 동일성 근거 없음: judge-run.md 「배포 대상 동일성」"
+    keys = ("검증 commit", "검증 artifact", "배포 commit", "배포 artifact")
+    values = {}
+    for line in text.splitlines():
+        m = re.match(r"^-\s*({})\s*:\s*(.+?)\s*$".format("|".join(keys)), line.strip())
+        if m:
+            values[m.group(1)] = m.group(2)
+    missing = [k for k in keys if not values.get(k) or values.get(k) in ("없음", "(없음)")]
+    if missing:
+        return "배포 대상 동일성 필수 값 없음: {}".format(", ".join(missing))
+    for key in ("검증 commit", "배포 commit"):
+        if not GIT_SHA.fullmatch(values[key]):
+            return "배포 대상 동일성 {}이 유효한 Git SHA가 아님({})".format(key, values[key])
+    if not same_git_commit(values["검증 commit"], values["배포 commit"]):
+        return "배포 commit이 검증 commit과 다름({} != {})".format(values["배포 commit"], values["검증 commit"])
+    if values["검증 artifact"] != values["배포 artifact"]:
+        return "배포 artifact가 검증 artifact와 다름({} != {})".format(values["배포 artifact"], values["검증 artifact"])
+    if not same_git_commit(canonical["검증 commit"], values["검증 commit"]):
+        return "배포 검증 commit이 최종 CI commit과 다름({} != {})".format(values["검증 commit"], canonical["검증 commit"])
+    if canonical["검증 artifact"] != values["검증 artifact"]:
+        return "배포 검증 artifact가 최종 CI artifact와 다름({} != {})".format(
+            values["검증 artifact"], canonical["검증 artifact"])
+    deployed = str(t.get("deployed_commit", "") or "").strip()
+    if deployed and not same_git_commit(deployed, values["배포 commit"]):
+        return "배포 commit 근거({})가 deployed_commit({})과 다름".format(values["배포 commit"], deployed)
     return None
 
 
@@ -319,6 +453,9 @@ def archive_check(run_dir, t):
     retry = int(str(t.get("retry", "0") or "0").strip() or 0)
     if retry >= cap:
         raise Reject("재시도 상한 {}: 다시 띄우지 않고 통과 못 한 채 승인으로 올린다(SKILL.md 2절 「실패 처리」)".format(cap))
+    progress = devflow_lib.judge_run_contract_problems(t)
+    if progress:
+        raise Reject("판정 미완료라 재시도를 보관하지 않음: " + "; ".join(progress))
     present = [n for n in ("judge.md", "judge-run.md") if os.path.isfile(os.path.join(d, n))]
     if not present:
         raise Reject("보관할 판정 파일(judge.md·judge-run.md)이 없음")

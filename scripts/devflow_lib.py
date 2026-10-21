@@ -367,10 +367,30 @@ JUDGE_PREFIX = {kinds.JUDGE_FILES[r]: kinds.AGENTS[n].short + "-" for r, n in ((
 # 판정자 첫 줄. 정의는 `date "+%Y-%m-%d %H:%M:%S"`를 쓰게 하지만, 초 없음·T 구분·시간대 꼬리도 받는다
 JUDGE_LINE = re.compile(r"^판정자:\s*(\S+)\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(:\d{2})?(?:\.\d+)?\s*(?:Z|[+-]\d{2}:?\d{2}|[A-Z]{2,4})?\s*$")
 MTIME_SLACK = 60    # 초. 판정자가 첫 줄 시각을 쓴 뒤 파일을 닫기까지의 틈(판정 102초 뒤의 메인 Edit를 잡는 폭)
+ISOLATION_CONTRACT_VERSION = "1.0.1"
 
 
 def is_new_task(t):
     return bool(str(t.get("started_version", "")).strip())
+
+
+def version_at_least(value, minimum):
+    """점 세 정수 판본끼리 비교한다. 판본 꼴이 아니면 새 계약으로 간주하지 않는다."""
+    def parts(v):
+        m = re.match(r"^\s*(\d+)\.(\d+)\.(\d+)(?:\D.*)?$", str(v or ""))
+        return tuple(int(x) for x in m.groups()) if m else None
+    got, need = parts(value), parts(minimum)
+    return bool(got and need and got >= need)
+
+
+def uses_isolation_contract(t):
+    """1.0.1부터 시작한 task에만 새 judge-run 증거 계약을 강제한다. 진행 중 1.0.0 task는 그대로 끝낸다."""
+    return version_at_least(t.get("started_version", ""), ISOLATION_CONTRACT_VERSION)
+
+
+def resource_wait(t):
+    progress = str(t.get("external_progress", "") or "").strip()
+    return progress if progress.startswith("자원 대기:") else ""
 
 
 def result_cells(t):
@@ -470,7 +490,39 @@ def judges_present(t):
         who, _ = judge_header(path)
         if not who or not who.startswith(JUDGE_PREFIX[name]):
             missing.append("{} 첫 줄 판정자가 {}…가 아님({})".format(name, JUDGE_PREFIX[name], who or "판정자 줄 없음"))
+    if not missing:
+        missing.extend(judge_run_contract_problems(t))
     return (not missing), "; ".join(missing)
+
+
+def judge_run_contract_problems(t):
+    """완료 전 실행 판정 계약 문제. 자원 대기는 모든 판본, 새 두 절은 1.0.1부터 검사한다."""
+    wait = resource_wait(t)
+    if wait:
+        return [wait]
+    if not uses_isolation_contract(t) or "run" not in required_judges(t):
+        return []
+    path = os.path.join(t["_dir"], kinds.JUDGE_FILES["run"])
+    if not os.path.isfile(path):
+        return []   # 파일 없음은 judges_present의 기존 경로가 보고한다
+    sec = sections(read_text(path), level=2)
+    problems = []
+    evidence = sec.get("검사 입력과 독립 근거")
+    if evidence is None:
+        problems.append("judge-run.md 「검사 입력과 독립 근거」 없음")
+    else:
+        required = (("제품",), ("시험",), ("설정",), ("lock", "설치", "의존"), ("명령",), ("환경",),
+                    ("판정자",), ("시각",), ("종료 코드",), ("로그",))
+        missing = ["/".join(words) for words in required if not any(word in evidence for word in words)]
+        if missing or item_count(evidence) == 0:
+            problems.append("judge-run.md 「검사 입력과 독립 근거」 필수 값 없음: {}".format(
+                ", ".join(missing) if missing else "실행 근거"))
+    remaining = sec.get("남은 검사와 자원 대기")
+    if remaining is None:
+        problems.append("judge-run.md 「남은 검사와 자원 대기」 없음")
+    elif item_count(remaining):
+        problems.append("실행하지 않은 검사 또는 자원 대기가 남음")
+    return problems
 
 
 def record_lines(t):

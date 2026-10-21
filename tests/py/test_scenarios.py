@@ -91,7 +91,7 @@ def test_s02_screen_notify_condition_for_code_task(run_dir):
 
     assert r.returncode == 0, r.output
     assert "counts: n_decide=0 n_todo=0 n_notify=1 n_unverified=0 n_children=0" in r.stdout
-    assert ("알림 조건(정해 주실 것·하실 일이 비고 통과 못 한 기준·판정불가 없음, 형식 문제 없음): 충족 — "
+    assert ("알림 조건(정해 주실 것·하실 일이 비고 통과 못 한 기준·판정불가·판정 미완료·자원 대기 없음, 형식 문제 없음): 충족 — "
             "알림 줄에 붙일 것: 알릴 것 1, 확인 안 된 것 0") in r.stdout
 
 

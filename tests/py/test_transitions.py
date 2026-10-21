@@ -20,6 +20,25 @@ REC_NOTIFY = ("알림", "알림으로 지나감", "")
 NEW = {"started_version": "시험 판본", "rules": "2"}      # 새 task, 규칙 판 2(stage 좁힘이 걸림)
 READ_JUDGE = "판정자: rjudge-T001 2026-10-15 10:00:00\n\n## 통과 못 한 기준\n- 없음\n"
 RUN_JUDGE = "판정자: xjudge-T001 2026-10-15 10:00:00\n\n## 통과 못 한 기준\n- 없음\n"
+POLICY = {"started_version": "1.0.1", "rules": "2"}
+
+
+def contracted_run_judge(remaining="- 없음", final_ci=""):
+    return (RUN_JUDGE
+            + "\n## 검사 입력과 독립 근거\n"
+              "- 제품 commit/diff: abc1234 | 시험 소스: tests@abc | 설정: cfg@abc | lock/설치: lock@abc | "
+              "명령: pytest -q | 환경 초기화: clean-db-7 | 판정자: xjudge-T001 | 시각: 2026-10-15 10:00:00 | "
+              "종료 코드: 0 | 로그: logs/pytest.txt\n"
+            + "\n## 남은 검사와 자원 대기\n" + remaining + "\n"
+            + final_ci)
+
+
+def completed_wrap_authority(run_dir, commit="abc1234", artifact="image@sha256:good"):
+    final = ("\n## 최종 배포 후보 CI\n- 범위: 전체 검증\n"
+             "- 검증 commit: {}\n- 검증 artifact: {}\n").format(commit, artifact)
+    make(run_dir, "T099", kind="wrap-up", block="마무리", status="완료", stage="끝",
+         exported_commit=commit, approved="2026-10-15 11:00:00", judge=READ_JUDGE,
+         run_judge=contracted_run_judge(final_ci=final), **POLICY)
 NOT_TABLE = "전이표에 없는 전이"
 DEPLOY_NOT_END = "배포 실행은 stage: 끝이 된 뒤에 완료"   # 뒤의 정의 경로 괄호는 이름 바꾸기가 고친다
 APPROVED = "- 2026-10-15 10:00:00 | 승인 | 승인 | 원문: \"승인\""
@@ -128,6 +147,16 @@ def test_r22_04_wait_to_run_allowed_when_run_version_same(run_dir, lib, monkeypa
     assert check(run_dir, t, "대기", "진행") is None
 
 
+def test_wait_to_run_rejects_inconsistent_judge_definition_install_before_mutation(run_dir, monkeypatch):
+    t = make(run_dir)
+    monkeypatch.setattr(task_set.devflow_lib, "agent_def_problems", lambda: ["run-judge.md 판본 불일치"])
+
+    why = check(run_dir, t, "대기", "진행")
+
+    assert why == ("판정자 정의 설치 불일치: run-judge.md 판본 불일치 — "
+                   "두 판정자 정의와 DEF_VERSION_MIN을 함께 설치한 뒤 시작한다")
+
+
 # 5 진행 → 자체검증: 조건 없음
 def test_r22_05_run_to_selfcheck_unconditional(run_dir):
     t = make(run_dir, status="진행")
@@ -148,6 +177,54 @@ def test_r22_07_selfcheck_to_waiting_approval_needs_judges(run_dir):
     assert why == "필요한 판정이 없음: judge.md 없음"
     t2 = make(run_dir, "T002", status="자체검증", judge=READ_JUDGE, **NEW)
     assert check(run_dir, t2, "자체검증", "승인대기") is None
+
+
+def test_policy_task_rejects_header_only_run_judge_and_unexecuted_checks(run_dir):
+    t = make(run_dir, kind="implementation", block="구현", status="자체검증", run_judge=RUN_JUDGE, **POLICY)
+    why = check(run_dir, t, "자체검증", "승인대기")
+    assert "「검사 입력과 독립 근거」 없음" in why
+    assert "「남은 검사와 자원 대기」 없음" in why
+    actual = run_script("task_set", run_dir, "T001", "--status", "승인대기")
+    assert actual.returncode == 3
+    assert "「검사 입력과 독립 근거」 없음" in actual.stdout
+    assert front_value(run_dir, "status") == "자체검증"
+
+    write(run_dir.task_dir("T001") / "judge-run.md", contracted_run_judge("- pytest integration"))
+    why = check(run_dir, load(run_dir), "자체검증", "승인대기")
+    assert why == "필요한 판정이 없음: 실행하지 않은 검사 또는 자원 대기가 남음"
+
+
+def test_policy_task_with_complete_run_contract_can_enter_waiting_approval(run_dir):
+    t = make(run_dir, kind="implementation", block="구현", status="자체검증",
+             run_judge=contracted_run_judge(), **POLICY)
+    assert check(run_dir, t, "자체검증", "승인대기") is None
+
+
+def test_resource_wait_blocks_done_and_archive_without_burning_retry(run_dir):
+    make(run_dir, kind="implementation", block="구현", status="자체검증",
+         external_progress="자원 대기: pytest integration (owner xjudge-T002)",
+         run_judge=contracted_run_judge(), **POLICY)
+
+    done = run_script("task_set", run_dir, "T001", "--status", "완료", "--record", "승인|승인|승인")
+    assert done.returncode == 3
+    assert "자원 대기: pytest integration" in done.stdout
+    archived = run_script("task_set", run_dir, "T001", "--status", "진행", "--archive-judge")
+    assert archived.returncode == 3
+    assert "판정 미완료라 재시도를 보관하지 않음" in archived.stdout
+    assert front_value(run_dir, "retry") in (None, "")
+    assert (run_dir.task_dir("T001") / "judge-run.md").is_file()
+
+
+def test_unexecuted_checks_block_archive_without_burning_retry(run_dir):
+    make(run_dir, kind="implementation", block="구현", status="자체검증",
+         run_judge=contracted_run_judge("- pytest integration"), **POLICY)
+
+    archived = run_script("task_set", run_dir, "T001", "--status", "진행", "--archive-judge")
+
+    assert archived.returncode == 3
+    assert "실행하지 않은 검사 또는 자원 대기가 남음" in archived.stdout
+    assert front_value(run_dir, "retry") in (None, "")
+    assert (run_dir.task_dir("T001") / "judge-run.md").is_file()
 
 
 def test_r22_07_selfcheck_to_waiting_approval_rejects_wrong_judge_role(run_dir):
@@ -592,6 +669,79 @@ def test_r23_4_merge_done_needs_verify(run_dir):
     assert rule(run_dir, load(run_dir), "진행", "완료", record=REC_OK) is None
 
 
+def test_policy_final_merge_requires_full_ci_commit_and_artifact_evidence(run_dir):
+    run_dir.flow("flow-a", status="합쳐짐", role="feature", round="1")
+    run_dir.flow("flow-b", status="검증 끝남", role="feature", round="1")
+    make(run_dir, kind="merge", block="검증", flow="flow-b", status="진행", stage="끝",
+         commit="abc1234", run_judge=contracted_run_judge(), **POLICY)
+    freeze_ok(run_dir, "T001")
+
+    why = rule(run_dir, load(run_dir), "진행", "완료", record=REC_OK)
+
+    assert why == "최종 배포 후보 CI 근거 없음: judge-run.md 「최종 배포 후보 CI」"
+    actual = run_script("task_set", run_dir, "T001", "--status", "완료", "--record", "승인|승인|승인")
+    assert actual.returncode == 3
+    assert "최종 배포 후보 CI 근거 없음" in actual.stdout
+    assert front_value(run_dir, "status") == "진행"
+
+
+def test_policy_final_merge_accepts_matching_full_ci_commit_and_artifact_evidence(run_dir):
+    run_dir.flow("flow-a", status="합쳐짐", role="feature", round="1")
+    run_dir.flow("flow-b", status="검증 끝남", role="feature", round="1")
+    final = ("\n## 최종 배포 후보 CI\n"
+             "- 범위: 전체 검증\n"
+             "- 검증 commit: abc1234\n"
+             "- 검증 artifact: ci-run-77/image@sha256:0123\n")
+    make(run_dir, kind="merge", block="검증", flow="flow-b", status="진행", stage="끝",
+         commit="abc1234", run_judge=contracted_run_judge(final_ci=final), **POLICY)
+    freeze_ok(run_dir, "T001")
+
+    assert rule(run_dir, load(run_dir), "진행", "완료", record=REC_OK) is None
+
+
+@pytest.mark.parametrize("field,value,expected", [
+    ("범위", "관련 검사", "범위가 전체 검증이 아님"),
+    ("검증 commit", "deadbeef", "후보 commit(abc1234)과 다름"),
+    ("검증 commit", "a", "유효한 Git SHA가 아님"),
+    ("검증 commit", "not-a-sha", "유효한 Git SHA가 아님"),
+    ("검증 artifact", "없음", "필수 값 없음: 검증 artifact"),
+])
+def test_policy_final_merge_rejects_invalid_full_ci_evidence(run_dir, field, value, expected):
+    run_dir.flow("flow-a", status="합쳐짐", role="feature", round="1")
+    run_dir.flow("flow-b", status="검증 끝남", role="feature", round="1")
+    values = {"범위": "전체 검증", "검증 commit": "abc1234", "검증 artifact": "ci-run-77"}
+    values[field] = value
+    final = "\n## 최종 배포 후보 CI\n" + "".join("- {}: {}\n".format(k, v) for k, v in values.items())
+    make(run_dir, kind="merge", block="검증", flow="flow-b", status="진행", stage="끝",
+         commit="abc1234", run_judge=contracted_run_judge(final_ci=final), **POLICY)
+    freeze_ok(run_dir, "T001")
+
+    assert expected in rule(run_dir, load(run_dir), "진행", "완료", record=REC_OK)
+
+
+def test_policy_single_flow_wrap_up_requires_full_ci_for_exported_commit(run_dir):
+    run_dir.flow("only", status="검증 끝남", role="feature", round="1")
+    make(run_dir, kind="wrap-up", block="마무리", flow="only", status="승인대기", stage="끝",
+         exported_commit="abc1234", judge=READ_JUDGE, run_judge=contracted_run_judge(), **POLICY)
+    freeze_ok(run_dir, "T001")
+
+    why = rule(run_dir, load(run_dir), "승인대기", "완료", record=REC_OK, old_stage="결과승인")
+
+    assert why == "최종 배포 후보 CI 근거 없음: judge-run.md 「최종 배포 후보 CI」"
+
+
+def test_policy_single_flow_wrap_up_accepts_matching_full_ci_evidence(run_dir):
+    run_dir.flow("only", status="검증 끝남", role="feature", round="1")
+    final = ("\n## 최종 배포 후보 CI\n- 범위: 전체 검증\n"
+             "- 검증 commit: abc1234\n- 검증 artifact: ci-run-single-8\n")
+    make(run_dir, kind="wrap-up", block="마무리", flow="only", status="승인대기", stage="끝",
+         exported_commit="abc1234", judge=READ_JUDGE,
+         run_judge=contracted_run_judge(final_ci=final), **POLICY)
+    freeze_ok(run_dir, "T001")
+
+    assert rule(run_dir, load(run_dir), "승인대기", "완료", record=REC_OK, old_stage="결과승인") is None
+
+
 def test_r23_4_merge_done_with_failed_run_criteria_needs_answer(run_dir):
     t = make(run_dir, kind="merge", status="승인대기", stage="끝",
              run_judge="판정자: xjudge-T001 2026-10-15 10:00:00\n\n## 통과 못 한 기준\n- 기준 2: 시험 실패\n", **NEW)
@@ -636,3 +786,59 @@ def test_r23_6_deploy_exec_done_not_keep_skips_verify(run_dir):
     make(run_dir, kind="deploy-exec", block="배포", status="진행", stage="끝", deploy_outcome="되돌림", **NEW)
     freeze_ok(run_dir, "T001", ran=False)
     assert rule(run_dir, load(run_dir), "진행", "완료", record=REC_OK) is None
+
+
+def test_policy_deploy_keep_rejects_missing_or_mismatched_verified_artifact(run_dir):
+    completed_wrap_authority(run_dir)
+    make(run_dir, kind="deploy-exec", block="배포", status="진행", stage="끝", deploy_outcome="유지",
+         deployed_commit="abc1234", run_judge=contracted_run_judge(), **POLICY)
+    why = rule(run_dir, load(run_dir), "진행", "완료", record=REC_OK)
+    assert why == "배포 대상 동일성 근거 없음: judge-run.md 「배포 대상 동일성」"
+
+    proof = ("\n## 배포 대상 동일성\n"
+             "- 검증 commit: abc1234\n- 검증 artifact: image@sha256:good\n"
+             "- 배포 commit: abc1234\n- 배포 artifact: image@sha256:other\n")
+    write(run_dir.task_dir("T001") / "judge-run.md", contracted_run_judge(final_ci=proof))
+    actual = run_script("task_set", run_dir, "T001", "--status", "완료", "--record", "승인|승인|승인")
+    assert actual.returncode == 3
+    assert "배포 artifact가 검증 artifact와 다름" in actual.stdout
+    assert front_value(run_dir, "status") == "진행"
+
+
+def test_policy_deploy_keep_accepts_same_verified_commit_and_artifact(run_dir):
+    completed_wrap_authority(run_dir)
+    proof = ("\n## 배포 대상 동일성\n"
+             "- 검증 commit: abc1234\n- 검증 artifact: image@sha256:good\n"
+             "- 배포 commit: abc1234\n- 배포 artifact: image@sha256:good\n")
+    t = make(run_dir, kind="deploy-exec", block="배포", status="진행", stage="끝", deploy_outcome="유지",
+             deployed_commit="abc1234", run_judge=contracted_run_judge(final_ci=proof), **POLICY)
+    assert rule(run_dir, t, "진행", "완료", record=REC_OK) is None
+
+
+@pytest.mark.parametrize("bad", ["a", "not-a-sha"])
+def test_policy_deploy_rejects_malformed_commit_prefix(run_dir, bad):
+    completed_wrap_authority(run_dir)
+    proof = ("\n## 배포 대상 동일성\n"
+             "- 검증 commit: {0}\n- 검증 artifact: image@sha256:good\n"
+             "- 배포 commit: {0}\n- 배포 artifact: image@sha256:good\n").format(bad)
+    t = make(run_dir, kind="deploy-exec", block="배포", status="진행", stage="끝", deploy_outcome="유지",
+             deployed_commit="abc1234", run_judge=contracted_run_judge(final_ci=proof), **POLICY)
+    assert "유효한 Git SHA가 아님" in rule(run_dir, t, "진행", "완료", record=REC_OK)
+
+
+def test_policy_deploy_rejects_cross_task_artifact_mismatch(run_dir):
+    completed_wrap_authority(run_dir, artifact="image@sha256:authority-a")
+    proof = ("\n## 배포 대상 동일성\n"
+             "- 검증 commit: abc1234\n- 검증 artifact: image@sha256:self-b\n"
+             "- 배포 commit: abc1234\n- 배포 artifact: image@sha256:self-b\n")
+    t = make(run_dir, kind="deploy-exec", block="배포", status="진행", stage="끝", deploy_outcome="유지",
+             deployed_commit="abc1234", run_judge=contracted_run_judge(final_ci=proof), **POLICY)
+
+    assert "배포 검증 artifact가 최종 CI artifact와 다름" in rule(
+        run_dir, t, "진행", "완료", record=REC_OK)
+
+
+def test_old_deploy_task_does_not_require_new_cross_task_authority(run_dir):
+    t = make(run_dir, kind="deploy-exec", block="배포", status="진행", stage="끝", deploy_outcome="유지",
+             deployed_commit="abc1234", run_judge=RUN_JUDGE, started_version="1.0.0", rules="2")
+    assert rule(run_dir, t, "진행", "완료", record=REC_OK) is None

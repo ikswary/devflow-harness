@@ -113,7 +113,7 @@ _READ_JUDGE_KINDS = (("question", "req-overview", "req-detail", "brief", "ui-des
                      + ("design", "implementation", "fix", "root-cause", "flow-verify", "full-verify", "reverify",
                         "merge", "wrap-up", "deploy-plan", "deploy-exec"))
 # 실행 판정자가 판정하는 kind
-_RUN_JUDGE_KINDS = ("implementation", "fix", "root-cause", "merge", "deploy-exec")
+_RUN_JUDGE_KINDS = ("implementation", "fix", "root-cause", "merge", "wrap-up", "deploy-exec")
 # 읽기 판정자의 판정용 방법 문서: test-rules(implementation·fix·design·root-cause·검증 셋), code-review-checklist(검증 셋)
 _READ_JUDGE_PRACTICES = {k: ("test-rules",) for k in ("implementation", "fix", "design", "root-cause")}
 _READ_JUDGE_PRACTICES.update({k: ("test-rules", "code-review-checklist")
@@ -188,7 +188,7 @@ BASELINE = {
     "release-writer:wrap-up": 41637,
     "release-writer:deploy-plan": 50122,
     "release-writer:deploy-exec": 47793,
-    "read-judge:question": 32449,
+    "read-judge:question": 33056,
     "read-judge:req-overview": 35055,
     "read-judge:req-detail": 35353,
     "read-judge:brief": 39361,
@@ -196,7 +196,7 @@ BASELINE = {
     "read-judge:change:req-overview": 39535,
     "read-judge:change:req-detail": 39833,
     "read-judge:change:brief": 43841,
-    "read-judge:change:design": 49341,
+    "read-judge:change:design": 50347,
     "read-judge:change:ui-design": 44776,
     "read-judge:design": 51164,
     "read-judge:implementation": 45220,
@@ -207,13 +207,14 @@ BASELINE = {
     "read-judge:reverify": 47504,
     "read-judge:merge": 37916,
     "read-judge:wrap-up": 37212,
-    "read-judge:deploy-plan": 45697,
+    "read-judge:deploy-plan": 46348,
     "read-judge:deploy-exec": 43368,
-    "run-judge:implementation": 27422,
-    "run-judge:fix": 27422,
-    "run-judge:root-cause": 26719,
-    "run-judge:merge": 26719,
-    "run-judge:deploy-exec": 28165,
+    "run-judge:implementation": 31302,
+    "run-judge:fix": 31302,
+    "run-judge:root-cause": 30136,
+    "run-judge:merge": 30136,
+    "run-judge:wrap-up": 30822,
+    "run-judge:deploy-exec": 31840,
 }
 
 # ---------------------------------------------------------------------------

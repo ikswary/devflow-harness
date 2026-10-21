@@ -212,5 +212,40 @@ def test_code_task_mismatch_still_notifies(run_dir, capsys):
     assert [(c[2], c[3], c[4]) for c in b["claims"]] == [("행", 5, 2)]
     assert b["notify_ok"] is True
     assert len(warn_lines(lines)) == 1
-    assert ("알림 조건(정해 주실 것·하실 일이 비고 통과 못 한 기준·판정불가 없음, 형식 문제 없음): 충족 — "
+    assert ("알림 조건(정해 주실 것·하실 일이 비고 통과 못 한 기준·판정불가·판정 미완료·자원 대기 없음, 형식 문제 없음): 충족 — "
             "알림 줄에 붙일 것: 알릴 것 1, 확인 안 된 것 0") in lines
+
+
+def test_new_code_task_missing_run_judge_is_not_counted_as_pass(run_dir, capsys):
+    make(run_dir, "T001", result("T001", []), kind="implementation", block="구현", status="자체검증",
+         started_version="1.0.0", rules="2")
+
+    b = screen.build(str(run_dir), "T001")
+    lines = main_lines(run_dir, "T001", capsys)
+
+    assert b["judges_ok"] is False
+    assert b["notify_ok"] is False
+    assert "■ 판정 미완료" in lines
+    assert "- judge-run.md 없음" in lines
+
+
+def test_resource_wait_blocks_notify_and_is_visible_on_screen_and_resume(run_dir, capsys):
+    make(run_dir, "T001", result("T001", []), kind="implementation", block="구현", status="자체검증",
+         started_version="1.0.0", rules="2", external_progress="자원 대기: pytest integration (owner xjudge-T002)")
+    # 새 구현 task에 필요한 실행 판정은 완료되어 있어도 자원 대기 기록이 남으면 통과가 아니다.
+    (run_dir.task_dir("T001") / "judge-run.md").write_text(
+        "판정자: xjudge-T001 2026-10-15 10:01:00\n\n## 통과 못 한 기준\n- 없음\n", encoding="utf-8")
+
+    b = screen.build(str(run_dir), "T001")
+    lines = main_lines(run_dir, "T001", capsys)
+
+    assert b["judges_ok"] is False
+    assert "자원 대기:" in b["judges_why"]
+    assert b["notify_ok"] is False
+    assert "■ 자원 대기" in lines
+    assert "- 자원 대기: pytest integration (owner xjudge-T002)" in lines
+
+    from conftest import run_script
+    resume = run_script("board", run_dir, "--resume")
+    assert resume.returncode == 0, resume.output
+    assert "자원 대기: pytest integration (owner xjudge-T002) (메인이 중앙 순서에 넣고, 자원이 비면 실행하지 않은 검사만 계속한다)" in resume.stdout
