@@ -18,6 +18,7 @@ import sys
 
 import devflow_lib
 import kinds
+import shadow_check
 
 
 def unverified_items(result_md):
@@ -56,6 +57,10 @@ def notified(run_dir, out_dir, flow):
         signals = t["_sections"].get("넘길 이상 신호", "").strip()
         if signals and signals != "(없음)":
             part += ["### 이상 신호", signals]
+        evidence = shadow_check.notified_evidence(run_dir, t)
+        if evidence is not None:
+            part += ["### shadow 원 판정 고정 근거", "```json",
+                     __import__("json").dumps(evidence, ensure_ascii=False, sort_keys=True, indent=2), "```"]
         blocks.append("\n".join(part))
     path = os.path.join(out_dir, "notified-{}.md".format(flow))
     devflow_lib.write_text(path, "# 흐름 {}에서 알림으로 지나간 task (collect.py)\n\n".format(flow) + ("\n\n".join(blocks) or "- 없음") + "\n")
@@ -65,6 +70,16 @@ def notified(run_dir, out_dir, flow):
 
 def main(argv):
     devflow_lib.utf8_stdout()
+    if len(argv) >= 3 and argv[2] in ("--shadow-inputs", "--shadow-open", "--shadow-freeze", "--shadow-b-freeze", "--shadow-check"):
+        return shadow_check.main([argv[0], argv[1]] + argv[2:])
+    if len(argv) == 4 and argv[2] == "--shadow-init":
+        try:
+            path = shadow_check.init_plan(argv[1], argv[3])
+        except shadow_check.ShadowError as e:
+            print("실험 조건 불충족: " + str(e))
+            return 3
+        print("shadow 계획 고정: " + path)
+        return 0
     if len(argv) > 4 and argv[3] == "--notified":
         return notified(argv[1], argv[2], argv[4])
     if len(argv) < 3:

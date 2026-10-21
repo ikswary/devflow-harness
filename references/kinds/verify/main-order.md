@@ -3,5 +3,6 @@
 읽는 때: 메인이 검증 task(`flow-verify`·`full-verify`·`reverify`)를 다룰 때.
 
 - 흐름별 검증·재검증·수정 흐름 합치기를 띄우기 전에 `collect.py {실행 폴더} {task 폴더} --notified {흐름}`로 그 흐름에서 알림으로 지나간 task의 알릴 것·확인 안 된 것을 파일로 뽑는다.
+- 신규 1.0.2 실행이 A를 명시적으로 선택했고 `shadow-plan.json`이 유효할 때만 일반 검증 전에 `references/experiments/verification-shadow-a.md`의 candidate → baseline → current → final 순서를 실행한다. 각 단계는 서로 다른 instance가 한 번 반환하며 `collect.py --shadow-open/--shadow-freeze/--shadow-check` 성공 뒤 다음 단계로 간다. 실패·격리 불명은 비교에서 제외하고 current·final의 기존 gate는 그대로 수행한다.
 - 새 지적이 없으면 작성자가 「정해 주실 것」·「알릴 것」·「확인 안 된 것」을 `- 없음`으로 두고, 재검증은 알림으로 끝난다.
 - **수정 세대**: `spawn_children.py`가 센다(재검증이 낸 수정은 그 재검증이 의존하는 수정의 최대 세대 + 1). 상한(시작값 2)에 닿은 재검증은 `screen.py`가 「정해 주실 것」에 (가) 만들기 / (나) 백로그 / (다) 설계 변경으로 올리고, 메인은 답대로 `--over-cap`(백로그면 `--over-cap 백로그`)이나 변경 task로 한다.

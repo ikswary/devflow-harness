@@ -18,7 +18,29 @@ import reading
 from conftest import ROOT
 
 # (행위자, 상한, 그때 값, 사유). 평소 빈 목록
-PENDING_OVER: list[tuple[str, int, int, str]] = []
+# 기존 상한은 보존한다. 1.0.2의 기본 경로에 추가된 실험 경계·형식 안내만 실측값으로
+# 고정하며, 선택형 상세 문서는 평상시 읽기 목록에 넣지 않는다. 이 값 위 증가는 계속 실패한다.
+_SHADOW_NOTE = "1.0.2 실험 경계와 증거 형식 안내; 기본 경로 추가량 실측"
+PENDING_OVER: list[tuple[str, int, int, str]] = [
+    ("read-judge:question", 33056, 34052, _SHADOW_NOTE),
+    ("read-judge:req-overview", 35055, 35750, _SHADOW_NOTE),
+    ("read-judge:req-detail", 35353, 36019, _SHADOW_NOTE),
+    ("read-judge:brief", 39361, 39674, _SHADOW_NOTE),
+    ("read-judge:ui-design", 40296, 40595, _SHADOW_NOTE),
+    ("read-judge:change:req-overview", 39535, 40521, _SHADOW_NOTE),
+    ("read-judge:change:req-detail", 39833, 40790, _SHADOW_NOTE),
+    ("read-judge:change:brief", 43841, 44445, _SHADOW_NOTE),
+    ("read-judge:change:design", 50347, 51343, _SHADOW_NOTE),
+    ("read-judge:change:ui-design", 44776, 45366, _SHADOW_NOTE),
+    ("read-judge:design", 51164, 51567, _SHADOW_NOTE),
+    ("read-judge:deploy-plan", 46348, 47344, _SHADOW_NOTE),
+    ("run-judge:implementation", 31302, 32649, _SHADOW_NOTE),
+    ("run-judge:fix", 31302, 32649, _SHADOW_NOTE),
+    ("run-judge:root-cause", 30136, 31483, _SHADOW_NOTE),
+    ("run-judge:merge", 30136, 31483, _SHADOW_NOTE),
+    ("run-judge:wrap-up", 30822, 32479, _SHADOW_NOTE),
+    ("run-judge:deploy-exec", 31840, 33182, _SHADOW_NOTE),
+]
 
 AGENT_DIR = ROOT / "agents"
 KIND_DIR = ROOT / "references" / "kinds"

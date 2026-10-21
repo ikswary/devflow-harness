@@ -21,6 +21,7 @@ LAYERS = {
     "kinds": 0,
     "devflow_lib": 1,
     "task_set": 2, "spawn_children": 2, "exec": 2, "machine_check": 2, "apply_revision": 2, "eol_setup": 2,
+    "shadow_check": 2,
     "board": 2, "screen": 2, "retry_diff": 2,
     "board_ascii": 3, "board_dash": 3, "collect": 3, "conventions": 3,
 }

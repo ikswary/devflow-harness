@@ -25,6 +25,8 @@ session_id:                # 지금 세션의 id. 메인이 시작·재개·다�
 ## 남은 정리               # 실행의 끝 정리 단계를 사용자가 미룬 폴더·브랜치 목록. 없으면 절을 두지 않는다
 ```
 
+승인된 신규 1.0.2 실행이 검증 효율 shadow를 선택한 경우에만 「이번 실행의 값」에 `검증 효율 실험`의 정확한 집합(`A`, `B` 또는 `A,B`)을 적고, `decisions.md`에 사용자 승인 원문을 연결한다. 루트 `shadow-plan.json`은 실험 시작 전에 한 번 만들며 `experiments`, `repository`, `work_type`, `approval_evidence`, `N`, `counts_by_type`, `S:{value,unit}`, `H:{value,unit}`, `E`, `end_date`, A 선택 시 `A:{R,Q,strata,seed,ratio,rotation,calculation}`을 모두 명시한다. 빈 값에 기본값을 넣거나 기존 실행에 소급 생성하지 않는다. 상세는 opt-in 문서 `references/experiments/verification-shadow.md`다.
+
 `flows\{흐름}\flow.md`
 ```
 ---

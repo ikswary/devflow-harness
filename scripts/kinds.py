@@ -154,7 +154,7 @@ CANON_DIRS = ("spec", "ui", "design")
 
 # 판본 칸
 RULES = 2
-DEF_VERSION_MIN = "2026-10-21-isolation1"   # 판정자 정의의 판 표지 `def-version:`의 최소값
+DEF_VERSION_MIN = "2026-10-21-shadow1"   # 판정자 정의의 판 표지 `def-version:`의 최소값
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 

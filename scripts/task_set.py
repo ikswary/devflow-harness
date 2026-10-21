@@ -87,6 +87,7 @@ from datetime import datetime
 import devflow_lib
 import kinds
 import retry_diff
+import shadow_check
 
 
 # devflow_lib.Reject와 같은 객체(Doc이 내는 거부를 아래 `except Reject`가 그대로 잡는다)
@@ -944,6 +945,13 @@ def main(argv):
             if old == "대기" and new == "진행":
                 t["started_version"], t["rules"] = doc.get("started_version"), doc.get("rules")
             auto_freeze(run_dir, t, old, new, rec, ctx["old_stage"])
+            try:
+                observed = shadow_check.observe_transition(run_dir, t, old, new)
+                if observed:
+                    print(observed)
+            except Exception as e:
+                # shadow 관측은 기존 gate보다 권위가 낮다. 기록 실패는 비교 제외 경고일 뿐 전이를 되돌리지 않는다.
+                print("! shadow 관측 기록 실패(기존 전이는 유지): {}".format(e))
             if t.get("kind") == "wrap-up" and new == kinds.DONE and not str(t.get("exported_commit", "") or "").strip():
                 import exec as execmod
                 tip = execmod.target_tip(run_dir, t)

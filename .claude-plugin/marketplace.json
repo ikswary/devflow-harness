@@ -7,7 +7,7 @@
       "name": "devflow-harness",
       "source": "./",
       "description": "개발 작업을 task 단위로 흐르게 하는 개발 하네스. 요구사항 → 설계 → 구현 → 검증을 작은 task로 나누고, task마다 작성자가 아닌 에이전트가 자체 검증한 뒤 사람이 판단할 것만 승인받는다.",
-      "version": "1.0.1"
+      "version": "1.0.2"
     }
   ]
 }
