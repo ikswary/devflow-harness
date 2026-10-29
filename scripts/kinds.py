@@ -215,7 +215,8 @@ TASK_SECTIONS = (
 # run.md 머리 키(formats.md 6절)와 「이번 실행의 값」 시작값
 RUN_KEYS = ("kind", "status", "project", "base_branch", "round", "integration_branch", "integration_dir",
             "harness_version", "start_task", "previous_run", "session_id")
-RUN_DEFAULTS = {"동시에 도는 흐름": 2, "수정 세대 상한": 2, "자체 검증 재시도": 2, "판정불가 다시 돌림": 2}
+RUN_DEFAULTS = {"동시에 도는 흐름": 2, "수정 세대 상한": 2, "자체 검증 재시도": 2, "판정불가 다시 돌림": 2,
+                "fable로 띄울 역할": "없음"}   # 마지막 값은 숫자가 아니다: 역할 이름(예: design-writer)을 쉼표로
 
 # ---------------------------------------------------------------------------
 # 파생 함수와 이름(엔진이 상수 대신 부른다)
