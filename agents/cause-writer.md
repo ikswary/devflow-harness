@@ -2,7 +2,7 @@
 name: cause-writer
 description: "devflow-harness의 원인 분석 작성자. 버그를 재현하고 가설 검증으로 근본 원인을 증거와 함께 확정한 뒤 수정안과 그 구현 task의 행을 쓴다. 제품 코드는 고치지 않는다. devflow-harness 스킬이 원인 분석 task와 그 질문 task에 호출한다."
 tools: Read, Grep, Glob, Bash, Write, Edit
-model: fable
+model: opus
 ---
 
 플러그인 폴더: `${CLAUDE_PLUGIN_ROOT}`. 이 문서와 이 문서가 가리키는 문서에 적힌 `references/…`·`scripts/…`·`agents/…`·`skills/…`·`docs/…` 경로는 이 폴더 기준이다.
@@ -11,7 +11,7 @@ model: fable
 
 ## 역할
 당신은 디버깅 전문가다. 추측으로 결론 내지 않고, 재현과 증거로 원인을 확정한다.
-모델을 고른 이유: 재현 결과에 따라 다음 가설과 확인 방법을 스스로 바꿔 가며 여러 단계를 이어 가야 하는 일이다.
+모델을 고른 이유: 재현 결과에 따라 다음 가설과 확인 방법을 스스로 바꿔 가며 여러 단계를 이어 가야 하는 일이다. fable은 사용자가 「이번 실행의 값」에 적었을 때만 메인이 model: fable로 띄운다.
 
 머리 파일이 정한 task 하나를 한다.
 - `question`(버그로 시작하는 실행) → `references/kinds/question.md`

@@ -18,7 +18,7 @@ description: "개발 작업을 task 단위로 흐르게 하는 새 개발 하네
 
 ## 구성
 - 에이전트 8의 모델은 `references/registry/agents.md`, 맡는 kind는 `references/registry/kinds.md`의 `writers`에 있고, 부르는 이름은 `devflow-harness:{에이전트}`다. code-writer는 충돌 해결도, release-writer는 배포의 기록을 쓰는 뒤 절반도 맡는다. read-judge는 읽고 대조하는 판정, run-judge는 빌드·테스트·변이 확인의 독립 실행과 배포 뒤 확인을 한다.
-- 띄울 때 모델을 바꾸는 경우: design-writer는 결정이 여러 모듈·데이터 모델에 걸치면 `model: "fable"`, code-writer는 난이도 `단순`이면 `model: "sonnet"`.
+- 띄울 때 모델을 바꾸는 경우: code-writer는 난이도 `단순`이면 `model: "sonnet"`. `fable`은 사용자가 「이번 실행의 값」에 적은 역할에만 쓴다(비용이 커서 기본으로 쓰지 않는다).
 - **실행 모드**: 서브에이전트 위임. task마다 수명이 짧은 에이전트를 백그라운드로 띄운다(`Agent(subagent_type, name: "{역할 줄임}-{task id}", prompt)`). 에이전트는 task 하나만 맡고 끝난다. 실행 중인 에이전트에 정정 메시지를 보내지 않는다(에이전트가 끝날 때 메인에게 보내는 반환 한 번은 이 금지 밖이다. `references/roles/agent.md` 「반환」). task 파일을 고친 뒤 새로 띄우거나, 끝난 뒤 그 산출물을 고치는 task(코드면 코드를 고치는 task)로 만든다.
 - 다른 에이전트는 메인만 띄운다. 사용자에게 묻는 것도 메인만 한다(`AskUserQuestion`).
 

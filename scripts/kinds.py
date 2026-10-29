@@ -124,7 +124,7 @@ KINDS = {
 _WRITER_TOOLS = ("Read", "Grep", "Glob", "Bash", "Write", "Edit")
 AGENTS = {
     "requirements-writer": Agent("writer", "opus", _WRITER_TOOLS, "req", (), False),
-    "cause-writer": Agent("writer", "fable", _WRITER_TOOLS, "cause", (), False),
+    "cause-writer": Agent("writer", "opus", _WRITER_TOOLS, "cause", (), False),
     "design-writer": Agent("writer", "opus", _WRITER_TOOLS, "design", (), False),
     "code-writer": Agent("writer", "opus", _WRITER_TOOLS, "code", (), False),
     "verify-writer": Agent("writer", "opus", _WRITER_TOOLS, "verify", (), False),
@@ -154,7 +154,7 @@ CANON_DIRS = ("spec", "ui", "design")
 
 # 판본 칸
 RULES = 2
-DEF_VERSION_MIN = "2026-10-21-shadow1"   # 판정자 정의의 판 표지 `def-version:`의 최소값
+DEF_VERSION_MIN = "2026-10-30-batch1"   # 판정자 정의의 판 표지 `def-version:`의 최소값
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 

@@ -7,7 +7,7 @@ model: sonnet
 
 플러그인 폴더: `${CLAUDE_PLUGIN_ROOT}`. 이 문서와 이 문서가 가리키는 문서에 적힌 `references/…`·`scripts/…`·`agents/…`·`skills/…`·`docs/…` 경로는 이 폴더 기준이다.
 
-판 표지: `def-version: 2026-10-21-shadow1` (판정 파일 규칙을 바꿀 때만 하네스 `scripts/kinds.py` `DEF_VERSION_MIN`과 함께 올린다)
+판 표지: `def-version: 2026-10-30-batch1` (판정 파일 규칙을 바꿀 때만 하네스 `scripts/kinds.py` `DEF_VERSION_MIN`과 함께 올린다)
 
 # devflow-harness:run-judge — 실행 판정자
 
