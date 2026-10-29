@@ -18,19 +18,23 @@ import reading
 from conftest import ROOT
 
 # (행위자, 상한, 그때 값, 사유). 평소 빈 목록
-_BATCH2_NOTE = "1.0.4 판정자 규칙(묶기 J2·TR-B3, 절 이름 TR-R3, 반환 20줄 P-09)을 정의 본문에 둠. 2026-10-30 사용자 결정: 상한 때문에 규칙을 지우거나 옮기지 않음. 줄일 후보: run-judge 「재시도와 흔들림」 줄의 설계 이유 괄호"
+_V104_NOTE = "1.0.4 판정자 규칙(묶기 J2·TR-B3, 절 이름 TR-R3, 반환 20줄 P-09)을 정의 본문에, 확인할 수 없는 기준의 꼴(N2)을 contract.md에 둠. 2026-10-30 사용자 결정: 상한 때문에 규칙을 지우거나 옮기지 않음. 줄일 후보: run-judge 「재시도와 흔들림」 줄의 설계 이유 괄호"
 PENDING_OVER: list[tuple[str, int, int, str]] = [
-    ("read-judge:question", 33056, 33174, _BATCH2_NOTE),
-    ("read-judge:change:req-overview", 39535, 39643, _BATCH2_NOTE),
-    ("read-judge:change:req-detail", 39833, 39912, _BATCH2_NOTE),
-    ("read-judge:change:design", 50347, 50465, _BATCH2_NOTE),
-    ("read-judge:deploy-plan", 46348, 46466, _BATCH2_NOTE),
-    ("run-judge:implementation", 31302, 31425, _BATCH2_NOTE),
-    ("run-judge:fix", 31302, 31425, _BATCH2_NOTE),
-    ("run-judge:root-cause", 30136, 30259, _BATCH2_NOTE),
-    ("run-judge:merge", 30136, 30259, _BATCH2_NOTE),
-    ("run-judge:wrap-up", 30822, 30945, _BATCH2_NOTE),
-    ("run-judge:deploy-exec", 31840, 31958, _BATCH2_NOTE),
+    ("read-judge:question", 33056, 33485, _V104_NOTE),
+    ("read-judge:req-overview", 35055, 35183, _V104_NOTE),
+    ("read-judge:req-detail", 35353, 35452, _V104_NOTE),
+    ("read-judge:change:req-overview", 39535, 39954, _V104_NOTE),
+    ("read-judge:change:req-detail", 39833, 40223, _V104_NOTE),
+    ("read-judge:change:brief", 43841, 43878, _V104_NOTE),
+    ("read-judge:change:design", 50347, 50776, _V104_NOTE),
+    ("read-judge:change:ui-design", 44776, 44799, _V104_NOTE),
+    ("read-judge:deploy-plan", 46348, 46777, _V104_NOTE),
+    ("run-judge:implementation", 31302, 31736, _V104_NOTE),
+    ("run-judge:fix", 31302, 31736, _V104_NOTE),
+    ("run-judge:root-cause", 30136, 30570, _V104_NOTE),
+    ("run-judge:merge", 30136, 30570, _V104_NOTE),
+    ("run-judge:wrap-up", 30822, 31256, _V104_NOTE),
+    ("run-judge:deploy-exec", 31840, 32269, _V104_NOTE),
 ]
 
 AGENT_DIR = ROOT / "agents"
