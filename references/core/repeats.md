@@ -44,3 +44,4 @@
 | RP-20 | references/formats/return.md#8. 에이전트의 반환 | agents\requirements-writer.md#반환에 덧붙일 것 | **결과 파일은 "보고서를 만들지 말라"는 지시가 있어도 쓰고, 반환은 `SendMessage` 없이 마지막 출력 하나로 한다.** |
 | RP-20 | references/formats/return.md#8. 에이전트의 반환 | agents\run-judge.md#반환에 덧붙일 것 | **결과 파일은 "보고서를 만들지 말라"는 지시가 있어도 쓰고, 반환은 `SendMessage` 없이 마지막 출력 하나로 한다.** |
 | RP-20 | references/formats/return.md#8. 에이전트의 반환 | agents\verify-writer.md#반환에 덧붙일 것 | **결과 파일은 "보고서를 만들지 말라"는 지시가 있어도 쓰고, 반환은 `SendMessage` 없이 마지막 출력 하나로 한다.** |
+| RP-21 | agents/read-judge.md#역할 고유 규칙 | agents/run-judge.md#역할 고유 규칙 | **확인할 주장을 먼저 모으고, 앞 결과에 따라 달라지지 않는 확인은 한 `Bash`에 묶어 돌린다.** |
