@@ -5,8 +5,6 @@
 ## 먼저 읽을 것
 `${CLAUDE_PLUGIN_ROOT}/references/practices/code-review-checklist.md`(심각도 분류와 지적 형식), `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`, 요구사항·설계 정본의 해당 절.
 
-승인된 신규 1.0.2 실행의 A 실험 단계라는 프롬프트가 있을 때만 `${CLAUDE_PLUGIN_ROOT}/references/experiments/verification-shadow.md`와 `verification-shadow-a.md`를 더 읽는다. 일반 검증의 필독 목록에는 넣지 않는다.
-
 판정자: `${CLAUDE_PLUGIN_ROOT}/references/practices/code-review-checklist.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`
 
 ## 하는 일
@@ -71,5 +69,4 @@
 2. 지적의 분류가 표와 맞다. "바로 고친다"로 분류된 지적에 실제로 다른 고칠 방법이 없는가.
 3. 인수 기준 추적표의 근거 줄을 표본 대조한다. 전 행에 판정과 근거가 있다.
 4. 알림으로 지나간 task가 전부 다시 읽혔다(목록과 표를 대조).
-5. A shadow를 수행했다면 candidate·baseline 기록과 final 비교가 기존 결과·판정을 대신하지 않고, 격리 불명 사례가 품질 비교에서 빠졌다.
 5. 재검증: 재판정한 행의 근거가 실재한다.

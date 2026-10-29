@@ -15,11 +15,11 @@ notified 목록의 모든 task와 기준을 아래 순서로 분류하고 `resul
 
 공유 schema·auth·config·권한·데이터 정합성·동시성·외부 I/O 변경과 소비 경로, 근거 누락은 축소 후보에서 제외한다. 동일 파일의 다른 task 변경도 영향 밖으로 추정하지 않는다.
 
-표 열은 `task/기준 | 앞 판정 경로·hash | 후보 commit | 후속 변경 | 분류 | 직접 읽을 범위 | 사유 | 독립 재독 선정 여부`다. 숨은 예외 표에는 모든 notified task를 남긴다.
+「재독 범위 표」는 candidate/current `result.md`의 「본문」 다음에 두고 일반 결과에는 두지 않는다. 표 열은 `task/기준 | 앞 판정 경로·hash | 후보 commit | 후속 변경 | 분류 | 직접 읽을 범위 | 사유 | 독립 재독 선정 여부`다. 상속 후보는 final gate의 전 행 AC 판정·notified 전면 재독을 줄이지 않는다. 숨은 예외 표에는 모든 notified task를 남긴다.
 
 ## 판정 snapshot
 
-A 실행의 읽기 판정 `judge.md` 「판정 대상과 범위」에는 대상(run·round·task·계약 판본·작업 폴더·base/HEAD SHA), 변경 snapshot(tracked diff 경로/hash와 새·삭제·rename), 기준 snapshot(기준·AC·요구사항·설계 경로/hash), 기준별 실제 범위(파일·심볼/절·행·hash·확인 방법·판정·못 본 범위), 소비 경로(호출자·공유 schema·auth·config·시험·의존성), 독립 근거(판정자 ID·작성/수정 미참여·시각·원본)를 쓴다.
+A 실행의 읽기 판정 `judge.md`에는 「통과 못 한 기준」과 「판정 표」 사이에 `## 판정 대상과 범위` 절을 두고(일반 판정에는 두지 않는다), 원본을 확인한 뒤 대상(run·round·task·계약 판본·작업 폴더·base/HEAD SHA), 변경 snapshot(tracked diff 경로/hash와 새·삭제·rename), 기준 snapshot(기준·AC·요구사항·설계 경로/hash), 기준별 실제 범위(파일·심볼/절·행·hash·확인 방법·판정·못 본 범위), 소비 경로(호출자·공유 schema·auth·config·시험·의존성), 독립 근거(판정자 ID·작성/수정 미참여·시각·원본)를 쓴다.
 
 빈 값·근거 없는 `없음`은 동일성 근거가 아니다. 해당 없음은 이유와 확인자를 쓴다. 후속 변경·누락·hash 불일치·소비 경계 불명은 전면 재독한다. 판정 시 아직 없는 최종 commit을 판정자에게 요구하지 않고, task commit 뒤 스크립트가 snapshot 대응을 검증·기록한다.
 
@@ -35,7 +35,7 @@ A 실행의 읽기 판정 `judge.md` 「판정 대상과 범위」에는 대상(
 
 각 stage의 `output_path`는 realpath 기준으로 자기 task의 candidate/current `result.md`, baseline/final `judge.md`와 정확히 같아야 한다. 기계 상태 `status:frozen`은 `evidence_path`, `evidence_sha256`, `access_log_path`, `access_log_sha256`, 자기선언 `accessed_path_claims`, `isolation_verified:false`, `comparison_eligibility:unproven`을 보존한다. 자기선언만 있거나 원본 접근을 독립 대조하지 못하면 `unproven` 또는 `indeterminate`이며 품질 비교에서 제외한다.
 
-final은 `judge.md`에 `shadow-review-conclusion: proven|unproven|indeterminate`를 쓰고, EVIDENCE의 `reviewer_conclusion:{conclusion,citations:[{path,sha256,location}]}`로 원본을 인용한다. citation은 네 단계의 input 사본·접근 로그, final 전 세 단계의 evidence와 결과 원본 또는 고정 사본을 모두 포함하고, `judge.md` 본문에 각 `path#location`을 적는다. final `judge.md` 첫 줄의 실제 판정자 ID는 final open의 instance와 같고 `rjudge-`로 시작해야 한다. marker·instance·citation 원본 raw hash가 모두 맞는 `proven`만 `comparison_eligibility:proven-by-final-read-judge`가 된다. `frozen/observed`는 무결성 상태이고 판정 결론이 아니다. current와 final의 일반 gate는 제외하지 않는다.
+final은 `judge.md`에 `shadow-review-conclusion: proven|unproven|indeterminate`를 쓰고, EVIDENCE의 `reviewer_conclusion:{conclusion,citations:[{path,sha256,location}]}`로 원본을 인용한다. citation은 네 단계의 input 사본·접근 로그, final 전 세 단계의 evidence와 결과 원본 또는 고정 사본을 모두 포함하고, `judge.md` 본문에 각 `path#location`을 적는다. final `judge.md` 첫 줄의 실제 판정자 ID는 final open의 instance와 같고 `rjudge-`로 시작해야 한다. marker·instance·citation 원본 raw hash가 모두 맞는 `proven`만 `comparison_eligibility:proven-by-final-read-judge`가 된다. `frozen/observed`는 무결성 상태이고 판정 결론이 아니다. current와 final의 일반 gate는 제외하지 않는다. final은 verify 모듈 「자체 검증」에 더해, candidate·baseline 기록과 final 비교가 기존 결과·판정을 대신하지 않았는지와 격리 불명 사례가 품질 비교에서 빠졌는지를 판정한다.
 
 ## 표본과 중단
 

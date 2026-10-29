@@ -24,6 +24,10 @@ python ${CLAUDE_PLUGIN_ROOT}/scripts/collect.py RUN --shadow-init PLAN.json
 
 초기화가 거부되면 실험을 실행하지 않고 기존 gate만 진행한다. A 절차는 `verification-shadow-a.md`, B 절차는 `verification-shadow-b.md`다.
 
+## 실험 인스턴스의 프롬프트
+
+1.0.4부터 에이전트 정의와 형식 문서(`judge-file`·`judge-run-file`·`result-file`)에는 실험 규칙이 없다. 메인은 실험 단계를 맡기는 프롬프트의 `이번 지시에만 있는 것`(판정자 프롬프트에는 같은 이름의 줄을 덧붙인다)에 단계 이름(`shadow candidate`·`baseline`·`current`·`final`, B 관측)과 이 문서·`verification-shadow-a.md` 또는 `verification-shadow-b.md`의 절대 경로를 적고, "이 문서들을 먼저 읽는다"를 함께 적는다. 실험 단계는 서로 다른 인스턴스가 한 번 반환하고 끝나며, 실험 기록은 gate를 대신하지 않는다.
+
 ## 공통 고정 명령
 
 ```text

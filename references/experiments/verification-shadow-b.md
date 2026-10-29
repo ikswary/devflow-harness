@@ -14,6 +14,10 @@ python ${CLAUDE_PLUGIN_ROOT}/scripts/collect.py RUN --shadow-b-freeze TASK --obs
 
 관측 절 누락·고정 실패는 관측 제외 사유일 뿐 기존 gate를 막지 않는다. 이미 CI가 시작됐거나 관측 뒤 후보·입력이 바뀌면 비교에서 제외하고 새 전체 CI 결과만 사용한다. `observed_at`과 실제 `full_ci_started_at`은 timezone이 있는 ISO-8601이어야 하며 시작 시각이 관측보다 뒤여야 한다. 기계 기록은 `identity_verified:false`, `actual_reuse:false`를 유지한다.
 
+## 관측 절
+
+run-judge는 새 전체 CI 시작 전에 `judge-run.md`에 `## 재사용 가능성 관측`을 쓴다: `판정: 가능/불가/판정불가`, `고정 기록: {shadow manifest 경로·hash}`, `원 CI: {task·judge-run·로그·artifact}`, `후보쌍: {원 full SHA→현재 full SHA}`, `입력 동일성: {시험·명령·설정·lock/설치·artifact·환경/DB별 근거}`, `신선함: {외부 쓰기·변경 부재 근거}`, `관측 시각:`, `새 전체 CI 시작 시각:`. 결론과 무관하게 이번 판의 전체 CI를 새로 모두 실행하고, 가능 건수·원 CI 시간은 잠재 절감량일 뿐 실제 절약으로 세지 않는다.
+
 ## 기계 상태와 독립 판정
 
 자동 고정은 필수 식별자가 실제로 다르면 `impossible`, 필요조건이 맞으면 `indeterminate`만 기록한다. 자동으로 `possible`을 만들지 않는다. 아래 근거가 모두 독립 대조된 경우에만 run-judge가 새 전체 CI 뒤 `judge-run.md`에 `shadow-b-conclusion: possible`을 쓴다. 다른 결론은 `impossible|indeterminate`다. 이 결론은 wrap-up이 `완료`이고 기존 독립 judge gate와 「최종 배포 후보 CI」의 전체 검증 commit·artifact가 현재 관측과 일치한 뒤에만 관측값으로 저장한다.
