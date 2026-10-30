@@ -15,6 +15,7 @@ tasks\{id}\criteria.orig.md, criteria.amend{n}.md, criteria.ack.md   만들 때�
 tasks\{id}\result.md    결과 (작성자). result.pre-screen.md는 「승인 화면」만 다시 쓰기 전의 사본 (스크립트)
 tasks\{id}\judge.md     읽기 판정 (읽기 판정자), judge-run.md 실행 판정 (실행 판정자). 늘 최신 판정
 tasks\{id}\judge.r{n}.md, judge-run.r{n}.md   재판정 전에 보관한 n번째 판정 (`task_set.py --archive-judge`)
+tasks\{id}\screen-main.md  승인 화면의 메인용 블록(이상 신호, 확인 방법) 전문 (screen.py)
 tasks\{id}\main-run.md  메인이 규칙대로 직접 한 일(직접 실행, 기계 대조, 준비된 선택지 반영) (메인)
 tasks\{id}\exec.md      밖으로 나간 명령의 기록 (exec.py). approved-cmds-{지점}.md 승인 때 얼린 명령 (exec.py)
 tasks\{id}\uncommitted.patch   보류로 치운 커밋 안 된 변경 (메인, 사용자가 고를 때만)
