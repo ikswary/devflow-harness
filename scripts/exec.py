@@ -100,11 +100,11 @@ def single(line, pattern):
 
 def approval_time(t):
     """「승인 기록」에서 승인 줄(devflow_lib.approval_line: 지점이나 결정이 승인) 가운데 가장 늦은 시각.
-    승인 요청 전의 답은 세지 않는다. 보류·거절·되돌림·되물음 답으로는 얼리지 않는다."""
+    승인 요청 전의 답은 세지 않는다. 보류·거절·되돌림·되물음 답과 재사용 답(`--reuse-answer`)으로는 얼리지 않는다."""
     best = None
     for line in devflow_lib.record_lines(t):
         f = devflow_lib.record_fields(line)
-        if not devflow_lib.approval_line(line):
+        if not devflow_lib.approval_line(line) or devflow_lib.reused_answer(line):
             continue
         when = ptime(f[0])
         if when and (best is None or when > best):
@@ -195,7 +195,7 @@ def freeze(run_dir, tid, point, refreeze=False):
         at = approved_at(tasks, t, point)
         if at is None:
             return 3, ("얼릴 수 없음: {} 지점의 승인 기록이 없다. 승인 요청 뒤의 답 줄에서 지점 칸이나 결정 칸이 `승인`이어야 한다"
-                       "(보류·거절·되돌림·되물음·알림은 세지 않음{}). 고치는 법: 사람이 실행을 승인했으면 "
+                       "(보류·거절·되돌림·되물음·알림·재사용 답은 세지 않음{}). 고치는 법: 사람이 실행을 승인했으면 "
                        "`task_set.py {{실행 폴더}} {} --record \"승인|{{결정}}|{{원문}}\"`으로 다시 적은 뒤 "
                        "`exec.py {{실행 폴더}} {} --freeze --point {}`(SKILL.md 3절 「답의 처리」)").format(
                 point, ", 배포 실행은 부모 계획의 답" if t.get("kind") == "deploy-exec" and point in ("실행승인", "되돌림") else "",
