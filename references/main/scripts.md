@@ -10,3 +10,4 @@
 | `machine_check.py` | 등록표 `needs_touch_files`인 task의 기계 조건(종료 코드 3이면 읽기 판정) |
 | `eol_setup.py` | 새 실행의 프로젝트 설정 단계(0절 3의 2 「줄 끝 고정」). 점검만, 또는 `.gitattributes` 쓰기와 줄 끝 정리를 스테이징까지(커밋은 메인) |
 | `board.py --ascii` / `board_ascii.py --watch {초}` | 진행 상황 그림. 사용자가 보자고 할 때만 메인이 찍는다(`--watch`는 사용자가 따로 띄워 두는 것) |
+| `visual.py` | 승인을 물을 때. 정본의 표·와이어프레임 경로를 「보는 자료」로 낸다(줄 수는 「이번 실행의 값」 `보는 자료 줄 수`) |
