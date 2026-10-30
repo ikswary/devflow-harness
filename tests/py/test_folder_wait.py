@@ -134,6 +134,18 @@ def test_ja_cli_appends_note_and_replaces_same_flow(run_dir, workspace):
     assert last.count("폴더 대기: context") == 1
 
 
+def test_note_replaces_only_wait_piece_and_keeps_other_text(workspace):
+    other = "결정 0 승인: flow-design 1(한 마디 0) / 관점 지적: 보안 1"
+    measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | 폴더 대기: review 0분 (0개) / 흐름 작성 69분 / "
+                    + other + " |\n")
+    assert collect.write_note(str(measure), "dryrun", ["폴더 대기: review 5분 (1개) / 흐름 작성 70분"])
+    assert measure.read_text(encoding="utf-8").splitlines()[-1] == (
+        "| dryrun | 1K | 폴더 대기: review 5분 (1개) / 흐름 작성 70분 / " + other + " |")
+    # 다른 흐름은 덧붙이고, 같은 글은 그대로 둔다
+    assert collect.write_note(str(measure), "dryrun", ["폴더 대기: context 1분 (1개) / 흐름 작성 2분"])
+    assert measure.read_text(encoding="utf-8").splitlines()[-1].endswith(other + "; 폴더 대기: context 1분 (1개) / 흐름 작성 2분 |")
+
+
 def test_cha_cli_without_run_row_exits_3_and_keeps_file(run_dir, workspace):
     overlap_flow(run_dir)
     measure = write(workspace / "measure.md", HEAD + "| 2026-10-01-x | 90K | - |\n")

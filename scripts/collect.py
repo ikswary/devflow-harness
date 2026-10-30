@@ -161,6 +161,21 @@ def _cells(line):
     return re.split(r"(?<!\\)\|", line)
 
 
+WAIT_TAIL = r" \d+분 \(\d+개\) / 흐름 작성 \d+분"   # `폴더 대기: {흐름}` 뒤에 오는 조각 꼴
+
+
+def put_segment(cell, seg):
+    """`비고` 칸 글에서 seg와 같은 흐름의 폴더 대기 조각만 seg로 바꾸고(여럿이면 첫 자리에 하나만 남김),
+    없으면 `; `로 덧붙인다. 칸의 다른 글은 구분자가 ` / `여도 그대로 둔다."""
+    m = re.fullmatch(r"폴더 대기: (\S+)" + WAIT_TAIL, seg)
+    if m:
+        pat = re.compile("폴더 대기: " + re.escape(m.group(1)) + WAIT_TAIL)
+        if pat.search(cell):
+            first = pat.search(cell)
+            return cell[:first.end()].replace(first.group(0), seg, 1) + pat.sub("", cell[first.end():])
+    return cell + "; " + seg if cell else seg
+
+
 def write_note(measure_path, run_name, segments):
     """측정 기록에서 첫 칸이 run_name인 마지막 행의 `비고` 칸에 조각을 `; `로 덧붙인다(같은 흐름의 조각은 바꾼다).
     파일·`비고` 열·행이 없으면 파일을 그대로 두고 False."""
@@ -186,12 +201,12 @@ def write_note(measure_path, run_name, segments):
     parts = _cells(body)
     while len(parts) < col + 2:   # 칸이 모자란 행은 빈 칸을 채운다(맨 끝 조각은 닫는 `|` 뒤)
         parts.insert(len(parts) - 1, " ")
-    keep = [p.strip() for p in parts[col].split("; ") if p.strip() and p.strip() != "-"]
+    cell = parts[col].strip()
+    if cell == "-":
+        cell = ""
     for seg in segments:
-        key = seg.split(" ", 3)[:3]   # `폴더 대기:` `{흐름}`
-        keep = [p for p in keep if p.split(" ", 3)[:3] != key]
-        keep.append(seg)
-    parts[col] = " " + "; ".join(keep) + " "
+        cell = put_segment(cell, seg)
+    parts[col] = " " + cell + " "
     lines[row] = "|".join(parts) + end
     with open(measure_path, "w", encoding="utf-8", newline="") as f:
         f.write("".join(lines))
