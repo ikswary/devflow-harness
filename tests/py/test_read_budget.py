@@ -18,18 +18,18 @@ import reading
 from conftest import ROOT
 
 # (행위자, 상한, 그때 값, 사유). 평소 빈 목록
-_V104_NOTE = "1.0.4 판정자 규칙(묶기 J2·TR-B3, 절 이름 TR-R3, 반환 20줄 P-09)을 정의 본문에, 확인할 수 없는 기준의 꼴(N2)을 contract.md에 둠. 2026-10-30 사용자 결정: 상한 때문에 규칙을 지우거나 옮기지 않음. A1이 설계 이유 괄호를 지움(1.1.0)"
+_V104_NOTE = "1.0.4 판정자 규칙(묶기 J2·TR-B3, 절 이름 TR-R3, 반환 20줄 P-09)을 정의 본문에, 확인할 수 없는 기준의 꼴(N2)을 contract.md에 둠. 2026-10-30 사용자 결정: 상한 때문에 규칙을 지우거나 옮기지 않음. 설계 이유 괄호는 지운 상태"
 _V110_NOTE = "1.1.0 설계 정의의 자식 kind·행 규칙 경우 파일·겹침 규칙과 머리 파일의 탐침 단계·변경 대상. 설계 문서 5.10: 줄일 곳을 찾지 못해 사용자 결정(T006)으로 보류. 줄일 후보: 판정자가 함께 읽는 공통 문서(contract.md·writer.md·task-file.md)의 겹치는 문장"
 PENDING_OVER: list[tuple[str, int, int, str]] = [
-    ("read-judge:design", 51164, 52768, _V110_NOTE),
-    ("read-judge:change:design", 50347, 52619, _V110_NOTE),
-    ("run-judge:implementation", 31302, 31616, _V104_NOTE),
-    ("run-judge:fix", 31302, 31616, _V104_NOTE),
-    ("run-judge:root-cause", 30136, 30450, _V104_NOTE),
-    ("run-judge:merge", 30136, 30450, _V104_NOTE),
-    ("run-judge:wrap-up", 30822, 31136, _V104_NOTE),
-    ("run-judge:deploy-exec", 31840, 32149, _V104_NOTE),
-    ("requirements-writer:question", 32165, 32245, "S2 task-file.md 탐침 단계 +86(A-H4). A·B 흐름의 실제 증가가 어림보다 커 여유 216이 4로 줄었다. S4 마감에서 다시 잰다"),
+    ("read-judge:design", 51164, 52756, _V110_NOTE),
+    ("read-judge:change:design", 50347, 52602, _V110_NOTE),
+    ("run-judge:implementation", 31302, 31614, _V104_NOTE),
+    ("run-judge:fix", 31302, 31614, _V104_NOTE),
+    ("run-judge:root-cause", 30136, 30448, _V104_NOTE),
+    ("run-judge:merge", 30136, 30448, _V104_NOTE),
+    ("run-judge:wrap-up", 30822, 31134, _V104_NOTE),
+    ("run-judge:deploy-exec", 31840, 32147, _V104_NOTE),
+    ("requirements-writer:question", 32165, 32245, "S2 task-file.md 탐침 단계 +86(A-H4). A·B 흐름의 실제 증가가 어림보다 커 여유 216이 4로 줄었다. S4 마감에서 다시 쟀고 지금 값 32245로 같다"),
 ]
 
 AGENT_DIR = ROOT / "agents"
