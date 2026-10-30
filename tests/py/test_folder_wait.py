@@ -81,7 +81,7 @@ def overlap_flow(run_dir):
 
 def test_ba_overlapping_spans_counted_as_union(run_dir):
     overlap_flow(run_dir)
-    assert collect.flow_wait(run_dir.tasks(), "context") == (30, 1, 60, 0)
+    assert collect.flow_wait(run_dir.tasks(), "context") == (30, 1, 60, 0, 0)
     assert collect.union_minutes([(at("10:00"), at("10:30")), (at("10:20"), at("10:50"))]) == 50
 
 
@@ -93,7 +93,7 @@ def test_sa_task_without_overlap_is_not_counted(run_dir):
     code_task(run_dir, "T002", "10:10", "10:30", asked="10:45", approved="12:00")
     code_task(run_dir, "T003", "10:50", "11:00", asked="11:10", approved="12:00")
     # 흐름 작성 [10:00, 10:45] 45분 + [11:00, 11:10] 10분
-    assert collect.flow_wait(run_dir.tasks(), "context") == (20, 1, 55, 0)
+    assert collect.flow_wait(run_dir.tasks(), "context") == (20, 1, 55, 0, 0)
 
 
 # --- (아) 끝이 없는 열린 task는 빠짐 ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ def test_a_open_task_is_left_out(run_dir):
     code_task(run_dir, "T009", "08:50", "09:00", status="진행")
     tasks = run_dir.tasks()
     assert collect.occupied(tasks["T009"]) is None
-    assert collect.flow_wait(tasks, "context") == (20, 1, 45, 1)
+    assert collect.flow_wait(tasks, "context") == (20, 1, 45, 1, 0)
 
 
 # --- (자)·(차) 명령행: 측정 기록의 비고 칸 ----------------------------------------------------------------------
@@ -146,3 +146,22 @@ def test_cha_cli_without_run_row_exits_3_and_keeps_file(run_dir, workspace):
     write(measure, HEAD + "| dryrun | 90K | - |\n")
     assert run_script("collect", run_dir, "--folder-wait").returncode == 0
     assert measure.read_text(encoding="utf-8").splitlines()[-1].endswith("흐름 작성 60분 |")
+
+
+# --- 준비 시각을 못 정한 task (V-02) ---------------------------------------------------------------------------
+
+UNREADY = "  준비 시각이 없어 대기를 못 잰 task 1개"
+
+
+def test_unready_task_is_reported_separately(run_dir):
+    # T002는 의존도 created도 없어 준비 시각이 None이다. 대기 0분이어도 못 잰 것으로 따로 센다
+    code_task(run_dir, "T001", "10:00", "10:00", asked="10:30", approved="12:00")
+    code_task(run_dir, "T002", "", "10:40", asked="11:00", approved="12:00")
+    assert collect.flow_wait(run_dir.tasks(), "context") == (0, 0, 50, 0, 1)
+    r = run_script("collect", run_dir, "--folder-wait")
+    assert UNREADY in r.stdout.splitlines()
+    # 대조: created를 채우면 그 줄이 없다
+    code_task(run_dir, "T002", "10:35", "10:40", asked="11:00", approved="12:00")
+    r = run_script("collect", run_dir, "--folder-wait")
+    assert UNREADY not in r.stdout.splitlines()
+    assert collect.flow_wait(run_dir.tasks(), "context")[4] == 0

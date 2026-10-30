@@ -20,7 +20,8 @@ r"""마무리 입력 모으기: 실행 하나의 task들에 흩어진 목록을 
     폴더 대기 = 코드 폴더에 쓰는 task의 대기 구간 [준비 시각, started]가 같은 흐름 다른 쓰는 task의 차지 구간
     [started, 끝] 합집합과 겹친 분. 준비 시각은 created와 depends_on task들 approved 가운데 늦은 것, 끝은
     통과(no_change이거나 두 판정 파일 「통과 못 한 기준」 0)하고 approval_requested가 있으면 그 시각, 그 밖은 approved.
-    끝이 없는 task는 빼고 센다. 종료 코드 3 = 측정 기록에 이 실행 행이 없음(줄만 내고 파일은 그대로)
+    끝이 없는 task는 빼고 센다. 차지 구간은 있으나 준비 시각을 못 정한 task는 `  준비 시각이 없어 대기를 못 잰 task {n}개`로 따로 낸다.
+    종료 코드 3 = 측정 기록에 이 실행 행이 없음(줄만 내고 파일은 그대로)
 """
 import fnmatch
 import os
@@ -127,7 +128,8 @@ def union_minutes(intervals):
 
 
 def flow_wait(tasks, flow):
-    """(폴더 대기 분, 겹친 task 수, 흐름 작성 분, 끝이 없어 뺀 task 수). 흐름의 코드 폴더에 쓰는 task만 센다."""
+    """(폴더 대기 분, 겹친 task 수, 흐름 작성 분, 끝이 없어 뺀 task 수, 준비 시각이 없어 대기를 못 잰 task 수).
+    흐름의 코드 폴더에 쓰는 task만 센다."""
     spans, skipped = {}, 0
     for tid, t in tasks.items():
         if t.get("flow") != flow or not board.writes(t):
@@ -137,10 +139,13 @@ def flow_wait(tasks, flow):
             skipped += 1
             continue
         spans[tid] = occ
-    wait_min, n_tasks = 0, 0
+    wait_min, n_tasks, unready = 0, 0, 0
     for tid, (start, _) in spans.items():
         ready = ready_at(tasks[tid], tasks)
-        if ready is None or ready >= start:
+        if ready is None:
+            unready += 1
+            continue
+        if ready >= start:
             continue
         # 대기 구간과 다른 task 차지 구간의 겹침을 합집합으로 센다(둘이 함께 차지한 시간을 두 번 세지 않는다)
         cut = [(max(s, ready), min(e, start)) for o, (s, e) in spans.items() if o != tid and min(e, start) > max(s, ready)]
@@ -148,7 +153,7 @@ def flow_wait(tasks, flow):
         if minutes > 0:
             wait_min += minutes
             n_tasks += 1
-    return wait_min, n_tasks, union_minutes(spans.values()), skipped
+    return wait_min, n_tasks, union_minutes(spans.values()), skipped, unready
 
 
 def _cells(line):
@@ -198,11 +203,13 @@ def folder_wait(run_dir):
     tasks = devflow_lib.load_tasks(run_dir)
     segments = []
     for flow in sorted({t.get("flow") for t in tasks.values() if t.get("flow") and board.writes(t)}):
-        wait_min, n_tasks, busy_min, skipped = flow_wait(tasks, flow)
+        wait_min, n_tasks, busy_min, skipped, unready = flow_wait(tasks, flow)
         seg = "폴더 대기: {} {}분 ({}개) / 흐름 작성 {}분".format(flow, wait_min, n_tasks, busy_min)
         print(seg)
         if skipped:
             print("  끝이 없어 뺀 task {}개".format(skipped))
+        if unready:
+            print("  준비 시각이 없어 대기를 못 잰 task {}개".format(unready))
         segments.append(seg)
     if not segments:
         print("폴더 대기: 코드 폴더에 쓰는 task 없음")
