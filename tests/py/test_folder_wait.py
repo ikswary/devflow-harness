@@ -165,3 +165,21 @@ def test_unready_task_is_reported_separately(run_dir):
     r = run_script("collect", run_dir, "--folder-wait")
     assert UNREADY not in r.stdout.splitlines()
     assert collect.flow_wait(run_dir.tasks(), "context")[4] == 0
+
+
+# --- spawn_children의 created (V-02 (나)) ----------------------------------------------------------------------
+
+def test_spawn_children_stamps_created_without_now(run_dir):
+    from test_scenarios import child_row, children_section, screen_result
+    run_dir.task("T001", "부모", status="완료")
+    run_dir.result("T001", screen_result("T001", children=children_section(child_row("자식 가"))))
+    r = run_script("spawn_children", run_dir, "T001")
+    assert r.returncode == 0, r.output
+    created = run_dir.tasks()["T002"]["created"]
+    assert created and datetime.strptime(created, "%Y-%m-%d %H:%M:%S")
+    # 대조: --now를 주면 그 값이다
+    run_dir.task("T003", "부모", status="완료")
+    run_dir.result("T003", screen_result("T003", children=children_section(child_row("자식 나"))))
+    r = run_script("spawn_children", run_dir, "T003", "--now", "2026-10-30 10:00:00")
+    assert r.returncode == 0, r.output
+    assert run_dir.tasks()["T004"]["created"] == "2026-10-30 10:00:00"

@@ -10,6 +10,7 @@
 - `depends_on`에 형제의 제목을 적으면 그 형제의 새 id로 바꾼다. 이미 있는 task id(T숫자)는 그대로 둔다.
 - 같은 흐름의 코드 task(implementation, fix)는 앞 형제에 자동으로 의존한다(한 흐름의 코드 task는 차례로 진행).
 - --depends-on: 모든 자식에 공통으로 더할 의존(예: 답을 반영하는 변경 task).
+- --now: 자식의 `created` 값. 없으면 지금 시각(`YYYY-MM-DD HH:MM:SS`, `task_set.py new`와 같은 꼴).
 - 자식마다 `criteria.orig.md`(만들 때의 판정 기준)를 함께 쓴다.
 - 코드 task 행(백로그·고르지 않은 안 밖)의 흐름에 flow.md가 없으면 함께 만든다(`status: 폴더 없음`, `role`, `round`).
   메인은 폴더를 만들 때 branch·dir·status를 채운다.
@@ -33,6 +34,7 @@
 import os
 import re
 import sys
+from datetime import datetime
 
 import devflow_lib
 import kinds
@@ -267,7 +269,7 @@ def main(argv):
     def opt(name):
         return argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else ""
     common_dep = split_list(opt("--depends-on"))
-    now = opt("--now")
+    now = opt("--now") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     over_cap = None
     if "--over-cap" in argv:
         over_cap = "백로그" if opt("--over-cap") == "백로그" else "만듦"
