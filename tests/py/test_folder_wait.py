@@ -136,14 +136,43 @@ def test_ja_cli_appends_note_and_replaces_same_flow(run_dir, workspace):
 
 def test_note_replaces_only_wait_piece_and_keeps_other_text(workspace):
     other = "결정 0 승인: flow-design 1(한 마디 0) / 관점 지적: 보안 1"
-    measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | 폴더 대기: review 0분 (0개) / 흐름 작성 69분 / "
+    measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | 폴더 대기: review 0분 (0개) / 흐름 작성 69분; "
                     + other + " |\n")
     assert collect.write_note(str(measure), "dryrun", ["폴더 대기: review 5분 (1개) / 흐름 작성 70분"])
     assert measure.read_text(encoding="utf-8").splitlines()[-1] == (
-        "| dryrun | 1K | 폴더 대기: review 5분 (1개) / 흐름 작성 70분 / " + other + " |")
+        "| dryrun | 1K | 폴더 대기: review 5분 (1개) / 흐름 작성 70분; " + other + " |")
     # 다른 흐름은 덧붙이고, 같은 글은 그대로 둔다
     assert collect.write_note(str(measure), "dryrun", ["폴더 대기: context 1분 (1개) / 흐름 작성 2분"])
     assert measure.read_text(encoding="utf-8").splitlines()[-1].endswith(other + "; 폴더 대기: context 1분 (1개) / 흐름 작성 2분 |")
+
+
+def test_note_keeps_b_lines_and_dedups_same_flow_pieces(workspace):
+    b = ["결정 0 승인: flow-design 1(한 마디 0)", "관점 지적: 보안 1"]
+    c = "폴더 대기: context 5분 (1개) / 흐름 작성 30분"
+    new = "폴더 대기: context 7분 (1개) / 흐름 작성 31분"
+    cases = (("{}; {}; {}".format(c, *b), "{}; {}; {}".format(new, *b)),
+             ("{}; {}; {}".format(*b, c), "{}; {}; {}".format(*b, new)),
+             ("{}; {} / {}".format(c, *b), "{}; {} / {}".format(new, *b)),
+             ("{}; {}; {}".format(b[0], c, b[1]), "{}; {}; {}".format(b[0], new, b[1])),
+             ("{} / {} / {}".format(c, *b), "{}; {} / {}".format(new, *b)))   # 옛 꼴: 조각 앞뒤 구분자만 바뀐다
+    for cell, want in cases:
+        measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | " + cell + " |\n")
+        assert collect.write_note(str(measure), "dryrun", [new])
+        last = measure.read_text(encoding="utf-8").splitlines()[-1]
+        assert last == "| dryrun | 1K | " + want + " |", last
+
+
+def test_note_same_flow_duplicates_leave_no_empty_separator(workspace):
+    c1 = "폴더 대기: context 5분 (1개) / 흐름 작성 30분"
+    c2 = "폴더 대기: context 9분 (2개) / 흐름 작성 40분"
+    new = "폴더 대기: context 1분 (1개) / 흐름 작성 2분"
+    for cell, want in ((c1 + "; " + c2, new), (c1 + "; x; " + c2, new + "; x"), ("x; " + c1 + "; " + c2, "x; " + new),
+                       (c1 + "; " + c2 + "; x", new + "; x")):
+        measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | " + cell + " |\n")
+        assert collect.write_note(str(measure), "dryrun", [new])
+        last = measure.read_text(encoding="utf-8").splitlines()[-1]
+        assert last == "| dryrun | 1K | " + want + " |", last
+        assert ";;" not in last and "; ;" not in last
 
 
 def test_cha_cli_without_run_row_exits_3_and_keeps_file(run_dir, workspace):

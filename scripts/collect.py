@@ -11,7 +11,7 @@ r"""마무리 입력 모으기: 실행 하나의 task들에 흩어진 목록을 
     {출력 폴더}\notified-{흐름}.md  그 흐름에서 알림으로 지나간 task마다 알릴 것·확인 안 된 것·이상 신호
     (흐름별 검증·재검증·수정 흐름 합치기를 띄우기 전에 메인이 돌리고, 작성자에게 경로를 준다)
   python collect.py {실행 폴더} --measure
-    표준 출력 두 줄(결정 0 승인, 관점별 지적). 메인이 measure.md 그 실행 행의 비고 칸에 ` / `로 잇는다
+    표준 출력 두 줄(결정 0 승인, 관점별 지적). 메인이 measure.md 그 실행 행의 비고 칸에 `; `로 잇는다
   종료 코드: 0 정상(칸이 빠진 형식 경고는 목록 위에 적고 0), 2 사용법 오류,
              3 result.md나 「승인 화면」 절이 없는 `완료` task가 있음(목록 맨 위에 적힌다)
   python collect.py {실행 폴더} --folder-wait
@@ -166,14 +166,27 @@ WAIT_TAIL = r" \d+분 \(\d+개\) / 흐름 작성 \d+분"   # `폴더 대기: {�
 
 def put_segment(cell, seg):
     """`비고` 칸 글에서 seg와 같은 흐름의 폴더 대기 조각만 seg로 바꾸고(여럿이면 첫 자리에 하나만 남김),
-    없으면 `; `로 덧붙인다. 칸의 다른 글은 구분자가 ` / `여도 그대로 둔다."""
+    없으면 맨 끝에 덧붙인다. 조각 사이 구분자는 `; `로 통일하고, 조각을 지운 자리에 빈 구분자를 남기지 않는다.
+    칸의 다른 글은 안쪽 글자를 그대로 둔다(옛 행의 앞뒤 ` / `만 `; `로 바뀐다)."""
     m = re.fullmatch(r"폴더 대기: (\S+)" + WAIT_TAIL, seg)
-    if m:
-        pat = re.compile("폴더 대기: " + re.escape(m.group(1)) + WAIT_TAIL)
-        if pat.search(cell):
-            first = pat.search(cell)
-            return cell[:first.end()].replace(first.group(0), seg, 1) + pat.sub("", cell[first.end():])
-    return cell + "; " + seg if cell else seg
+    pat = re.compile("폴더 대기: " + re.escape(m.group(1)) + WAIT_TAIL) if m else None
+    wait = re.compile(r"(폴더 대기: \S+" + WAIT_TAIL + ")")
+    items, placed = [], False
+    for i, piece in enumerate(wait.split(cell)):
+        if i % 2 == 1:   # 폴더 대기 조각
+            if pat and pat.fullmatch(piece):
+                if not placed:
+                    items.append(seg)
+                    placed = True
+            else:
+                items.append(piece)
+        else:
+            text = re.sub(r"^[\s;/]+|[\s;/]+$", "", piece)
+            if text:
+                items.append(text)
+    if not placed:
+        items.append(seg)
+    return "; ".join(items)
 
 
 def write_note(measure_path, run_name, segments):
