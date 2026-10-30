@@ -461,6 +461,8 @@ KIND_EXCEPTIONS = [
     ("references/main/new-task.md", "| 배포 다시 계획(`deploy-plan`, 환경마다 하나)", "E1"),
     ("references/main/new-task.md", "| 기획(`brief`, 흐름 없음)", "E1"),
     ("references/main/new-task.md", "| 화면 설계(`ui-design`)", "E1"),
+    ("references/main/new-task.md", "| 인프라 결정(`infra-design`", "E1"),
+    ("references/main/new-task.md", "| 탐침 거짓의 변경(`change`)", "E1"),
     ("references/main/start.md", "| 새 기능, 기능 변경 |", "E1"),
     ("references/main/start.md", "| 버그 | 질문 → 원인 분석", "E1"),
     ("references/main/start.md", "| 배포만(올릴 커밋이 이미 개발 기준 브랜치에 있고", "E1"),

@@ -11,6 +11,8 @@
   python board.py {실행 폴더} --ascii         진행 상황 그림(흐름별 줄, 상태 기호, 승인 대기·도는 에이전트)
   python board.py {실행 폴더} --cycles        의존 고리만(있으면 종료 코드 3)
   python board.py {실행 폴더} --log           승인 기록을 시간순으로
+  python board.py {실행 폴더} --infra-premise 상세 정본마다 「인프라 전제」의 `- 없음`이 아닌 줄(`{파일}: {줄}`), 절이 없으면
+                                              `! {파일}: 「인프라 전제」 절 없음`, 끝에 `인프라 결정 task: {id} ({상태})` 또는 `없음`
   python board.py {실행 폴더} --resume        재개 때 볼 것(진행·자체검증·승인대기, 실행 중 에이전트와 그 결과 파일의 마지막
                                               수정 시각, 외부 작업 진행, 답 반영 대기). `--now "시각"`으로 기준 시각을 줄 수 있다
   python board.py {작업 공간} --backlog       작업 공간의 모든 실행에서 남은 백로그
@@ -509,6 +511,25 @@ def print_backlog(workspace):
         print("- {} / {} {} [{}] {}".format(r, tid, t.get("title", ""), t.get("kind", ""), t["_dir"]))
 
 
+def print_infra_premise(tasks, run_dir):
+    """상세 정본 spec\\*.md(overview.md·brief.md 제외)의 「인프라 전제」 줄 모음과 인프라 결정 task(설계 domain 3.7, A-19).
+    `- 없음`(뒤에 설명이 붙은 것 포함)은 빼고, 절이 없는 파일은 `!` 줄로 낸다."""
+    spec = os.path.join(run_dir, "spec")
+    names = sorted(n for n in os.listdir(spec) if n.endswith(".md") and n not in devflow_lib.SPEC_SKIP) \
+        if os.path.isdir(spec) else []
+    for name in names:
+        part = devflow_lib.sections(devflow_lib.read_text(os.path.join(spec, name))).get("인프라 전제")
+        if part is None:
+            print("! {}: 「인프라 전제」 절 없음".format(name))
+            continue
+        for line in part.splitlines():
+            line = line.strip()
+            if line.startswith("- ") and not (line == "- 없음" or line.startswith("- 없음 ")):
+                print("{}: {}".format(name, line))
+    infra = ["{} ({})".format(t["id"], t.get("status", "")) for t in tasks.values() if t.get("kind") == "infra-design"]
+    print("인프라 결정 task: {}".format(", ".join(infra) or "없음"))
+
+
 # ---------------------------------------------------------------- 진행 상황 그림(--ascii, board_ascii.py)
 
 # 상태 글자 `kinds.STATUS_GLYPH`, 종류 글자 `kinds.glyph`, 범례 `kinds.LEGEND`(등록표). 모르는 값은 `?`.
@@ -614,6 +635,8 @@ def main(argv):
         return print_cycles(tasks)
     elif flag == "--log":
         print_log(tasks)
+    elif flag == "--infra-premise":
+        print_infra_premise(tasks, target)
     elif flag == "--resume":
         # --now "YYYY-MM-DD HH:MM[:SS]": 마른 시험에서 그때의 경과를 다시 보려고(기본은 지금). 못 읽으면 2
         at = None
