@@ -17,6 +17,7 @@
 - 사용자 원문을 계기로 만든 코드 task(`origin: 사용자 …`)는 알림 불가.
 - 자식 목록의 셈(행·kind·[백로그]·안별)을 `셈:` 줄로 보이고, 여섯 칸과 `나눈 기준:` 줄의 "자식 N행/M종" 꼴 주장이 셈과 다르면
   `! 수치 대조` 줄, 제목이 같은 행이면 `! 같은 제목 자식 행` 줄을 낸다. 칸 내용·칸별 수·`counts:`·알림 조건은 그대로다.
+- 「정해 주실 것」 수가 「이번 실행의 값」 한 승인의 결정 수 상한(0이면 없음)을 넘으면 `! 결정 수 상한` 줄을 낸다(`counts:`는 그대로).
 
 사용:
   python screen.py {실행 폴더} {task id}
@@ -559,6 +560,10 @@ def main(argv):
     if warn:
         print()
         print("\n".join(warn))
+    cap = devflow_lib.run_value(run_dir, "한 승인의 결정 수 상한", kinds.RUN_DEFAULTS["한 승인의 결정 수 상한"])
+    if cap and counts["n_decide"] > cap:
+        print()
+        print("! 결정 수 상한: 정해 주실 것 {} > {}(「이번 실행의 값」) — 메인은 `나눠서 다시`를 추천으로 묻는다".format(counts["n_decide"], cap))
     print()
     print("counts: n_decide={n_decide} n_todo={n_todo} n_notify={n_notify} n_unverified={n_unverified} n_children={kids}".format(
         kids=len(kids), **counts))
