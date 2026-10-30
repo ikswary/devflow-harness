@@ -27,6 +27,7 @@ ENTRY = "skills/devflow-harness/SKILL.md"
 CONTRACT = "references/core/contract.md"
 FORMATS = "references/core/formats.md"
 WRITER = "references/roles/writer.md"
+WRITER_ONLY = "references/roles/writer-only.md"   # 작성자만(5.10)
 AGENT_ROLE = "references/roles/agent.md"
 JUDGE_ROLE = "references/roles/judge.md"
 CASE = "{경우}"
@@ -128,7 +129,7 @@ def _new_agent(agent, *files):
 def _new_writer(actor):
     agent, _, _ = parse_actor(actor)
     modules, practices = _WRITER_SPEC[actor]
-    files = (WRITER,) + _formats_for("writer")
+    files = (WRITER, WRITER_ONLY) + _formats_for("writer")
     for m in modules:
         files += _module(m)
     for p in practices:

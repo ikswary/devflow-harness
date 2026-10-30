@@ -19,6 +19,7 @@ model: opus
 - `${CLAUDE_PLUGIN_ROOT}/references/core/contract.md`
 - `${CLAUDE_PLUGIN_ROOT}/references/roles/agent.md`
 - `${CLAUDE_PLUGIN_ROOT}/references/roles/writer.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/roles/writer-only.md`
 - `${CLAUDE_PLUGIN_ROOT}/references/formats/task-file.md`, `${CLAUDE_PLUGIN_ROOT}/references/formats/result-file.md`, `${CLAUDE_PLUGIN_ROOT}/references/formats/return.md`
 - 맡은 kind 모듈(「역할」의 경로)과 그 모듈이 가리키는 경우 파일
 

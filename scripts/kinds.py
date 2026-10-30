@@ -217,6 +217,7 @@ RUN_KEYS = ("kind", "status", "project", "base_branch", "round", "integration_br
             "harness_version", "start_task", "previous_run", "session_id")
 RUN_DEFAULTS = {"동시에 도는 흐름": 2, "수정 세대 상한": 2, "자체 검증 재시도": 2, "판정불가 다시 돌림": 2,
                 "메인 컨텍스트 권함(K)": 300, "메인 컨텍스트 멈춤(K)": 500,
+                "한 승인의 결정 수 상한": 0, "보는 자료 줄 수": 40,
                 "fable로 띄울 역할": "없음"}   # 마지막 값은 숫자가 아니다: 역할 이름(예: design-writer)을 쉼표로
 
 # ---------------------------------------------------------------------------

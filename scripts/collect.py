@@ -10,6 +10,8 @@ r"""마무리 입력 모으기: 실행 하나의 task들에 흩어진 목록을 
   python collect.py {실행 폴더} {출력 폴더} --notified {흐름}
     {출력 폴더}\notified-{흐름}.md  그 흐름에서 알림으로 지나간 task마다 알릴 것·확인 안 된 것·이상 신호
     (흐름별 검증·재검증·수정 흐름 합치기를 띄우기 전에 메인이 돌리고, 작성자에게 경로를 준다)
+  python collect.py {실행 폴더} --measure
+    표준 출력 두 줄(결정 0 승인, 관점별 지적). 메인이 measure.md 그 실행 행의 비고 칸에 ` / `로 잇는다
   종료 코드: 0 정상(칸이 빠진 형식 경고는 목록 위에 적고 0), 2 사용법 오류,
              3 result.md나 「승인 화면」 절이 없는 `완료` task가 있음(목록 맨 위에 적힌다)
   python collect.py {실행 폴더} --folder-wait
@@ -20,6 +22,7 @@ r"""마무리 입력 모으기: 실행 하나의 task들에 흩어진 목록을 
     통과(no_change이거나 두 판정 파일 「통과 못 한 기준」 0)하고 approval_requested가 있으면 그 시각, 그 밖은 approved.
     끝이 없는 task는 빼고 센다. 종료 코드 3 = 측정 기록에 이 실행 행이 없음(줄만 내고 파일은 그대로)
 """
+import fnmatch
 import os
 import re
 import sys
@@ -205,11 +208,80 @@ def folder_wait(run_dir):
         print("폴더 대기: 코드 폴더에 쓰는 task 없음")
         return 0
     base = os.path.abspath(run_dir).rstrip("\\/")
-    measure = os.path.join(os.path.dirname(base), "measure.md")
-    if not write_note(measure, os.path.basename(base), segments):
-        print("측정 기록에 이 실행 행 없음: {} (파일 그대로) -> {}".format(os.path.basename(base), measure))
+    measure_path = os.path.join(os.path.dirname(base), "measure.md")
+    if not write_note(measure_path, os.path.basename(base), segments):
+        print("측정 기록에 이 실행 행 없음: {} (파일 그대로) -> {}".format(os.path.basename(base), measure_path))
         return 3
-    print("비고에 덧붙임 -> {}".format(measure))
+    print("비고에 덧붙임 -> {}".format(measure_path))
+    return 0
+
+
+PERSPECTIVES = ("보안", "운영 제약", "데이터 정합", "정확성", "시험", "관례", "그 밖")
+DESIGN_PERSPECTIVES = PERSPECTIVES[:3]   # 설계 판정이 잡는 관점 셋(설계 자체 검증의 관점 질문)
+PERSPECTIVE_RE = re.compile(r"관점:\s*(\S.*?)\s*$")
+
+
+def zero_decision_approvals(tasks):
+    """kind → (결정 0 승인 수, 그 가운데 한 마디 답 수). 결정 0 승인은 `완료`·`approval_mode: 승인`·`n_decide` 0·
+    `n_todo` 0인 task이고, 한 마디 답은 가장 늦은 승인 줄의 원문이 `devflow_lib.short_answer`인 것(D-9). 차례는 `kinds.KINDS`."""
+    counts = {}
+    for t in tasks.values():
+        if t.get("status") != kinds.DONE or t.get("approval_mode") != "승인":
+            continue
+        if str(t.get("n_decide", "")).strip() != "0" or str(t.get("n_todo", "")).strip() != "0":
+            continue
+        approvals = sorted((devflow_lib.record_fields(l)[0], i, l) for i, l in enumerate(devflow_lib.record_lines(t))
+                           if devflow_lib.approval_line(l))
+        quote = devflow_lib.record_quote(approvals[-1][2]) if approvals else None
+        n, short = counts.get(t.get("kind", ""), (0, 0))
+        counts[t.get("kind", "")] = (n + 1, short + (quote is not None and devflow_lib.short_answer(quote)))
+    order = list(kinds.KINDS) + sorted(k for k in counts if k not in kinds.KINDS)
+    return {k: counts[k] for k in order if k in counts}
+
+
+def _perspectives(text):
+    """`관점:` 줄의 값 목록. 7값이 아니면 `그 밖`."""
+    out = []
+    for line in text.splitlines():
+        m = PERSPECTIVE_RE.search(line)
+        if m:
+            out.append(m.group(1) if m.group(1) in PERSPECTIVES else PERSPECTIVES[-1])
+    return out
+
+
+def perspective_counts(tasks):
+    """관점 → (검증에서 나온 수, 설계 판정이 잡은 수). 검증 무리 task `result.md` 「본문」과 설계 블록 task의
+    `judge.md`·`judge.r*.md` 「통과 못 한 기준」의 `관점:` 줄을 센다. 설계 판정 쪽은 관점 셋만(D-9)."""
+    found = {p: 0 for p in PERSPECTIVES}
+    caught = {p: 0 for p in PERSPECTIVES}
+    for t in tasks.values():
+        kind = t.get("kind", "")
+        if kind in kinds.VERIFY_KINDS:
+            res = os.path.join(t["_dir"], "result.md")
+            body = devflow_lib.sections(devflow_lib.read_text(res)).get("본문", "") if os.path.isfile(res) else ""
+            for name in _perspectives(body):
+                found[name] += 1
+        if (t.get("block") or (kinds.block_of(kind) if kind in kinds.KINDS else "")) != "설계":
+            continue
+        for name in sorted(os.listdir(t["_dir"])):
+            if name != "judge.md" and not fnmatch.fnmatch(name, "judge.r*.md"):
+                continue
+            failed = devflow_lib.sections(devflow_lib.read_text(os.path.join(t["_dir"], name))).get("통과 못 한 기준", "")
+            for p in _perspectives(failed):
+                if p in DESIGN_PERSPECTIVES:
+                    caught[p] += 1
+    return {p: (found[p], caught[p]) for p in PERSPECTIVES}
+
+
+def measure(run_dir):
+    """측정 기록의 비고 칸에 옮길 두 줄(설계 B 3.8)을 표준 출력에 낸다."""
+    tasks = devflow_lib.load_tasks(run_dir)
+    zero = zero_decision_approvals(tasks)
+    print("- 결정 0 승인: " + (" · ".join("{} {}(한 마디 {})".format(k, n, s) for k, (n, s) in zero.items()) or "없음"))
+    parts = []
+    for p, (n, d) in perspective_counts(tasks).items():
+        parts.append("{} {}(설계 판정 {})".format(p, n, d) if p in DESIGN_PERSPECTIVES else "{} {}".format(p, n))
+    print("- 관점 지적: " + " · ".join(parts))
     return 0
 
 
@@ -227,6 +299,8 @@ def main(argv):
             return 3
         print("shadow 계획 고정: " + path)
         return 0
+    if len(argv) == 3 and argv[2] == "--measure":
+        return measure(argv[1])
     if len(argv) > 4 and argv[3] == "--notified":
         return notified(argv[1], argv[2], argv[4])
     if len(argv) < 3:

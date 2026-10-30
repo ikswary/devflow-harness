@@ -2,7 +2,7 @@
 
 사용:
   python task_set.py {실행 폴더} {id} [키=값 …] [--status S] [--record "지점|결정|원문"] [--reason "문장"]
-                     [--unlisted "이유"] [--archive-judge [--undecided]] [--amend-criteria {파일} --source "출처"]
+                     [--reuse-answer "이유"] [--unlisted "이유"] [--archive-judge [--undecided]] [--amend-criteria {파일} --source "출처"]
                      [--judge-start 이름,…] [--judge-clear] [--screen-snapshot] [--now 키,…]
   python task_set.py {실행 폴더} new --kind K --title "제목" --body-from {파일} [--parent T] [--depends-on T,…]
                      [--flow F] [--origin "근거"] [--from-answer T] [키=값 …]
@@ -26,6 +26,9 @@
   stage=값           합치기·마무리·배포 실행의 단계(formats.md 3절). deploy_stage=값도 stage로 받는다.
   --record "지점|결정|원문"  「승인 기록」에 `- {시각} | 지점 | 결정 | 원문: "…"`. 지점이 `알림`이고 원문이 비면
                      `원문: (알림, 답 없음)`. `점검 확인|{코드}|원문`은 그 기록 점검 걸림을 다시 찍지 않게 한다.
+  --reuse-answer "이유"  (--record와 함께만) 1.1.0 이상으로 시작한 task의 승인 원문이 한 마디 답이 아니고, 이 task의
+                     승인 요청 전에 다른 task의 승인 줄과 같으면 --record는 종료 코드 3이다. 그 답을 다시 쓰는 것이 맞을 때
+                     이것을 붙이면 승인 줄 끝에 `| 재사용 답: {이유}`, 「표 밖 전이」와 journal에 한 줄(그 답으로는 얼리지 않음).
   --reason "문장"     사람 답 없이 메인이 판단한 전이(흡수·규칙 바뀜 보류, 다른 곳에서 처리된 백로그). journal에 한 줄.
   --unlisted "이유"   전이표에 없는 짝만 실행한다. journal과 머리 파일 「표 밖 전이」에 남고, 다음 승인 화면 「알릴 것」에
                      "[표 밖 전이]"로 붙는다(점검 확인 전까지). CHANGELOG 후보. 표 안 전이의 조건 미충족(필요한 판정,
@@ -434,6 +437,43 @@ def record_line(rec):
     else:
         quoted = '"{}"'.format(text.replace('"', "'"))
     return "- {} | {} | {} | 원문: {}".format(now_str(), point, decision, quoted)
+
+
+REUSE_FROM = "1.1.0"      # 이 판본 이상으로 시작한 task에만 재사용 거부를 건다(진행 중인 옛 task는 시작 당시 계약으로)
+
+
+def reuse_check(tasks, t, rec, now):
+    """적을 승인 줄의 원문이 다른 task의 더 이른 승인 줄 원문과 같으면 (그 task id, 그 줄 시각), 아니면 None.
+    기준 시각은 이 task의 approval_requested(없으면 now). 한 마디 답(devflow_lib.short_answer)은 견주지 않는다."""
+    if not devflow_lib.version_at_least(t.get("started_version"), REUSE_FROM):
+        return None
+    line = record_line(rec)
+    text = devflow_lib.record_quote(line)
+    if not devflow_lib.approval_line(line) or not rec[2].strip() or text is None or devflow_lib.short_answer(rec[2]):
+        return None
+    key = devflow_lib.answer_key(text)
+
+    def when(value):
+        for fmt, n in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16)):
+            try:
+                return datetime.strptime(str(value or "").strip()[:n], fmt)
+            except ValueError:
+                pass
+        return None
+
+    base = when(t.get("approval_requested")) or when(now)
+    found = None
+    for oid, o in tasks.items():
+        if oid == t.get("id"):
+            continue
+        for other in devflow_lib.record_lines(o):
+            stamp = devflow_lib.record_fields(other)[0]
+            at = when(stamp)
+            if at is None or base is None or not at < base or not devflow_lib.approval_line(other):
+                continue
+            if devflow_lib.answer_key(devflow_lib.record_quote(other)) == key and (found is None or at < found[2]):
+                found = (oid, stamp, at)
+    return found[:2] if found else None
 
 
 FAIL_NO = re.compile(r"기준\s*(\d+)")
@@ -870,7 +910,7 @@ def main(argv):
         return cmd_check(run_dir, args[1] if len(args) > 1 else "")
     flags_with_value = {"--add", "--status", "--record", "--reason", "--unlisted", "--amend-criteria", "--source", "--now",
                         "--kind", "--title", "--body-from", "--parent", "--depends-on", "--flow", "--origin", "--block",
-                        "--from-answer", "--judge-start"}
+                        "--from-answer", "--judge-start", "--reuse-answer"}
     kv, opts, i = [], {}, 1
     while i < len(args):
         a = args[i]
@@ -941,6 +981,13 @@ def main(argv):
         why = check_transition(run_dir, t, old, new, dict(ctx, archived=bool(opts.get("--archive-judge"))))
         if why and not (opts.get("--unlisted") and isinstance(why, Unlisted)):
             raise Reject(why + UNLISTED_ONLY if opts.get("--unlisted") else why)
+        if "--reuse-answer" in opts and rec is None:
+            raise Reject("--reuse-answer는 --record와 함께")
+        reused = reuse_check(tasks, t, rec, now_str()) if rec else None
+        if reused and "--reuse-answer" not in opts:
+            raise Reject("같은 원문 재사용: {} {}의 승인 줄과 원문이 같다 — 이 승인 요청 뒤에 받은 답이 아니면 답을 새로 받고, "
+                         "앞 답을 다시 쓰는 것이 맞으면 --reuse-answer \"{{이유}}\"(그 답으로는 명령 지점을 얼리지 않는다)"
+                         .format(*reused))
         # 검사를 모두 끝낸 뒤에 파일을 바꾼다(거부된 호출이 정정 파일 등을 남기지 않게)
         add_sec = add_line = None
         if "--add" in opts:
@@ -1021,7 +1068,14 @@ def main(argv):
         for k in [x.strip() for x in str(opts.get("--now", "")).split(",") if x.strip()]:
             doc.set(k, stamp)
         if rec:
-            doc.append_line("승인 기록", record_line(rec))
+            if reused:
+                why_reuse = opts["--reuse-answer"]
+                doc.append_line("승인 기록", record_line(rec) + " | 재사용 답: " + why_reuse)
+                doc.append_line("표 밖 전이", "- {} | 재사용 답 | {} (같은 원문: {} {})".format(stamp, why_reuse, *reused),
+                                before=["승인 기록"])
+                journal(run_dir, "재사용 답", tid, "{} (같은 원문: {} {})".format(why_reuse, *reused))
+            else:
+                doc.append_line("승인 기록", record_line(rec))
             if rec[0] == "점검 확인" and rec[1].split()[:1] == ["R2"]:
                 # 확인한 「판정 기준」을 남긴다. 그 뒤 또 바뀌면 R2가 다시 걸린다
                 devflow_lib.write_text(os.path.join(t["_dir"], "criteria.ack.md"), (doc.section("판정 기준") or "") + "\n")

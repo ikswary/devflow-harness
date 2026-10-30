@@ -649,6 +649,30 @@ def prior_approval(t):
     return any(approval_line(line) for line in record_lines(t))
 
 
+SHORT_ANSWER_CHARS = 10   # T001 Q4: 괄호 안과 공백을 뺀 글자 수가 이 값 이하면 한 마디 답
+
+
+def short_answer(text):
+    """한 마디 답인가: 괄호 (…)·（…）를 안까지 지우고 공백을 모두 지운 길이가 SHORT_ANSWER_CHARS 이하."""
+    return len("".join(PAREN.sub("", text or "").split())) <= SHORT_ANSWER_CHARS
+
+
+def answer_key(text):
+    """원문을 견줄 때의 꼴(공백 차이를 지움)."""
+    return " ".join((text or "").split())
+
+
+def record_quote(line):
+    """승인 기록 줄의 `원문: "…"` 따옴표 안(없으면 None)."""
+    m = re.search(r'원문:\s*"([^"]*)"', line)
+    return m.group(1) if m else None
+
+
+def reused_answer(line):
+    """`--reuse-answer`로 적은 승인 기록 줄인가(칸 가운데 `재사용 답:`으로 시작하는 것이 있음)."""
+    return any(c.startswith("재사용 답:") for c in record_fields(line))
+
+
 def norm_text(text):
     return "\n".join(l.strip() for l in (text or "").splitlines() if l.strip())
 

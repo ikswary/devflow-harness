@@ -22,6 +22,7 @@
 - 사용자 원문을 계기로 만든 코드 task(`origin: 사용자 …`)는 알림 불가.
 - 자식 목록의 셈(행·kind·[백로그]·안별)을 `셈:` 줄로 보이고, 여섯 칸과 `나눈 기준:` 줄의 "자식 N행/M종" 꼴 주장이 셈과 다르면
   `! 수치 대조` 줄, 제목이 같은 행이면 `! 같은 제목 자식 행` 줄을 낸다. 칸 내용·칸별 수·`counts:`·알림 조건은 그대로다.
+- 작성자가 쓴 「정해 주실 것」 수(스크립트가 덧붙인 항목 제외)가 「이번 실행의 값」 한 승인의 결정 수 상한(0이면 없음)을 넘으면 `! 결정 수 상한` 줄을 낸다(`counts:`는 그대로).
 
 사용:
   python screen.py {실행 폴더} {task id}
@@ -536,7 +537,7 @@ def build(run_dir, tid, tasks=None):
         "move_failed": move_failed, "notify_ok": notify_ok and notify_kind, "notify_kind": notify_kind,
         "code_task": code_task, "user_answer": user_answer, "judged": judged, "notes": notes, "env_n": env_n, "commit_hint": commit_hint,
         "facts": facts, "claims": claims, "judges_ok": judges_ok, "judges_why": judges_why,
-        "resource_wait": resource_wait,
+        "resource_wait": resource_wait, "n_decide_claim": devflow_lib.item_count(claim_cells.get("정해 주실 것", "")),
     }
 
 
@@ -629,6 +630,10 @@ def main(argv):
         print("! 재개 바닥 {}K({}K 이상): 하네스 밖 도구 정의가 큼. 이 프로젝트에 필요 없는 MCP 서버를 끄면 줄어듦".format(
             floor, devflow_lib.CTX_FLOOR_NOTE // 1000))
         devflow_lib.journal_append(run_dir, "메모", tid, "바닥 알림 {}K".format(floor))
+    cap = devflow_lib.run_value(run_dir, "한 승인의 결정 수 상한", kinds.RUN_DEFAULTS["한 승인의 결정 수 상한"])
+    if cap and b["n_decide_claim"] > cap:
+        print()
+        print("! 결정 수 상한: 정해 주실 것 {} > {}(「이번 실행의 값」) — 메인은 `나눠서 다시`를 추천으로 묻는다".format(b["n_decide_claim"], cap))
     print()
     print("counts: n_decide={n_decide} n_todo={n_todo} n_notify={n_notify} n_unverified={n_unverified} n_children={kids}".format(
         kids=len(kids), **counts))
