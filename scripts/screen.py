@@ -21,7 +21,7 @@
 - 탐침: 결과에 `## 탐침 기록` 절이 없으면(계획) 알림 불가, 있으면 그 표의 판정 칸에 `거짓`·`판정불가`가 있을 때 알림 불가.
 - 자식 목록의 셈(행·kind·[백로그]·안별)을 `셈:` 줄로 보이고, 여섯 칸과 `나눈 기준:` 줄의 "자식 N행/M종" 꼴 주장이 셈과 다르면
   `! 수치 대조` 줄, 제목이 같은 행이면 `! 같은 제목 자식 행` 줄을 낸다. 칸 내용·칸별 수·`counts:`·알림 조건은 그대로다.
-- 「정해 주실 것」 수가 「이번 실행의 값」 한 승인의 결정 수 상한(0이면 없음)을 넘으면 `! 결정 수 상한` 줄을 낸다(`counts:`는 그대로).
+- 작성자가 쓴 「정해 주실 것」 수(스크립트가 덧붙인 항목 제외)가 「이번 실행의 값」 한 승인의 결정 수 상한(0이면 없음)을 넘으면 `! 결정 수 상한` 줄을 낸다(`counts:`는 그대로).
 
 사용:
   python screen.py {실행 폴더} {task id}
@@ -495,6 +495,7 @@ def build(run_dir, tid, tasks=None):
         "facts": facts, "claims": claims, "judges_ok": judges_ok, "judges_why": judges_why,
         "resource_wait": resource_wait, "infra_paths": infra_paths, "probe_block": probe_why,
         "paths_note": paths_note(run_dir, tasks, tid) if devflow_lib.uses_domain_rules(t) else "",
+        "n_decide_claim": devflow_lib.item_count(claim_cells.get("정해 주실 것", "")),
     }
 
 
@@ -599,9 +600,9 @@ def main(argv):
         print()
         print("\n".join(warn))
     cap = devflow_lib.run_value(run_dir, "한 승인의 결정 수 상한", kinds.RUN_DEFAULTS["한 승인의 결정 수 상한"])
-    if cap and counts["n_decide"] > cap:
+    if cap and b["n_decide_claim"] > cap:
         print()
-        print("! 결정 수 상한: 정해 주실 것 {} > {}(「이번 실행의 값」) — 메인은 `나눠서 다시`를 추천으로 묻는다".format(counts["n_decide"], cap))
+        print("! 결정 수 상한: 정해 주실 것 {} > {}(「이번 실행의 값」) — 메인은 `나눠서 다시`를 추천으로 묻는다".format(b["n_decide_claim"], cap))
     print()
     print("counts: n_decide={n_decide} n_todo={n_todo} n_notify={n_notify} n_unverified={n_unverified} n_children={kids}".format(
         kids=len(kids), **counts))
