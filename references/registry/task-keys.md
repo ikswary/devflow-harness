@@ -18,7 +18,9 @@
 | cause_task | kv | — |
 | fix_generation | script | — |
 | commit | kv | — |
+| no_change | kv | — |
 | running_agent | kv | — |
+| judge_started | script | — |
 | waiting_user | kv | — |
 | retry | option | — |
 | started_version | script | — |

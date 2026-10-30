@@ -13,7 +13,7 @@
 - `CODE_WRITER_KINDS`: `implementation`, `fix`, `merge`
 - `commit_kinds(1)`: `implementation`, `fix`
 - `commit_kinds(2)`: `implementation`, `fix`, `merge`
-- `SCRIPT_KEYS`: `origin`, `fix_generation`, `started_version`, `rules`, `done_via`, `criteria_amended`, `exported_commit`, `created`, `started`, `approval_requested`, `approved`
+- `SCRIPT_KEYS`: `origin`, `fix_generation`, `judge_started`, `started_version`, `rules`, `done_via`, `criteria_amended`, `exported_commit`, `created`, `started`, `approval_requested`, `approved`
 - `OPTION_KEYS`: `kind`, `status`, `retry`
 - `SELFCHECK_KEYS`: `machine_check`
 - `LIST_KEYS`: `depends_on`, `closes_ac`, `partial_ac`
