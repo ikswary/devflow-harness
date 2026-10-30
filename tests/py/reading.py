@@ -97,8 +97,9 @@ _WRITER_SPEC = {
     "design-writer:change:design": (("change", "design"), ("design-doc", "test-rules")),
     "design-writer:change:ui-design": (("change", "ui-design"), ("ui-spec", "test-rules")),
     "design-writer:question": (("question",), ("design-doc", "test-rules")),
-    "code-writer:implementation": (("implementation",), ("implementation-practice", "build-and-test", "test-rules")),
-    "code-writer:fix": (("implementation",), ("implementation-practice", "build-and-test", "test-rules")),
+    "code-writer:implementation": (("implementation",), ("implementation-practice", "build-and-test", "test-rules",
+                                                          "code-task")),
+    "code-writer:fix": (("implementation",), ("implementation-practice", "build-and-test", "test-rules", "code-task")),
     "verify-writer:flow-verify": (("verify",), ("code-review-checklist", "test-rules")),
     "verify-writer:full-verify": (("verify",), ("code-review-checklist", "test-rules")),
     "verify-writer:reverify": (("verify",), ("code-review-checklist", "test-rules")),
@@ -115,8 +116,10 @@ _READ_JUDGE_KINDS = (("question", "req-overview", "req-detail", "brief", "ui-des
                         "merge", "wrap-up", "deploy-plan", "deploy-exec"))
 # 실행 판정자가 판정하는 kind
 _RUN_JUDGE_KINDS = ("implementation", "fix", "root-cause", "merge", "wrap-up", "deploy-exec")
-# 읽기 판정자의 판정용 방법 문서: test-rules(implementation·fix·design·root-cause·검증 셋), code-review-checklist(검증 셋)
-_READ_JUDGE_PRACTICES = {k: ("test-rules",) for k in ("implementation", "fix", "design", "root-cause")}
+# 읽기 판정자의 판정용 방법 문서: test-rules(implementation·fix·design·root-cause·검증 셋), code-task(implementation·fix),
+# code-review-checklist(검증 셋)
+_READ_JUDGE_PRACTICES = {k: ("test-rules",) for k in ("design", "root-cause")}
+_READ_JUDGE_PRACTICES.update({k: ("test-rules", "code-task") for k in ("implementation", "fix")})
 _READ_JUDGE_PRACTICES.update({k: ("test-rules", "code-review-checklist")
                               for k in ("flow-verify", "full-verify", "reverify")})
 

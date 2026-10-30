@@ -6,7 +6,7 @@
 - **수정 task의 자리**: 아직 합쳐지지 않은 흐름의 코드는 그 흐름 폴더에서. 통합 브랜치에 이미 합쳐진 코드를 고치는 모든 task(전체 검증·마무리의 수정, 합쳐진 흐름에 대한 변경)는 수정 흐름(`fixes`, 통합 브랜치의 끝에서 갈라짐)에서 차례로. 흐름이 하나뿐인 실행은 그 흐름 폴더에서.
 - 같은 흐름의 다음 구현 task를 띄우기 전에 `conventions.py`를 돌린다.
 
-자체 검증(메인이 이 순서로 한다. 3 읽기 판정이 볼 것과 4·5는 `references/kinds/implementation.md` 「자체 검증」, 2 실행 판정의 절차는 `references/kinds/implementation/run-check.md`):
+자체 검증(메인이 이 순서로 한다. 3 읽기 판정이 볼 것과 4·5는 `references/practices/code-task.md` 「판정」, 2 실행 판정의 절차는 `references/kinds/implementation/run-check.md`):
 1. **기계 대조**(메인): `task_set.py … --status 자체검증`이 `machine_check.py`를 돌려 `machine_check`에 적는다. 대상 밖 파일, 의존성·설정·마이그레이션 변경, 테스트 삭제·건너뜀. 걸리면(3) 읽기 판정을 한다.
 3. 읽기 판정을 띄우는 조건:
    - 조건(구현 task): 머리 파일 `closes_ac`가 있다 / 1번 기계 대조에 걸렸다(`machine_check`가 3) / 결과의 「알릴 것」이 1개 이상이다. 수정 task는 늘 읽기 판정을 받는다.

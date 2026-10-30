@@ -838,7 +838,7 @@ def reader_line(path):
 def test_practice_reader_lines_match_kind_modules():
     readers = practice_readers()
     files = sorted(PRACTICE_DIR.glob("*.md"))
-    assert len(files) == 11 and set(readers) <= {p.stem for p in files}, (sorted(readers), [p.name for p in files])
+    assert len(files) == 12 and set(readers) <= {p.stem for p in files}, (sorted(readers), [p.name for p in files])
     for path in files:
         line = reader_line(path)
         expected = readers.get(path.stem, set())

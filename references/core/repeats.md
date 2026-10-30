@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | RP-01 | references/core/contract.md#우회하지 않는다 | references/roles/agent.md#하지 않는 것 | **에이전트는 사용자에게 묻지 않고, 다른 에이전트를 띄우지 않고, 커밋·push·병합·배포를 하지 않고(메인이 한다), 비밀 파일을 복사하지 않고, 환경을 고쳐서 문제를 우회하지 않는다.** |
 | RP-02 | references/roles/writer.md#4. 승인 화면의 재료 | references/formats/result-file.md#4. 결과 파일 `result.md` (작성자) | 칸이 비면 `- 없음`(설명을 붙이려면 `- 없음 (설명)`)이고, 항목은 맨 앞이 `- `인 줄 하나가 하나이며 하위 설명은 들여쓰고, 번호·표·문단으로 쓴 칸은 `screen.py`가 세지 못해 알림을 막는다. |
-| RP-03 | references/kinds/implementation.md#하는 일 | references/formats/result-file.md#4. 결과 파일 `result.md` (작성자) | 코드 task는 인수 기준을 닫는 테스트마다 파일:줄, 어떻게 바꾸는지, 실패해야 하는 테스트, 효과 근거, 돌릴 명령을 적는다. |
+| RP-03 | references/practices/code-task.md#하는 일 | references/formats/result-file.md#4. 결과 파일 `result.md` (작성자) | 코드 task는 인수 기준을 닫는 테스트마다 파일:줄, 어떻게 바꾸는지, 실패해야 하는 테스트, 효과 근거, 돌릴 명령을 적는다. |
 | RP-04 | references/roles/writer.md#5. 자식 목록 | references/main/new-task.md#5. 메인이 만드는 task | 명령을 돌려 판정하는 기준(빌드, 테스트, 린트, 정적 검사)은 "기준선 밖 실패 0"처럼 `recon.md` 기준선과 비교하는 문장으로 쓴다. |
 | RP-05 | references/kinds/verify/main-order.md#검증 task: 메인 순서 | references/kinds/merge/main-order.md#합치기 task: 메인 순서 | 흐름별 검증·재검증·수정 흐름 합치기를 띄우기 전에 `collect.py {실행 폴더} {task 폴더} --notified {흐름}`로 그 흐름에서 알림으로 지나간 task의 알릴 것·확인 안 된 것을 파일로 뽑는다. |
 | RP-06 | references/main/start.md#0. 시작과 재개 | references/main/maintain.md#하네스를 고칠 때 | 판정자 정의, 판정자 공통(`references/roles/judge.md`), 형식 파일 `references/formats/judge-file.md`·`judge-run-file.md`의 판정 파일 규칙을 바꾸면 두 정의의 `def-version` 표지와 `kinds.DEF_VERSION_MIN`을 함께 올린다. |
