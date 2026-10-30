@@ -58,6 +58,43 @@ def test_c_ga_two_blocks_become_summary_lines_and_file(run_dir, lib):
     assert saved["자체 검증의 확인 방법"] == judge["확인 방법 요약"]
 
 
+# --- (가-2) [전제 바뀜] 항목 전부, 이어서 처리할 항목 전부를 요약 줄 아래에(T015 V-01 안 (다)) ------------------------
+
+def premise(tid):
+    return screen.PREMISE_MARK + " 이 task의 전제가 바뀌었다(변경 task {})".format(tid)
+
+
+def test_c_ga2_premise_items_then_all_todo_items_under_summary(run_dir):
+    signals = "\n".join("- " + s for s in (premise("T050"), premise("T051"), "잠금이 남음: PID 1234",
+                                             "자원 대기: dev DB", "그 밖의 메모"))
+    run_dir.task("T001", "요약 시험", sections={"넘길 이상 신호": signals}, status="승인대기")
+    run_dir.result("T001", RESULT)
+    run_dir.judge("T001", JUDGE_OK)
+
+    lines = screen_lines(run_dir)
+
+    head = "■ 이상 신호 5건 · 메인이 처리할 것 2건 → " + MAIN_PATH
+    assert head in lines
+    i = lines.index(head)
+    assert lines[i + 1:i + 5] == ["  " + premise("T050"), "  " + premise("T051"),
+                                  "  잠금이 남음: PID 1234", "  자원 대기: dev DB"]
+    assert not [l for l in lines if "그 밖의 메모" in l]
+
+
+def test_c_ga2_premise_item_is_not_cut_and_shown_once(run_dir):
+    long_premise = premise("T050") + " " + "나" * 120 + " 잠금"   # 처리할 낱말도 든 긴 전제 변경 줄
+    run_dir.task("T001", "요약 시험", sections={"넘길 이상 신호": "- " + long_premise}, status="승인대기")
+    run_dir.result("T001", RESULT)
+    run_dir.judge("T001", JUDGE_OK)
+
+    lines = screen_lines(run_dir)
+
+    head = "■ 이상 신호 1건 · 메인이 처리할 것 1건 → " + MAIN_PATH
+    assert head in lines
+    assert lines[lines.index(head) + 1] == "  " + long_premise   # 앞 SUMMARY_CHARS자로 자르지 않는다
+    assert len([l for l in lines if screen.PREMISE_MARK in l]) == 1   # 처리할 것 무리에 다시 내지 않는다
+
+
 # --- (나) 둘 다 비면 줄도 파일도 없다 -------------------------------------------------------------------------
 
 def test_c_na_no_blocks_no_lines_no_file(run_dir):

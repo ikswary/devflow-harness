@@ -14,7 +14,8 @@
 - 마무리·합치기: 보류와 보류에 막힌 task를 「알릴 것」에 "[보류로 남김]"으로(합치기는 그 흐름의 것만).
 - 통과 못 한 코드 task: 커밋 안내 한 줄(`no_change: true`면 없음)과 이 task에 의존하는 대기 task.
 - 메인용 두 블록(머리 파일 「넘길 이상 신호」, judge.md 「확인 방법 요약」)은 한 줄로 줄이고 전문은 `tasks\\{id}\\screen-main.md`에 쓴다.
-  "메인이 처리할 것"은 `MAIN_SIGNAL_WORDS` 가운데 하나가 든 이상 신호 항목이다.
+  "메인이 처리할 것"은 `MAIN_SIGNAL_WORDS` 가운데 하나가 든 이상 신호 항목이다. 요약 줄 아래에 첫 줄이 `PREMISE_MARK`로
+  시작하는 항목 전부(자르지 않음), 이어서 메인이 처리할 항목 전부(앞 SUMMARY_CHARS자)를 한 줄씩 낸다(둘 다 드는 항목은 앞에만).
 - 재개 바닥 알림: journal.md의 마지막 `재개 바닥 {n}K` 메모가 150K 이상이고 그 뒤 `바닥 알림` 메모가 없으면
   `counts:` 줄 앞에 `! 재개 바닥` 줄을 내고 journal에 `바닥 알림 {n}K` 메모를 더한다(재개마다 한 번).
 - 재검증의 수정 행이 수정 세대 상한에 닿으면 「정해 주실 것」에 상한 항목((가) 만들기/(나) 백로그/(다) 설계 변경)을 더한다.
@@ -48,6 +49,8 @@ CLAIM_NOTE = "(메인은 결과를 고치지 않는다. 작성자에게 「승�
 # 메인이 처리할 이상 신호의 낱말(공통 계약 「실행을 흔들지 않는다」·「우회하지 않는다」). 요약 줄은 앞 SUMMARY_CHARS자까지
 MAIN_SIGNAL_WORDS = ("권한 거부", "자원 대기", "PID", "잠금")
 SUMMARY_CHARS = 100
+# 메인이 승인 대기 task에 적는 전제 변경 줄의 표지(references/kinds/change/main-order.md). 사용자가 승인 전에 볼 줄이라 자르지 않는다
+PREMISE_MARK = "[전제 바뀜]"
 FLOOR_RE = re.compile(r"^재개 바닥 (\d+)K")
 
 
@@ -382,8 +385,9 @@ def main_summary(t, judge_top):
             its = [["- " + " ".join(l.strip() for l in head if l.strip())]]   # `- ` 항목 없이 쓴 글은 한 건
         todo = [it for it in its if any(w in "\n".join(it) for w in MAIN_SIGNAL_WORDS)]
         signal_lines.append("■ 이상 신호 {}건 · 메인이 처리할 것 {}건 → {}".format(len(its), len(todo), path))
-        if todo:
-            signal_lines.append("  " + todo[0][0][2:].strip()[:SUMMARY_CHARS])
+        premise = [it for it in its if it[0][2:].strip().startswith(PREMISE_MARK)]
+        signal_lines += ["  " + it[0][2:].strip() for it in premise]
+        signal_lines += ["  " + it[0][2:].strip()[:SUMMARY_CHARS] for it in todo if it not in premise]
     if method:
         first = next((l.strip() for l in method.splitlines() if l.strip()), "")
         method_line = "■ 자체 검증의 확인 방법: " + first[:SUMMARY_CHARS]
