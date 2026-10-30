@@ -19,6 +19,7 @@ from conftest import ROOT
 
 # (행위자, 상한, 그때 값, 사유). 평소 빈 목록
 _V104_NOTE = "1.0.4 판정자 규칙(묶기 J2·TR-B3, 절 이름 TR-R3, 반환 20줄 P-09)을 정의 본문에, 확인할 수 없는 기준의 꼴(N2)을 contract.md에 둠. 2026-10-30 사용자 결정: 상한 때문에 규칙을 지우거나 옮기지 않음. 줄일 후보: run-judge 「재시도와 흔들림」 줄의 설계 이유 괄호"
+_V110_NOTE = "1.1.0 설계 정의의 자식 kind·행 규칙 경우 파일·겹침 규칙과 머리 파일의 탐침 단계·변경 대상. 설계 문서 5.10: 줄일 곳을 찾지 못해 사용자 결정(T006)으로 보류. 줄일 후보: 판정자가 함께 읽는 공통 문서(contract.md·writer.md·task-file.md)의 겹치는 문장"
 PENDING_OVER: list[tuple[str, int, int, str]] = [
     ("read-judge:question", 33056, 33485, _V104_NOTE),
     ("read-judge:req-overview", 35055, 35183, _V104_NOTE),
@@ -26,7 +27,8 @@ PENDING_OVER: list[tuple[str, int, int, str]] = [
     ("read-judge:change:req-overview", 39535, 39954, _V104_NOTE),
     ("read-judge:change:req-detail", 39833, 40223, _V104_NOTE),
     ("read-judge:change:brief", 43841, 43878, _V104_NOTE),
-    ("read-judge:change:design", 50347, 50776, _V104_NOTE),
+    ("read-judge:design", 51164, 52768, _V110_NOTE),
+    ("read-judge:change:design", 50347, 52502, _V110_NOTE),
     ("read-judge:change:ui-design", 44776, 44799, _V104_NOTE),
     ("read-judge:deploy-plan", 46348, 46777, _V104_NOTE),
     ("run-judge:implementation", 31302, 31736, _V104_NOTE),

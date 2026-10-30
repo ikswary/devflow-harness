@@ -84,7 +84,8 @@ KINDS = {
     "design": Kind(
         "설계", "design.md", ("design-writer",), "always", "never",
         "none", None, False, False, False, True, False, False, False, "S",
-        ("implementation", "flow-verify", "full-verify", "wrap-up", "deploy-plan"), ()),
+        ("implementation", "fe-implementation", "be-implementation", "probe", "flow-verify", "full-verify",
+         "wrap-up", "deploy-plan"), ()),
     "probe": Kind(
         "설계", "probe.md", ("infra-writer", "code-writer"), "always", "never",
         "by_decide", PROBE_STAGES, False, False, False, False, False, False, False, "P",
