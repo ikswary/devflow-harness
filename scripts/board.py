@@ -529,7 +529,7 @@ def print_infra_premise(tasks, run_dir):
             continue
         for line in part.splitlines():
             line = line.strip()
-            if line.startswith("- ") and not (line == "- 없음" or line.startswith("- 없음 ")):
+            if line.startswith("- ") and not devflow_lib.EMPTY_ITEM.match(line):
                 print("{}: {}".format(name, line))
     infra = ["{} ({})".format(t["id"], t.get("status", "")) for t in tasks.values() if t.get("kind") == "infra-design"]
     print("인프라 결정 task: {}".format(", ".join(infra) or "없음"))

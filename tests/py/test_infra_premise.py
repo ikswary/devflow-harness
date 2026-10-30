@@ -36,3 +36,15 @@ def test_infra_premise_names_infra_design_task_with_status(run_dir):
     proc = premise(run_dir)
     assert proc.returncode == 0, proc.output
     assert proc.stdout.splitlines()[-1] == "인프라 결정 task: T007 (대기)", proc.output
+
+
+def test_infra_premise_skips_empty_items_with_note_or_period(run_dir):
+    write(run_dir.path / "spec" / "a.md", "# 묶음 a\n\n## 인프라 전제\n- 없음(기존 D1만 씀)\n")
+    write(run_dir.path / "spec" / "b.md", "# 묶음 b\n\n## 인프라 전제\n- 없음.\n")
+    write(run_dir.path / "spec" / "d.md", "# 묶음 d\n\n## 인프라 전제\n- [Q3] 요금제 무료 한도 안에서 메일을 보낸다\n")
+    proc = run_script("board", run_dir, "--infra-premise")
+    assert proc.returncode == 0, proc.output
+    lines = proc.stdout.splitlines()
+    assert "d.md: - [Q3] 요금제 무료 한도 안에서 메일을 보낸다" in lines, proc.output
+    assert not [line for line in lines if "a.md" in line or "b.md" in line], proc.output
+    assert lines[-1] == "인프라 결정 task: 없음", proc.output
