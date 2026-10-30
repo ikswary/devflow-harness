@@ -560,8 +560,10 @@ def archive_judge(run_dir, t, doc, undecided=False):
     if undecided:
         return moved, snap   # 판정불가 보관은 재시도로 세지 않는다(retry·「재시도 범위」 그대로)
     nums, loose = failed_numbers([os.path.join(d, m) for m in moved])
-    lines = ["- 회차 {} (보관한 판정: {}): 고칠 기준: {}. 그 기준 안에서는 판정자가 적지 않은 같은 종류의 결함도 고친다. 다른 기준과 판정자의 권장은 고치지 않는다. 판정자의 대안 문장은 그대로 옮기지 않고, 그 근거 줄과 원천을 열어 확인한 뒤 쓴다(어긋나면 원천을 따르고 「알릴 것」에 적는다).".format(
-        retry + 1, ", ".join(moved), ", ".join(str(x) for x in nums) if nums else "(번호 없음 — 아래 항목)")]
+    # 판정불가 보관이 앞서면 사본 번호 n이 회차(retry + 1)와 달라지므로 사본 경로를 함께 적는다
+    copy = "tasks\\{}\\before.r{}".format(t.get("id", ""), n) if os.path.isdir(os.path.join(d, "before.r{}".format(n))) else "(사본 없음)"
+    lines = ["- 회차 {} (보관한 판정: {}, 사본: {}): 고칠 기준: {}. 그 기준 안에서는 판정자가 적지 않은 같은 종류의 결함도 고친다. 다른 기준과 판정자의 권장은 고치지 않는다. 판정자의 대안 문장은 그대로 옮기지 않고, 그 근거 줄과 원천을 열어 확인한 뒤 쓴다(어긋나면 원천을 따르고 「알릴 것」에 적는다).".format(
+        retry + 1, ", ".join(moved), copy, ", ".join(str(x) for x in nums) if nums else "(번호 없음 — 아래 항목)")]
     lines += ["  - 번호 없는 항목: " + x for x in loose]
     doc.set_section("재시도 범위", "\n".join(lines), before=AFTER_CRITERIA)
     doc.set("retry", str(retry + 1))

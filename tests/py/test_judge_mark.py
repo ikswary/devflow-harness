@@ -6,6 +6,7 @@
 - 거부 문구는 `task_set`의 상수를 가져다 쓴다. 옛 task의 거부 문구는 상수가 없어 글자로 둔다.
 """
 import re
+import shutil
 
 from conftest import run_script, write
 
@@ -135,6 +136,64 @@ def test_c8_undecided_archive_keeps_retry_and_scope(run_dir):
     assert (d / "judge.r3.md").is_file() and not (d / "judge.md").exists()
     assert front_value(run_dir, "judge_started") == ""
     assert front_value(run_dir, "status") == "진행"
+
+
+def archive_failed(run_dir):
+    return run_script("task_set", run_dir, "T001", "--status", "진행", "--archive-judge")
+
+
+def put_judge(run_dir, items):
+    run_dir.judge("T001", judge_text(items))
+
+
+UNDECIDED = "- 기준 1: 판정불가 환경: 권한 거부(pytest)"
+FAILED = "- 기준 2: 실패 — 사례가 없음"
+
+
+# ⑪ 판정불가 보관이 앞서도 「재시도 범위」 회차 줄의 사본이 실제로 뜬 사본 번호를 가리킨다.
+#    보관 순서마다 (회차, 보관한 판정, 사본 번호, retry)를 본다
+def test_c11_retry_scope_names_snapshot_after_undecided_archives(run_dir):
+    cases = [
+        ("실패만", [FAILED], (1, 1)),
+        ("판정불가 뒤 실패", [UNDECIDED, FAILED], (1, 2)),
+        ("판정불가가 두 번 이어진 뒤 실패", [UNDECIDED, UNDECIDED, FAILED], (1, 3)),
+        ("실패 뒤 판정불가 뒤 실패", [FAILED, UNDECIDED, FAILED], (2, 3)),
+        ("실패, 판정불가 둘, 실패", [FAILED, UNDECIDED, UNDECIDED, FAILED], (2, 4)),
+    ]
+    for label, steps, (turn, n) in cases:
+        run_dir.task("T001", "표지 시험", status="자체검증", **NEW)
+        d = run_dir.task_dir("T001")
+        for old in d.glob("*.r*"):   # 앞 사례의 보관을 치운다
+            if old.is_dir():
+                shutil.rmtree(old)
+            else:
+                old.unlink()
+        for items in steps:
+            put_judge(run_dir, items)
+            r = archive_undecided(run_dir) if items == UNDECIDED else archive_failed(run_dir)
+            assert r.returncode == 0, (label, r.output)
+        assert (d / "before.r{}".format(n)).is_dir(), label
+        line = section(run_dir, "재시도 범위").splitlines()[0]
+        assert line.startswith("- 회차 {} (보관한 판정: judge.r{}.md, 사본: tasks\\T001\\before.r{}):".format(turn, n, n)), (label, line)
+        assert front_value(run_dir, "retry") == str(turn), label
+
+
+# ⑫ 판정불가 보관은 「재시도 범위」·retry를 그대로 두므로, 그 뒤 실패 보관이 앞 회차 줄을 새 줄로 바꾼다
+#    (앞 사본 번호가 남지 않는다)
+def test_c12_failed_archive_after_undecided_replaces_previous_scope_line(run_dir):
+    run_dir.task("T001", "표지 시험", status="자체검증", **NEW)
+    put_judge(run_dir, FAILED)
+    assert archive_failed(run_dir).returncode == 0
+    first = section(run_dir, "재시도 범위")
+    assert "before.r1)" in first
+    put_judge(run_dir, UNDECIDED)
+    assert archive_undecided(run_dir).returncode == 0
+    assert section(run_dir, "재시도 범위") == first and front_value(run_dir, "retry") == "1"
+    put_judge(run_dir, FAILED)
+    assert archive_failed(run_dir).returncode == 0
+    second = section(run_dir, "재시도 범위")
+    assert "회차 2 (보관한 판정: judge.r3.md, 사본: tasks\\T001\\before.r3)" in second
+    assert "before.r1" not in second and front_value(run_dir, "retry") == "2"
 
 
 # ⑨ 판정불가 보관을 거부하는 경우(실패 섞임, 읽기 판정의 `대상`, 자원 대기, 판정불가 없음)와
