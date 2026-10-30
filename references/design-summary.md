@@ -8,5 +8,5 @@
 | 결정과 대안 | `references/design-summary/decisions.md` |
 | 결정과 대안 — 흐름 하나와 task 종류 | `references/design-summary/decisions-tasks.md` |
 | 계기 사건 | `references/design-summary/events.md` |
-| 계기 사건 — 실행 기록(E-01~E-32) | `references/design-summary/events-runs.md` |
+| 계기 사건 — 실행 기록(E-01~E-37) | `references/design-summary/events-runs.md` |
 | 넣지 않은 것 | `references/design-summary/not-included.md` |
