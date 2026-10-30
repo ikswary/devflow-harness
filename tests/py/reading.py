@@ -139,7 +139,7 @@ _READ_JUDGE_PRACTICES["infra-design"] = ("design-doc",)
 
 
 def _new_agent(agent, *files):
-    """에이전트 8 공통: 공통 계약, 에이전트 공통, 자기 정의 파일."""
+    """에이전트 9 공통: 공통 계약, 에이전트 공통, 자기 정의 파일."""
     return (CONTRACT, AGENT_ROLE, _agent(agent)) + files
 
 
