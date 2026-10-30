@@ -58,6 +58,14 @@ SUMMARY_CHARS = 100
 PREMISE_MARK = "[전제 바뀜]"
 STARTED_PREFIX = "(작성 시작 뒤) "   # 메인이 승인 전 시작한 task의 표지 앞에 붙이는 접두(change/main-order.md)
 FLOOR_RE = re.compile(r"^재개 바닥 (\d+)K")
+# 화면 줄과 journal 메모. 메인용 요약 두 줄(main_summary), 통과 못 한 기준의 머리와 커밋 안내, 재개 바닥 알림
+SIGNALS_HEAD = "■ 이상 신호 {}건 · 메인이 처리할 것 {}건 → {}"
+METHOD_HEAD = "■ 자체 검증의 확인 방법: {}"
+FAILED_HEAD = "■ 자체 검증에서 통과 못 한 기준"
+COMMIT_HINT = ("커밋: 변경 task로 고침·원인 분석을 고르면 지금 변경을 커밋한 위에서 고칩니다. "
+               "보류를 고르면 커밋하지 않은 변경을 패치로 치울지 함께 묻습니다.")
+FLOOR_ALERT = "! 재개 바닥 {}K({}K 이상): 하네스 밖 도구 정의가 큼. 이 프로젝트에 필요 없는 MCP 서버를 끄면 줄어듦"
+FLOOR_NOTED = "바닥 알림 {}K"   # floor_alert가 앞부분으로 이미 알렸는지 읽는다
 
 
 def children_lines(result_text):
@@ -407,7 +415,7 @@ def main_summary(t, judge_top):
         if not its and "".join(head).strip():
             its = [["- " + " ".join(l.strip() for l in head if l.strip())]]   # `- ` 항목 없이 쓴 글은 한 건
         todo = [it for it in its if any(w in "\n".join(it) for w in MAIN_SIGNAL_WORDS)]
-        signal_lines.append("■ 이상 신호 {}건 · 메인이 처리할 것 {}건 → {}".format(len(its), len(todo), path))
+        signal_lines.append(SIGNALS_HEAD.format(len(its), len(todo), path))
         def first(it):   # 항목 첫 줄. 맨 앞 접두는 건너뛴다
             f = it[0][2:].strip()
             return f[len(STARTED_PREFIX):].lstrip() if f.startswith(STARTED_PREFIX) else f
@@ -416,7 +424,7 @@ def main_summary(t, judge_top):
         signal_lines += ["  " + it[0][2:].strip()[:SUMMARY_CHARS] for it in todo if it not in premise]
     if method:
         first = next((l.strip() for l in method.splitlines() if l.strip()), "")
-        method_line = "■ 자체 검증의 확인 방법: " + first[:SUMMARY_CHARS]
+        method_line = METHOD_HEAD.format(first[:SUMMARY_CHARS])
     body = "# {} 메인용 전문\n\n## 이상 신호\n{}\n\n## 자체 검증의 확인 방법\n{}\n".format(
         t["id"], signals or "- 없음", method or "- 없음")
     return signal_lines, method_line, body
@@ -437,7 +445,7 @@ def floor_alert(run_dir):
         if note.startswith("재개 바닥"):
             m = FLOOR_RE.match(note)
             floor, alerted = (int(m.group(1)) if m else None), False
-        elif note.startswith("바닥 알림"):
+        elif note.startswith(FLOOR_NOTED.split("{}")[0].rstrip()):
             alerted = True
     if floor is None or alerted or floor * 1000 < devflow_lib.CTX_FLOOR_NOTE:
         return None
@@ -538,8 +546,7 @@ def build(run_dir, tid, tasks=None):
     commit_hint = []
     if code_task and devflow_lib.item_count(failed) and not str(t.get("commit", "")).strip() and not devflow_lib.no_change(t):
         # 통과 못 한 코드 task는 사람이 답해 완료될 때 커밋한다(SKILL.md 6절 「커밋」)
-        commit_hint.append("커밋: 변경 task로 고침·원인 분석을 고르면 지금 변경을 커밋한 위에서 고칩니다. "
-                           "보류를 고르면 커밋하지 않은 변경을 패치로 치울지 함께 묻습니다.")
+        commit_hint.append(COMMIT_HINT)
     if devflow_lib.item_count(failed) and t.get("status") == "승인대기":
         deps = board.blocked_ids(tasks, tid)
         if deps:
@@ -617,7 +624,7 @@ def main(argv):
         waiting, b["judged"], counts["n_decide"], counts["n_todo"], counts["n_notify"], counts["n_unverified"], extra, env))
     if devflow_lib.item_count(failed):
         print()
-        print("■ 자체 검증에서 통과 못 한 기준")
+        print(FAILED_HEAD)
         print(failed)
         for line in b["commit_hint"]:
             print("  " + line)
@@ -672,9 +679,8 @@ def main(argv):
     floor = floor_alert(run_dir)
     if floor is not None:
         print()
-        print("! 재개 바닥 {}K({}K 이상): 하네스 밖 도구 정의가 큼. 이 프로젝트에 필요 없는 MCP 서버를 끄면 줄어듦".format(
-            floor, devflow_lib.CTX_FLOOR_NOTE // 1000))
-        devflow_lib.journal_append(run_dir, "메모", tid, "바닥 알림 {}K".format(floor))
+        print(FLOOR_ALERT.format(floor, devflow_lib.CTX_FLOOR_NOTE // 1000))
+        devflow_lib.journal_append(run_dir, "메모", tid, FLOOR_NOTED.format(floor))
     cap = devflow_lib.run_value(run_dir, "한 승인의 결정 수 상한", kinds.RUN_DEFAULTS["한 승인의 결정 수 상한"])
     if cap and b["n_decide_claim"] > cap and devflow_lib.version_at_least(b["t"].get("started_version"), devflow_lib.RULES_V110):
         print()

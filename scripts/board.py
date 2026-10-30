@@ -24,6 +24,11 @@ import sys
 import devflow_lib
 import kinds
 
+# --ready의 못 띄움 이유와 --resume의 task 줄 메모
+COMMIT_WAIT = "커밋 대기: {}"
+RESUME_STATUS = "상태 {}"
+MARK_NOTE = "판정자 표지 {} (에이전트 목록에서 이름을 찾는다. 없고 판정 파일도 없으면 --judge-clear 뒤 다시 띄운다)"
+
 
 def blocked_ids(tasks, tid):
     """tid가 `완료`가 아니어서 시작하지 못하는 대기 task id(부모 또는 의존하는 task로 가리키는 것)."""
@@ -220,7 +225,7 @@ def start_blocks(tasks, flows, cap, t, holds=None):
             why.append("받아오기 먼저")
         waiting = [x for x in commit_waiting(tasks, flow) if x != t.get("id")]
         if waiting:
-            why.append("커밋 대기: " + ", ".join(waiting))
+            why.append(COMMIT_WAIT.format(", ".join(waiting)))
         busy_flows = {o.get("flow") for o in tasks.values()
                       if writes(o) and o.get("status") in kinds.BUSY_STATUSES and o.get("flow")}
         if flow not in busy_flows and len(busy_flows) >= cap:
@@ -479,7 +484,7 @@ def print_resume(tasks, run_dir=None, now=None):
     for tid, t in tasks.items():
         notes = []
         if t.get("status") in ("진행", "자체검증", "승인대기"):
-            notes.append("상태 " + t.get("status"))
+            notes.append(RESUME_STATUS.format(t.get("status")))
         if t.get("running_agent"):
             notes.append(agent_note(run_dir, t, now))
         if t.get("external_progress"):
@@ -492,7 +497,7 @@ def print_resume(tasks, run_dir=None, now=None):
             notes.append("답 반영 대기")
         mark = str(t.get("judge_started", "") or "").strip()
         if mark and t.get("status") in ("진행", "자체검증") and not devflow_lib.judges_present(t)[0]:
-            notes.append("판정자 표지 {} (에이전트 목록에서 이름을 찾는다. 없고 판정 파일도 없으면 --judge-clear 뒤 다시 띄운다)".format(mark))
+            notes.append(MARK_NOTE.format(mark))
         if notes:
             print("- {} {}: {}".format(tid, t.get("title", ""), " / ".join(notes)))
 

@@ -114,10 +114,26 @@ Reject = devflow_lib.Reject
 OPTION_ONLY = "{}는 전용 옵션으로만 바꾼다(status → --status, retry → --archive-judge, kind → new --kind)"
 SELFCHECK_ONLY = "{}=값은 진행→자체검증 전이(--status 자체검증)와 함께서만"
 UNLISTED_ONLY = " — --unlisted는 전이표에 없는 짝만 넘긴다"
-# 판정 기준 정정의 거부 문구(D-C7). 옛 task(1.1.0 전에 시작)의 문구는 amend_check 안에 그대로 둔다
+SCRIPT_OWNED = "{}는 스크립트가 채우는 키다(키=값으로 바꾸지 않는다)"
+# 판정 기준 정정의 거부 문구(D-C7). 옛 task(1.1.0 전에 시작)는 AMEND_STATUS_OLD
 AMEND_MARKED = ("판정자가 뜬 뒤에는 판정 기준을 고치지 않는다(judge_started: {}). "
                 "재시도(--archive-judge)·판정불가 보관(--archive-judge --undecided)·--judge-clear 뒤에 고친다")
 AMEND_STATUS_NEW = "판정 기준 정정은 판정자가 뜨기 전(대기·진행·자체검증)에만"
+AMEND_STATUS_OLD = "판정 기준 정정은 판정자가 뜨기 전(대기·진행)에만"
+# 판정 표지(--judge-start·--judge-clear)의 거부 문구와 출력·journal 메모
+JUDGE_START_NOW = "--judge-start는 진행·자체검증에서만(지금 {})"
+JUDGE_START_AFTER = "--judge-start는 진행·자체검증에서만(전이 뒤 {})"   # 같은 호출의 --status 전이 뒤 상태
+JUDGE_FILES_PRESENT = "판정 파일이 있음({}): 표지를 지우지 않는다(--archive-judge로 보관하면 함께 비운다)"
+JUDGE_CLEARED = "판정 표지 지움: {}"
+NO_MARK = "표지 없음"
+# 판정불가 보관(--archive-judge --undecided)의 거부 문구
+UNDECIDED_WAIT = "자원 대기라 판정불가로 보관하지 않음: {}"
+UNDECIDED_MIXED = "판정불가가 아닌 항목이 있음: --undecided 없이 보관한다(재시도)"
+UNDECIDED_NONE = "판정불가 항목이 없음: --undecided 없이 보관한다"
+# 「재시도 범위」 회차 줄. 회차, 보관한 판정, 사본, 고칠 기준
+RETRY_SCOPE_LINE = ("- 회차 {} (보관한 판정: {}, 사본: {}): 고칠 기준: {}. 그 기준 안에서는 판정자가 적지 않은 같은 종류의 결함도 고친다. "
+                    "다른 기준과 판정자의 권장은 고치지 않는다. 판정자의 대안 문장은 그대로 옮기지 않고, 그 근거 줄과 원천을 열어 확인한 뒤 쓴다"
+                    "(어긋나면 원천을 따르고 「알릴 것」에 적는다).")
 
 
 class Unlisted(str):
@@ -511,7 +527,7 @@ def archive_check(run_dir, t, undecided=False):
     if undecided:
         wait = devflow_lib.resource_wait(t)
         if wait:
-            raise Reject("자원 대기라 판정불가로 보관하지 않음: " + wait)
+            raise Reject(UNDECIDED_WAIT.format(wait))
     else:
         cap = devflow_lib.run_value(run_dir, "자체 검증 재시도", kinds.RUN_DEFAULTS["자체 검증 재시도"])
         if retry >= cap:
@@ -538,9 +554,9 @@ def undecided_check(d, present):
         tagged += env + len(target)
         other += devflow_lib.item_count(keep) - env   # 남긴 글에서 `환경`이 아닌 항목(실패, 지시, 읽기 판정의 대상)
     if other:
-        raise Reject("판정불가가 아닌 항목이 있음: --undecided 없이 보관한다(재시도)")
+        raise Reject(UNDECIDED_MIXED)
     if not tagged:
-        raise Reject("판정불가 항목이 없음: --undecided 없이 보관한다")
+        raise Reject(UNDECIDED_NONE)
 
 
 def archive_judge(run_dir, t, doc, undecided=False):
@@ -562,7 +578,7 @@ def archive_judge(run_dir, t, doc, undecided=False):
     nums, loose = failed_numbers([os.path.join(d, m) for m in moved])
     # 판정불가 보관이 앞서면 사본 번호 n이 회차(retry + 1)와 달라지므로 사본 경로를 함께 적는다
     copy = "tasks\\{}\\before.r{}".format(t.get("id", ""), n) if os.path.isdir(os.path.join(d, "before.r{}".format(n))) else "(사본 없음)"
-    lines = ["- 회차 {} (보관한 판정: {}, 사본: {}): 고칠 기준: {}. 그 기준 안에서는 판정자가 적지 않은 같은 종류의 결함도 고친다. 다른 기준과 판정자의 권장은 고치지 않는다. 판정자의 대안 문장은 그대로 옮기지 않고, 그 근거 줄과 원천을 열어 확인한 뒤 쓴다(어긋나면 원천을 따르고 「알릴 것」에 적는다).".format(
+    lines = [RETRY_SCOPE_LINE.format(
         retry + 1, ", ".join(moved), copy, ", ".join(str(x) for x in nums) if nums else "(번호 없음 — 아래 항목)")]
     lines += ["  - 번호 없는 항목: " + x for x in loose]
     doc.set_section("재시도 범위", "\n".join(lines), before=AFTER_CRITERIA)
@@ -677,7 +693,7 @@ def amend_check(t, path, source, tasks):
         if t.get("status") not in ("대기", "진행", "자체검증"):
             raise Reject(AMEND_STATUS_NEW)
     elif t.get("status") not in ("대기", "진행"):
-        raise Reject("판정 기준 정정은 판정자가 뜨기 전(대기·진행)에만")
+        raise Reject(AMEND_STATUS_OLD)
     src = (source or "").strip()
     if not src.startswith(("작성자 ", "판정자 ", "사용자 답 ")):
         raise Reject("출처는 `작성자 {이상 신호 위치}` / `판정자 {대안 문장 위치}` / `사용자 답 {task id} {승인 기록 시각}`")
@@ -714,8 +730,7 @@ def judge_start(t, doc, names, new_status=None):
     같은 호출의 --status가 있으면 전이 뒤 상태로 검사한다(전이 검사는 이미 통과했다)."""
     now = new_status or t.get("status")
     if now not in ("진행", "자체검증"):
-        raise Reject("--judge-start는 진행·자체검증에서만({} {})".format(
-            "전이 뒤" if now != t.get("status") else "지금", now))
+        raise Reject((JUDGE_START_AFTER if now != t.get("status") else JUDGE_START_NOW).format(now))
     parts = (doc.get("judge_started") or "").split()
     stamp, have = (parts[:2], parts[2:]) if len(parts) >= 2 else (now_str().split(), [])
     added = [x for x in dict.fromkeys(names) if x not in have]
@@ -726,12 +741,12 @@ def judge_clear(run_dir, t, doc):
     """판정 파일이 없을 때 표지를 비우고 journal에 남긴다. 표지가 이미 비었으면 False(파일 그대로)."""
     present = [n for n in ("judge.md", "judge-run.md") if os.path.isfile(os.path.join(t["_dir"], n))]
     if present:
-        raise Reject("판정 파일이 있음({}): 표지를 지우지 않는다(--archive-judge로 보관하면 함께 비운다)".format(", ".join(present)))
+        raise Reject(JUDGE_FILES_PRESENT.format(", ".join(present)))
     old = (doc.get("judge_started") or "").strip()
     if not old:
         return False
     doc.set("judge_started", "")
-    journal(run_dir, "메모", t["id"], "판정 표지 지움: " + old)
+    journal(run_dir, "메모", t["id"], JUDGE_CLEARED.format(old))
     return True
 
 
@@ -965,7 +980,7 @@ def main(argv):
         owned = sorted({k for k, _ in kv} & kinds.SCRIPT_KEYS)
         if owned:
             # 스크립트가 채우는 키를 손으로 바꾸면 기록 점검·stage 강제를 끌 수 있다
-            raise Reject("{}는 스크립트가 채우는 키다(키=값으로 바꾸지 않는다)".format(", ".join(owned)))
+            raise Reject(SCRIPT_OWNED.format(", ".join(owned)))
         optioned = sorted({k for k, _ in kv} & kinds.OPTION_KEYS)
         if optioned:
             # 상태·재시도·kind를 키=값으로 바꾸면 전이 검사·재시도 상한을 넘긴다
@@ -1022,14 +1037,14 @@ def main(argv):
             judge_start(t, doc, judge_names, new)
             print("judge_started: " + doc.get("judge_started"))
         if opts.get("--judge-clear") and not judge_clear(run_dir, t, doc):
-            print("표지 없음")
+            print(NO_MARK)
         if plan_move and os.path.isfile(os.path.join(t["_dir"], "judge.md")):
             os.replace(os.path.join(t["_dir"], "judge.md"), os.path.join(t["_dir"], "judge.plan.md"))
             print("judge.md → judge.plan.md(계획 판정을 옮김. 기록 단계의 읽기 판정이 judge.md를 새로 쓴다)")
             old_mark = (doc.get("judge_started") or "").strip()
             if old_mark:
                 doc.set("judge_started", "")   # 계획 판정의 판정자는 끝났다. 기록 단계의 판정자를 띄울 때 다시 찍는다
-                journal(run_dir, "메모", t["id"], "판정 표지 지움: " + old_mark)
+                journal(run_dir, "메모", t["id"], JUDGE_CLEARED.format(old_mark))
         if "--amend-criteria" in opts:
             amend_criteria(run_dir, t, doc, opts["--amend-criteria"], opts.get("--source"), tasks)
         if opts.get("--screen-snapshot"):

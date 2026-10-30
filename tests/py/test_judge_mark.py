@@ -3,7 +3,7 @@
 - 옵션 처리가 `task_set.main`에 있어 모두 명령행(`task_set.py`)으로 돌리고 종료 코드·출력 줄·파일을 본다
   (기존 `test_transitions.py`의 명령행 사례와 같은 계층).
 - 사례 이름의 `c{n}`이 머리 파일 판정 기준 1의 사례 번호다.
-- 거부 문구는 `task_set`의 상수를 가져다 쓴다. 옛 task의 거부 문구는 상수가 없어 글자로 둔다.
+- 거부 문구·출력·journal 메모는 `task_set`의 상수를 가져다 쓴다.
 """
 import re
 import shutil
@@ -14,7 +14,6 @@ import task_set
 
 NEW = {"started_version": "1.1.0", "rules": "2"}     # 표지 판본부터 시작한 task
 MARK = "2026-10-30 10:00:00 rjudge-T001"
-OLD_STATUS = "판정 기준 정정은 판정자가 뜨기 전(대기·진행)에만"
 STAMP = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 
 
@@ -64,7 +63,7 @@ def test_c2_judge_start_rejected_while_waiting(run_dir):
     run_dir.task("T001", "표지 시험", status="대기", **NEW)
     r = run_script("task_set", run_dir, "T001", "--judge-start", "rjudge-T001")
     assert r.returncode == 3, r.output
-    assert "--judge-start는 진행·자체검증에서만(지금 대기)" in r.stdout
+    assert task_set.JUDGE_START_NOW.format("대기") in r.stdout
     assert front_value(run_dir, "judge_started") is None
 
 
@@ -73,7 +72,7 @@ def test_c3_judge_started_key_value_rejected(run_dir):
     run_dir.task("T001", "표지 시험", status="자체검증", **NEW)
     r = run_script("task_set", run_dir, "T001", "judge_started=x")
     assert r.returncode == 3, r.output
-    assert "judge_started는 스크립트가 채우는 키다" in r.stdout
+    assert task_set.SCRIPT_OWNED.format("judge_started") in r.stdout
     assert front_value(run_dir, "judge_started") is None
 
 
@@ -116,7 +115,7 @@ def test_c7_old_task_selfcheck_amend_keeps_old_rule(run_dir, tmp_path):
     run_dir.task("T001", "표지 시험", status="자체검증")
     r = amend(run_dir, tmp_path)
     assert r.returncode == 3, r.output
-    assert OLD_STATUS in r.stdout
+    assert task_set.AMEND_STATUS_OLD in r.stdout
     assert task_set.AMEND_STATUS_NEW not in r.stdout
     assert not (run_dir.task_dir("T001") / "criteria.amend1.md").exists()
 
@@ -174,7 +173,8 @@ def test_c11_retry_scope_names_snapshot_after_undecided_archives(run_dir):
             assert r.returncode == 0, (label, r.output)
         assert (d / "before.r{}".format(n)).is_dir(), label
         line = section(run_dir, "재시도 범위").splitlines()[0]
-        assert line.startswith("- 회차 {} (보관한 판정: judge.r{}.md, 사본: tasks\\T001\\before.r{}):".format(turn, n, n)), (label, line)
+        assert line == task_set.RETRY_SCOPE_LINE.format(
+            turn, "judge.r{}.md".format(n), "tasks\\T001\\before.r{}".format(n), "2"), (label, line)
         assert front_value(run_dir, "retry") == str(turn), label
 
 
@@ -192,7 +192,7 @@ def test_c12_failed_archive_after_undecided_replaces_previous_scope_line(run_dir
     put_judge(run_dir, FAILED)
     assert archive_failed(run_dir).returncode == 0
     second = section(run_dir, "재시도 범위")
-    assert "회차 2 (보관한 판정: judge.r3.md, 사본: tasks\\T001\\before.r3)" in second
+    assert task_set.RETRY_SCOPE_LINE.format(2, "judge.r3.md", "tasks\\T001\\before.r3", "2") in second
     assert "before.r1" not in second and front_value(run_dir, "retry") == "2"
 
 
@@ -201,10 +201,10 @@ def test_c12_failed_archive_after_undecided_replaces_previous_scope_line(run_dir
 def test_c9_undecided_archive_rejects_mixed_read_target_and_resource_wait(run_dir):
     env = "- 기준 1: 판정불가 환경: 권한 거부(pytest)"
     cases = [
-        ({}, env + "\n- 기준 2: 실패 — 사례가 없음", "판정불가가 아닌 항목이 있음: --undecided 없이 보관한다(재시도)"),
-        ({}, "- 기준 1: 판정불가 대상: 기준선 없음 pytest", "판정불가가 아닌 항목이 있음: --undecided 없이 보관한다(재시도)"),
-        ({"external_progress": "자원 대기: pytest (owner xjudge-T002)"}, env, "자원 대기라 판정불가로 보관하지 않음: 자원 대기: pytest"),
-        ({}, "- 없음", "판정불가 항목이 없음: --undecided 없이 보관한다"),
+        ({}, env + "\n- 기준 2: 실패 — 사례가 없음", task_set.UNDECIDED_MIXED),
+        ({}, "- 기준 1: 판정불가 대상: 기준선 없음 pytest", task_set.UNDECIDED_MIXED),
+        ({"external_progress": "자원 대기: pytest (owner xjudge-T002)"}, env, task_set.UNDECIDED_WAIT.format("자원 대기: pytest")),
+        ({}, "- 없음", task_set.UNDECIDED_NONE),
     ]
     for meta, items, why in cases:
         run_dir.task("T001", "표지 시험", status="자체검증", judge_started=MARK, **dict(NEW, **meta))
@@ -233,7 +233,7 @@ def test_c10_judge_clear(run_dir):
     run_dir.judge("T001", judge_text("- 없음"))
     r = run_script("task_set", run_dir, "T001", "--judge-clear")
     assert r.returncode == 3, r.output
-    assert "판정 파일이 있음(judge.md)" in r.stdout
+    assert task_set.JUDGE_FILES_PRESENT.format("judge.md") in r.stdout
     assert front_value(run_dir, "judge_started") == MARK
 
     (run_dir.task_dir("T001") / "judge.md").unlink()
@@ -241,12 +241,12 @@ def test_c10_judge_clear(run_dir):
     assert r.returncode == 0, r.output
     assert front_value(run_dir, "judge_started") == ""
     last = journal.read_text(encoding="utf-8").splitlines()[-1]
-    assert "| 메모 | T001 | 판정 표지 지움: " + MARK in last
+    assert last.endswith("| 메모 | T001 | " + task_set.JUDGE_CLEARED.format(MARK))
 
     before = journal.read_text(encoding="utf-8")
     r = run_script("task_set", run_dir, "T001", "--judge-clear")
     assert r.returncode == 0, r.output
-    assert "표지 없음" in r.stdout
+    assert task_set.NO_MARK in r.stdout.splitlines()
     assert journal.read_text(encoding="utf-8") == before
 
 
@@ -276,7 +276,7 @@ def test_c15_status_after_transition_not_judgeable_rejected_atomically(run_dir):
     run_dir.task("T001", "표지 시험", status="진행", **NEW)
     r = run_script("task_set", run_dir, "T001", "--status", "보류", "--reason", "x", "--judge-start", "rjudge-T001")
     assert r.returncode == 3, r.output
-    assert "--judge-start는 진행·자체검증에서만(전이 뒤 보류)" in r.output
+    assert task_set.JUDGE_START_AFTER.format("보류") in r.output
     assert front_value(run_dir, "status") == "진행"
     assert front_value(run_dir, "judge_started") is None
 

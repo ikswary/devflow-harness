@@ -250,6 +250,11 @@ CTX_STOP = kinds.RUN_DEFAULTS["메인 컨텍스트 멈춤(K)"] * 1000
 CTX_FLOOR_NOTE = 150_000   # 재개 바닥이 이 값 이상이면 screen.py가 한 번 알린다
 CTX_TAIL_BYTES = 4 * 1024 * 1024
 CTX_STALE_SEC = 600
+# 메인 컨텍스트 줄(main_context_line)과 재개 뒤 기록이 없을 때의 이유(main_context)
+CTX_LINE = "메인 컨텍스트: {}K (세션 {})"
+CTX_STOP_TAIL = " — {}K 넘음: 새 task를 띄우지 않고 정리 지점을 기다려 `/clear` 뒤 `devflow-harness 이어서`를 권함(SKILL.md 8절)"
+CTX_ADVISE_TAIL = " — {}K 넘음: 다음 정리 지점에서 `/clear` 뒤 `devflow-harness 이어서`를 권함(SKILL.md 8절)"
+CTX_NO_RECORD_AFTER_RESUME = "재개 뒤 기록 없음({})"
 
 
 def ctx_thresholds(run_dir=None):
@@ -335,7 +340,7 @@ def main_context(run_dir=None):
             ctx, ts = n, d.get("timestamp")
     if ctx is None:
         if skipped:
-            return None, "재개 뒤 기록 없음({})".format(sid[:8])
+            return None, CTX_NO_RECORD_AFTER_RESUME.format(sid[:8])
         return None, "usage 없음({})".format(sid[:8])
     when = _iso_epoch(ts)
     age = time.time() - when if when is not None else 0
@@ -352,11 +357,11 @@ def main_context_line(run_dir=None):
     ctx, info = main_context(run_dir)
     if ctx is None:
         return "메인 컨텍스트: 측정 불가({})".format(info)
-    line = "메인 컨텍스트: {}K (세션 {})".format(ctx // 1000, info)
+    line = CTX_LINE.format(ctx // 1000, info)
     if ctx >= stop:
-        line += " — {}K 넘음: 새 task를 띄우지 않고 정리 지점을 기다려 `/clear` 뒤 `devflow-harness 이어서`를 권함(SKILL.md 8절)".format(stop // 1000)
+        line += CTX_STOP_TAIL.format(stop // 1000)
     elif ctx >= advise:
-        line += " — {}K 넘음: 다음 정리 지점에서 `/clear` 뒤 `devflow-harness 이어서`를 권함(SKILL.md 8절)".format(advise // 1000)
+        line += CTX_ADVISE_TAIL.format(advise // 1000)
     return line
 
 

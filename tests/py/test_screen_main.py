@@ -21,6 +21,8 @@ LONG = "판정자를 띄우는 명령이 권한 거부됨: " + "가" * 120   # �
 SIGNALS = "- 화면 정본의 필드 이름이 요구사항과 한 곳 다름\n- " + LONG + "\n  하위 설명 줄"
 METHOD = "원본 전부 대조 1 · 기록만 확인 1\n실행함 2"
 MARK = "2026-10-30 10:00:00 rjudge-T001"
+SIGNALS_PREFIX = screen.SIGNALS_HEAD.split("{}")[0]
+METHOD_PREFIX = screen.METHOD_HEAD.split("{}")[0]
 
 
 def screen_lines(run_dir, tid="T001"):
@@ -42,14 +44,14 @@ def test_c_ga_two_blocks_become_summary_lines_and_file(run_dir, lib):
 
     lines = screen_lines(run_dir)
 
-    head = "■ 이상 신호 2건 · 메인이 처리할 것 1건 → " + MAIN_PATH
+    head = screen.SIGNALS_HEAD.format(2, 1, MAIN_PATH)
     assert head in lines
     under = lines[lines.index(head) + 1]
     assert under == "  " + LONG[:screen.SUMMARY_CHARS] and len(under.strip()) <= 100
-    assert [l for l in lines if l.startswith("■ 자체 검증의 확인 방법")] == ["■ 자체 검증의 확인 방법: 원본 전부 대조 1 · 기록만 확인 1"]
+    assert [l for l in lines if l.startswith(METHOD_PREFIX)] == [screen.METHOD_HEAD.format("원본 전부 대조 1 · 기록만 확인 1")]
     # 원래 블록의 항목 줄과 머리 줄은 화면에 없다
     assert "- 화면 정본의 필드 이름이 요구사항과 한 곳 다름" not in lines and "- " + LONG not in lines
-    assert "■ 이상 신호" not in lines and "실행함 2" not in lines
+    assert SIGNALS_PREFIX.strip() not in lines and "실행함 2" not in lines
 
     saved = lib.sections((run_dir.task_dir("T001") / "screen-main.md").read_text(encoding="utf-8"), level=2)
     t = run_dir.tasks()["T001"]
@@ -73,7 +75,7 @@ def test_c_ga2_premise_items_then_all_todo_items_under_summary(run_dir):
 
     lines = screen_lines(run_dir)
 
-    head = "■ 이상 신호 5건 · 메인이 처리할 것 2건 → " + MAIN_PATH
+    head = screen.SIGNALS_HEAD.format(5, 2, MAIN_PATH)
     assert head in lines
     i = lines.index(head)
     assert lines[i + 1:i + 5] == ["  " + premise("T050"), "  " + premise("T051"),
@@ -89,7 +91,7 @@ def test_c_ga2_premise_item_is_not_cut_and_shown_once(run_dir):
 
     lines = screen_lines(run_dir)
 
-    head = "■ 이상 신호 1건 · 메인이 처리할 것 1건 → " + MAIN_PATH
+    head = screen.SIGNALS_HEAD.format(1, 1, MAIN_PATH)
     assert head in lines
     assert lines[lines.index(head) + 1] == "  " + long_premise   # 앞 SUMMARY_CHARS자로 자르지 않는다
     assert len([l for l in lines if screen.PREMISE_MARK in l]) == 1   # 처리할 것 무리에 다시 내지 않는다
@@ -103,7 +105,7 @@ def test_c_ga2_started_prefix_is_skipped_to_see_premise_mark(run_dir):
 
     lines = screen_lines(run_dir)
 
-    head = "■ 이상 신호 2건 · 메인이 처리할 것 0건 → " + MAIN_PATH
+    head = screen.SIGNALS_HEAD.format(2, 0, MAIN_PATH)
     assert head in lines
     assert lines[lines.index(head) + 1] == "  " + premise("T050")   # 접두를 뺀 글
     assert not [l for l in lines if "그 밖의 메모" in l or screen.STARTED_PREFIX in l]
@@ -119,7 +121,7 @@ def test_c_na_no_blocks_no_lines_no_file(run_dir):
     lines = screen_lines(run_dir)
 
     assert counts_index(lines) > 0   # 화면은 끝까지 나왔다(양성 대조)
-    assert not [l for l in lines if l.startswith(("■ 이상 신호", "■ 자체 검증의 확인 방법"))]
+    assert not [l for l in lines if l.startswith((SIGNALS_PREFIX, METHOD_PREFIX))]
     assert not (run_dir.task_dir("T001") / "screen-main.md").exists()
 
 
@@ -136,8 +138,8 @@ def test_c_da_no_change_task_has_no_commit_hint(run_dir):
 
     lines = screen_lines(run_dir)
 
-    assert "■ 자체 검증에서 통과 못 한 기준" in lines   # 통과 못 한 task다(양성 대조)
-    assert not [l for l in lines if l.strip().startswith("커밋:")]
+    assert screen.FAILED_HEAD in lines   # 통과 못 한 task다(양성 대조)
+    assert "  " + screen.COMMIT_HINT not in lines
 
 
 def test_c_da_control_without_no_change_has_commit_hint(run_dir):
@@ -145,8 +147,8 @@ def test_c_da_control_without_no_change_has_commit_hint(run_dir):
 
     lines = screen_lines(run_dir)
 
-    assert "■ 자체 검증에서 통과 못 한 기준" in lines
-    assert [l for l in lines if l.strip().startswith("커밋:")]
+    assert screen.FAILED_HEAD in lines
+    assert "  " + screen.COMMIT_HINT in lines
 
 
 # --- (라) 커밋 대기에서 no_change task를 뺀다 ------------------------------------------------------------------
@@ -163,7 +165,7 @@ def test_c_ra_no_change_task_is_not_commit_waiting(run_dir):
     r = run_script("board", run_dir, "--ready")
     assert r.returncode == 0, r.output
     assert "T002" in r.stdout   # 다음 쓰는 task가 출력에 있다(양성 대조)
-    assert "커밋 대기" not in r.stdout
+    assert board.COMMIT_WAIT.split("{}")[0] not in r.stdout
 
 
 def test_c_ra_control_without_no_change_is_commit_waiting(run_dir):
@@ -172,7 +174,7 @@ def test_c_ra_control_without_no_change_is_commit_waiting(run_dir):
     assert board.commit_waiting(run_dir.tasks(), "s1") == ["T001"]
     r = run_script("board", run_dir, "--ready")
     assert r.returncode == 0, r.output
-    assert "커밋 대기: T001" in r.stdout
+    assert board.COMMIT_WAIT.format("T001") in r.stdout
 
 
 # --- (마) 재개 바닥 알림은 재개마다 한 번 -----------------------------------------------------------------------
@@ -186,7 +188,7 @@ def floor_run(run_dir, floor):
 
 
 def floor_lines(lines):
-    return [l for l in lines if l.startswith("! 재개 바닥")]
+    return [l for l in lines if l.startswith(screen.FLOOR_ALERT.split("{}")[0])]
 
 
 def test_c_ma_floor_alert_once_per_resume(run_dir):
@@ -194,9 +196,9 @@ def test_c_ma_floor_alert_once_per_resume(run_dir):
 
     lines = screen_lines(run_dir)
     alert = floor_lines(lines)
-    assert len(alert) == 1 and alert[0].startswith("! 재개 바닥 160K(150K 이상)")
+    assert alert == [screen.FLOOR_ALERT.format(160, 150)]
     assert lines.index(alert[0]) < counts_index(lines)
-    assert journal.read_text(encoding="utf-8").splitlines()[-1].endswith("| 메모 | T001 | 바닥 알림 160K")
+    assert journal.read_text(encoding="utf-8").splitlines()[-1].endswith("| 메모 | T001 | " + screen.FLOOR_NOTED.format(160))
 
     second = screen_lines(run_dir)
     assert counts_index(second) > 0 and floor_lines(second) == []
@@ -204,7 +206,7 @@ def test_c_ma_floor_alert_once_per_resume(run_dir):
     with open(journal, "a", encoding="utf-8", newline="\n") as f:
         f.write("- 2026-10-30 11:00:00 | 재개 | - | 시작\n- 2026-10-30 11:05:00 | 메모 | - | 재개 바닥 170K\n")
     again = floor_lines(screen_lines(run_dir))
-    assert len(again) == 1 and again[0].startswith("! 재개 바닥 170K(150K 이상)")
+    assert again == [screen.FLOOR_ALERT.format(170, 150)]
 
 
 def test_c_ma_floor_below_threshold_no_alert(run_dir):
@@ -234,7 +236,7 @@ def test_c_ba_mark_without_judge_files_is_shown_on_resume(run_dir):
 
     line = resume_line(run_dir)
 
-    assert "판정자 표지 {} (에이전트 목록에서 이름을 찾는다. 없고 판정 파일도 없으면 --judge-clear 뒤 다시 띄운다)".format(MARK) in line
+    assert board.MARK_NOTE.format(MARK) in line
 
 
 def test_c_ba_mark_with_required_judge_files_is_not_shown(run_dir):
@@ -243,5 +245,5 @@ def test_c_ba_mark_with_required_judge_files_is_not_shown(run_dir):
 
     line = resume_line(run_dir)
 
-    assert "상태 자체검증" in line   # 같은 task 줄이 나왔다(양성 대조)
-    assert "판정자 표지" not in line
+    assert board.RESUME_STATUS.format("자체검증") in line   # 같은 task 줄이 나왔다(양성 대조)
+    assert board.MARK_NOTE.split("{}")[0] not in line

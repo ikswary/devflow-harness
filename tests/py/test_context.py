@@ -71,7 +71,7 @@ def test_only_records_before_resume(lib, run_dir, monkeypatch, tmp_path):
     journal(run_dir, "- {} | 승인 | T001 | 승인".format(local(now - 400)), "- {} | 재개 | - | 시작".format(local(now - 300)))
     ctx, info = lib.main_context(str(run_dir))
     assert ctx is None
-    assert info == "재개 뒤 기록 없음({})".format(SID[:8])
+    assert info == lib.CTX_NO_RECORD_AFTER_RESUME.format(SID[:8])
 
 
 def test_records_after_resume(lib, run_dir, monkeypatch, tmp_path):
@@ -94,15 +94,13 @@ def test_line_uses_run_threshold(lib, run_dir, monkeypatch, tmp_path):
     session(monkeypatch, tmp_path, [(time.time() - 60, 260000)])
     add_run_values(run_dir, "| 메인 컨텍스트 권함(K) | 250K |")
     line = lib.main_context_line(str(run_dir))
-    assert line.startswith("메인 컨텍스트: 260K (세션 {})".format(SID[:8]))
-    assert "250K 넘음" in line
+    assert line == lib.CTX_LINE.format(260, SID[:8]) + lib.CTX_ADVISE_TAIL.format(250)
 
 
 def test_line_without_rows_has_no_over(lib, run_dir, monkeypatch, tmp_path):
     session(monkeypatch, tmp_path, [(time.time() - 60, 260000)])
     line = lib.main_context_line(str(run_dir))
-    assert line == "메인 컨텍스트: 260K (세션 {})".format(SID[:8])
-    assert "넘음" not in line
+    assert line == lib.CTX_LINE.format(260, SID[:8])   # 문턱 행이 없으면 기본 권함(300K) 아래라 꼬리가 없다
 
 
 # (라) no_change와 R4
