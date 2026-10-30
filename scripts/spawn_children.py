@@ -8,7 +8,12 @@
 
 - 자식 목록의 형식은 formats.md 「자식 목록」을 따른다.
 - `depends_on`에 형제의 제목을 적으면 그 형제의 새 id로 바꾼다. 이미 있는 task id(T숫자)는 그대로 둔다.
-- 같은 흐름의 코드 task(implementation, fix)는 앞 형제에 자동으로 의존한다(한 흐름의 코드 task는 차례로 진행).
+- 같은 흐름의 코드 task(등록표 `auto_depends_in_flow`, 문서 행 제외)는 앞 형제에 자동으로 의존한다(한 흐름의 코드 task는 차례로 진행).
+- 영역 규칙(부모가 1.1.0부터 시작한 task일 때, devflow_lib.uses_domain_rules): 상세 정본에서 화면 id가 붙은 인수 기준을
+  `closes_ac`에 둔 구현 행은 fe-implementation이어야 한다(아니면 종료 코드 3. 같은 번호가 두 정본에 있으면 `! 인수 기준 중복:`
+  줄만 낸다). 수정 행은 인수 기준의 화면 id·`[계약]`·화면 경로에서, 화면 구현이 아닌 구현 행은 화면 경로에서 영역 판정 문장을
+  「판정 기준」 끝(`(스크립트 주입: 영역 판정)` 줄 아래)에 넣는다. 「건드릴 파일」이 모두 프로젝트 설정의 문서 경로인 행(문서 행)은
+  자동 의존을 받지 않고 그 흐름의 앞 코드 행으로도 세지 않는다.
 - --depends-on: 모든 자식에 공통으로 더할 의존(예: 답을 반영하는 변경 task).
 - 자식마다 `criteria.orig.md`(만들 때의 판정 기준)를 함께 쓴다.
 - 코드 task 행(백로그·고르지 않은 안 밖)의 흐름에 flow.md가 없으면 함께 만든다(`status: 폴더 없음`, `role`, `round`).
@@ -227,6 +232,57 @@ def replace_task(t, child, depends, dry):
         devflow_lib.write_text(os.path.join(t["_dir"], "criteria.orig.md"), (child["body"].get("판정 기준", "") or "(없음)") + "\n")
 
 
+def screen_ac_problem(child, entries):
+    """화면 id가 붙은 인수 기준을 `closes_ac`에 둔 구현 행이 fe-implementation이 아니면 그 문제 줄(설계 A-15)."""
+    kind = child["meta"].get("kind")
+    if kind not in kinds.IMPLEMENT_KINDS or kind == "fe-implementation":
+        return ""
+    hits = ["{}({})".format(n, ", ".join(sorted(entries[n][1])))
+            for n in split_list(child["meta"].get("closes_ac", "")) if n in entries and entries[n][1]]
+    if not hits:
+        return ""
+    return "화면 id가 붙은 인수 기준 {}을 닫는 행은 fe-implementation: {}".format(", ".join(hits), child["title"])
+
+
+def domain_criteria(child, entries, screen_paths):
+    """행에 넣을 영역 판정 문장(설계 A-9, A-16). 수정 행은 인수 기준의 화면 id·`[계약]`·화면 경로, 화면 구현이 아닌
+    구현 행은 화면 경로만 본다."""
+    kind = child["meta"].get("kind")
+    out = []
+    if kind == "fix":
+        meta, body = child["meta"], child["body"]
+        numbers = split_list(meta.get("closes_ac", "")) + split_list(meta.get("partial_ac", "")) \
+            + devflow_lib.AC_ANY_RE.findall(body.get("범위", ""))
+        for n in dict.fromkeys(numbers):
+            if n in entries and entries[n][1]:
+                bundle, screens = entries[n]
+                out.append(devflow_lib.DOMAIN_CRITERIA["화면"].format(**{
+                    "묶음": bundle, "화면 id": ", ".join(sorted(screens)), "번호": n}))
+        if "[계약]" in body.get("시그니처와 결정 번호", ""):
+            out.append(devflow_lib.DOMAIN_CRITERIA["계약"])
+    elif kind not in kinds.IMPLEMENT_KINDS or kind == "fe-implementation":
+        return out
+    touched = [p for p in devflow_lib.touch_paths(child["body"].get("건드릴 파일", ""))
+               if devflow_lib.path_in_list(p, screen_paths)]
+    if touched:
+        out.append(devflow_lib.DOMAIN_CRITERIA["화면 경로"].format(경로=", ".join(touched)))
+    return out
+
+
+def add_criteria(text, lines):
+    """「판정 기준」 끝에 주입 머리 줄과 문장을 붙인다. 앞 기준이 번호 목록이면 번호를 이어 매기고, 아니면 `- `로 단다."""
+    numbers = [int(m.group(1)) for m in re.finditer(r"^(\d+)\.\s", text or "", re.M)]
+    start = max(numbers, default=0)
+    items = ["{}. {}".format(start + i, s) if start else "- " + s for i, s in enumerate(lines, 1)]
+    return "\n".join([(text or "").rstrip(), devflow_lib.DOMAIN_CRITERIA_HEAD] + items).lstrip("\n")
+
+
+def is_docs_row(child, docs_paths):
+    """「건드릴 파일」의 경로가 모두 문서 경로 목록에 드는 행(문서 목록이 비었거나 경로가 없으면 아님, 설계 A-13)."""
+    paths = devflow_lib.touch_paths(child["body"].get("건드릴 파일", ""))
+    return bool(docs_paths and paths and all(devflow_lib.path_in_list(p, docs_paths) for p in paths))
+
+
 def find_loop(graph, starts):
     """starts에서 의존을 따라가 고리가 있으면 그 경로(없으면 [])."""
     state = {}
@@ -330,6 +386,17 @@ def main(argv):
             if bad:
                 problems.append("change 행의 「건드릴 파일」에 정본 밖 경로({}): {} — 코드를 고치는 변경은 kind: fix".format(
                     ", ".join(bad), c["title"]))
+    # 영역 규칙은 부모가 1.1.0부터 시작한 task일 때만(진행 중인 옛 task는 시작 때의 규칙으로 끝낸다)
+    domain = devflow_lib.uses_domain_rules(parent)
+    entries, paths = {}, devflow_lib.project_paths(run_dir) if domain else {}
+    if domain:
+        entries, warnings = devflow_lib.ac_spec_entries(run_dir)
+        for w in warnings:
+            print(w)
+        for c in rows:
+            hit = screen_ac_problem(c, entries)
+            if hit:
+                problems.append(hit)
     if problems:
         print("자식 목록의 형식 문제 {}건. 머리 파일을 만들지 않았다.".format(len(problems)))
         for p in problems:
@@ -354,6 +421,7 @@ def main(argv):
     skipped_titles = {c["title"] for c in skipped}
     last_code_in_flow = {}
     plan = []
+    notes = {}   # 출력 줄 끝에 붙일 영역 규칙 표시
     for c in rows:
         tid = ids[c["title"]]
         depends = []
@@ -372,9 +440,18 @@ def main(argv):
                 problems.append("의존하는 task를 찾지 못함 '{}': {}".format(dep, c["title"]))
         kind = c["meta"].get("kind")
         flow = c["meta"].get("flow", "")
+        added = domain_criteria(c, entries, paths["화면"]) if domain else []
+        if added:
+            # 머리 파일과 criteria.orig.md가 같은 글을 받는다(판정자는 머리 파일 기준으로만 실패를 낸다)
+            c["body"]["판정 기준"] = add_criteria(c["body"].get("판정 기준", ""), added)
+            notes[tid] = " 영역 판정 {}줄".format(len(added))
+        # 문서 행은 같은 흐름 앞 코드 행을 기다리지 않고, 뒤 코드 행의 "앞 코드 행"으로도 세지 않는다
+        docs = domain and kind in kinds.AUTO_DEPEND_KINDS and is_docs_row(c, paths["문서"])
+        if docs:
+            notes[tid] = notes.get(tid, "") + " 문서 행(자동 의존 없음)"
         # 백로그 행과 옛 [안 …] 행은 바로 돌지 않으므로 코드 차례에 끼우지 않는다
         # (끼우면 그 뒤의 진짜 task가 영영 시작하지 못한다. 2026-10-06 마른 시험에서 재현). 고른 안의 행은 일반 행이다
-        if kind in kinds.AUTO_DEPEND_KINDS and flow and not idle(c):
+        if kind in kinds.AUTO_DEPEND_KINDS and flow and not idle(c) and not docs:
             prev = last_code_in_flow.get(flow)
             if prev is None and c["title"] in pairs:
                 # 바꾸는 행이 이 목록에서 그 흐름의 첫 코드 행이면 원래의 자동 의존(같은 흐름 앞 코드 task)을 둔다
@@ -423,6 +500,7 @@ def main(argv):
             head += " 상태=" + status
         if gen:
             head += " 수정 세대={}".format(gen)
+        head += notes.get(tid, "")
         if c["title"] in pairs:
             old = pairs[c["title"]]
             change = "" if list(old.get("depends_on", [])) == depends else " (의존 {} → {})".format(

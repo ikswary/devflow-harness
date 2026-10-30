@@ -390,6 +390,15 @@ def uses_isolation_contract(t):
     return version_at_least(t.get("started_version", ""), ISOLATION_CONTRACT_VERSION)
 
 
+DOMAIN_RULES_VERSION = "1.1.0"
+
+
+def uses_domain_rules(t):
+    """1.1.0부터 시작한 task에만 영역 규칙(화면 id 대조, 영역 판정 기준 주입, 문서 행, 경로 알림)을 적용한다.
+    spawn_children.py는 부모 task의 값으로, 그 밖은 그 task의 값으로 본다."""
+    return version_at_least(t.get("started_version", ""), DOMAIN_RULES_VERSION)
+
+
 def resource_wait(t):
     progress = str(t.get("external_progress", "") or "").strip()
     return progress if progress.startswith("자원 대기:") else ""
@@ -1033,6 +1042,95 @@ def is_code_change(t):
         return False
     run_dir = os.path.dirname(os.path.dirname(t["_dir"])) if t.get("_dir") else None   # tasks\T…의 두 단계 위
     return bool(outside_canon(touch_paths(t["_sections"].get("건드릴 파일", "")), run_dir))
+
+
+# ---------------------------------------------------------------------------
+# 영역 규칙(프로젝트 경로 목록, 인수 기준의 화면 id, 영역 판정 기준)
+
+PROJECT_SETTINGS = "devflow-harness.project.md"
+PATH_LISTS = (("화면", "화면 경로"), ("인프라", "인프라 경로"), ("문서", "문서 경로"))
+
+
+def project_paths(run_dir):
+    """프로젝트 설정(실행 폴더의 부모 폴더의 devflow-harness.project.md) 「경로 목록」 절.
+    {"실행": 감지한 실행, "화면": [패턴], "인프라": [..], "문서": [..]}. 파일·절·줄이 없거나 `없음`이면 빈 값."""
+    out = {"실행": ""}
+    out.update({key: [] for key, _ in PATH_LISTS})
+    path = os.path.join(os.path.dirname(os.path.abspath(run_dir)), PROJECT_SETTINGS)
+    if not os.path.isfile(path):
+        return out
+    labels = {label: key for key, label in PATH_LISTS}
+    for line in sections(read_text(path)).get("경로 목록", "").splitlines():
+        if not line.startswith("- ") or ":" not in line:
+            continue
+        label, raw = (s.strip() for s in line[2:].split(":", 1))
+        raw = raw.replace("`", "")
+        if label == "감지한 실행":
+            out["실행"] = raw
+        elif label in labels and not EMPTY_ITEM.match("- " + raw):
+            out[labels[label]] = [p.strip() for p in raw.split(",") if p.strip()]
+    return out
+
+
+def path_in_list(path, patterns):
+    """경로가 패턴 목록의 하나에 드는가. 패턴은 저장소 기준 `/` 경로로 `**`(여러 단계)·`*`(한 단계 안)만 쓰고 전체가 맞아야 한다.
+    경로의 와일드카드는 글자 그대로 대조한다(`db/migrations/*.sql`은 `db/migrations/**`에 든다)."""
+    p = re.sub(r"^(?:\./)+", "", str(path).replace("\\", "/"))
+    for pat in patterns:
+        pat = re.sub(r"^(?:\./)+", "", str(pat).replace("\\", "/"))
+        regex = "".join(".*" if tok == "**" else "[^/]*" if tok == "*" else re.escape(tok)
+                        for tok in re.split(r"(\*\*|\*)", pat) if tok)
+        if re.fullmatch(regex, p):
+            return True
+    return False
+
+
+SPEC_SKIP = ("overview.md", "brief.md")
+AC_HEAD_RE = re.compile(r"^\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+)?[*_`\[]*(AC-\d+(?:-\d+)*)(?![\d-])")
+AC_ANY_RE = re.compile(r"AC-\d+(?:-\d+)*(?![\d-])")
+SCREEN_TAG_RE = re.compile(r"\[화면:\s*([^\]]*)\]")
+
+
+def ac_spec_entries(run_dir):
+    """상세 정본 spec\\*.md(overview.md·brief.md 제외)에서 인수 기준 번호가 처음 나오는 줄머리(제목·목록 줄)의 `[화면: …]`.
+    ({번호: (묶음, 화면 id 집합)}, [중복 경고 줄]). 같은 번호가 두 파일에 있으면 그 번호는 빼고 경고만 낸다."""
+    spec = os.path.join(run_dir, "spec")
+    found = {}
+    if os.path.isdir(spec):
+        for name in sorted(os.listdir(spec)):
+            if not name.endswith(".md") or name in SPEC_SKIP:
+                continue
+            seen = set()
+            for line in read_text(os.path.join(spec, name)).splitlines():
+                m = AC_HEAD_RE.match(line)
+                if not m or m.group(1) in seen:
+                    continue
+                seen.add(m.group(1))
+                screens = {s.strip() for tag in SCREEN_TAG_RE.findall(line) for s in tag.split(",") if s.strip()}
+                found.setdefault(m.group(1), []).append((name[:-3], screens))
+    entries, warnings = {}, []
+    for number, rows in found.items():
+        if len(rows) > 1:
+            warnings.append("! 인수 기준 중복: {} ({})".format(number, ", ".join(b + ".md" for b, _ in rows)))
+        else:
+            entries[number] = rows[0]
+    return entries, warnings
+
+
+def ac_screen_map(run_dir):
+    """({인수 기준 번호: 화면 id 집합}, [중복 경고 줄]). 화면 id가 없는 번호는 빈 집합이다."""
+    entries, warnings = ac_spec_entries(run_dir)
+    return {number: screens for number, (_, screens) in entries.items()}, warnings
+
+
+# 영역 판정 기준 문장(spawn_children.py가 행의 「판정 기준」 끝에 넣는다, 설계 A-16). 중괄호는 행마다 채운다
+DOMAIN_CRITERIA = {
+    "화면": "(영역 판정) 화면 정본 ui\\{묶음}.md(없으면 설계 「화면」 절)의 화면 {화면 id} 요소 id가 코드에 시험 표식"
+          "(웹 data-testid, 안드로이드 testTag)으로 있고, 인수 기준 {번호}의 화면 시험이 그 표식으로 단언한다.",
+    "계약": "(영역 판정) 설계 「공용 형식」의 [계약] 항목과 코드의 경로·필드·오류 코드가 같고, 계약 시험이 그 항목을 단언한다.",
+    "화면 경로": "(영역 판정) 화면 경로({경로})를 건드린 변경이 화면 동작을 바꾸는지 판정자가 확인했고, 바꾸면 결과 「알릴 것」에 있다.",
+}
+DOMAIN_CRITERIA_HEAD = "(스크립트 주입: 영역 판정)"
 
 
 def user_origin(t):
