@@ -51,6 +51,7 @@ MAIN_SIGNAL_WORDS = ("권한 거부", "자원 대기", "PID", "잠금")
 SUMMARY_CHARS = 100
 # 메인이 승인 대기 task에 적는 전제 변경 줄의 표지(references/kinds/change/main-order.md). 사용자가 승인 전에 볼 줄이라 자르지 않는다
 PREMISE_MARK = "[전제 바뀜]"
+STARTED_PREFIX = "(작성 시작 뒤) "   # 메인이 승인 전 시작한 task의 표지 앞에 붙이는 접두(change/main-order.md)
 FLOOR_RE = re.compile(r"^재개 바닥 (\d+)K")
 
 
@@ -385,8 +386,11 @@ def main_summary(t, judge_top):
             its = [["- " + " ".join(l.strip() for l in head if l.strip())]]   # `- ` 항목 없이 쓴 글은 한 건
         todo = [it for it in its if any(w in "\n".join(it) for w in MAIN_SIGNAL_WORDS)]
         signal_lines.append("■ 이상 신호 {}건 · 메인이 처리할 것 {}건 → {}".format(len(its), len(todo), path))
-        premise = [it for it in its if it[0][2:].strip().startswith(PREMISE_MARK)]
-        signal_lines += ["  " + it[0][2:].strip() for it in premise]
+        def first(it):   # 항목 첫 줄. 맨 앞 접두는 건너뛴다
+            f = it[0][2:].strip()
+            return f[len(STARTED_PREFIX):].lstrip() if f.startswith(STARTED_PREFIX) else f
+        premise = [it for it in its if first(it).startswith(PREMISE_MARK)]
+        signal_lines += ["  " + first(it) for it in premise]
         signal_lines += ["  " + it[0][2:].strip()[:SUMMARY_CHARS] for it in todo if it not in premise]
     if method:
         first = next((l.strip() for l in method.splitlines() if l.strip()), "")

@@ -95,6 +95,20 @@ def test_c_ga2_premise_item_is_not_cut_and_shown_once(run_dir):
     assert len([l for l in lines if screen.PREMISE_MARK in l]) == 1   # 처리할 것 무리에 다시 내지 않는다
 
 
+def test_c_ga2_started_prefix_is_skipped_to_see_premise_mark(run_dir):
+    signals = "- " + screen.STARTED_PREFIX + premise("T050") + "\n- 그 밖의 메모"
+    run_dir.task("T001", "요약 시험", sections={"넘길 이상 신호": signals}, status="승인대기")
+    run_dir.result("T001", RESULT)
+    run_dir.judge("T001", JUDGE_OK)
+
+    lines = screen_lines(run_dir)
+
+    head = "■ 이상 신호 2건 · 메인이 처리할 것 0건 → " + MAIN_PATH
+    assert head in lines
+    assert lines[lines.index(head) + 1] == "  " + premise("T050")   # 접두를 뺀 글
+    assert not [l for l in lines if "그 밖의 메모" in l or screen.STARTED_PREFIX in l]
+
+
 # --- (나) 둘 다 비면 줄도 파일도 없다 -------------------------------------------------------------------------
 
 def test_c_na_no_blocks_no_lines_no_file(run_dir):
