@@ -607,7 +607,7 @@ def main(argv):
         print_record_findings(tasks)
         print()
         print(devflow_lib.version_line(target))
-        print(devflow_lib.main_context_line())
+        print(devflow_lib.main_context_line(target))
     elif flag == "--ascii":
         print(render_ascii(target, tasks))
     elif flag == "--cycles":

@@ -584,5 +584,5 @@ def main(argv):
 if __name__ == "__main__":
     rc = main(sys.argv)
     print()
-    print(devflow_lib.main_context_line())
+    print(devflow_lib.main_context_line(sys.argv[1] if len(sys.argv) > 1 else None))
     sys.exit(rc)
