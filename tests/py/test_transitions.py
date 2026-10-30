@@ -997,6 +997,26 @@ def test_probe_notify_done_follows_record_table(run_dir):
     assert check(run_dir, load(run_dir, "T002"), "자체검증", "완료", record=REC_NOTIFY) is None
 
 
+# R-COR1: 판정 칸은 첫 낱말로 읽는다(굵게·괄호 설명이 붙어도 `참`이 아니면 막고), 가정 행이 없는 표도 막는다
+@pytest.mark.parametrize("verdicts,why", [
+    (["참", "판정불가(로그 없음)"], "탐침 가정 거짓·판정불가 1"),
+    (["**참**", "**거짓**"], "탐침 가정 거짓·판정불가 1"),
+    ([], "탐침 기록 표에 가정 행 없음"),
+])
+def test_probe_notify_reads_first_word_of_verdict_cell(run_dir, verdicts, why):
+    run_dir.task("T001", "탐침", sections={"승인 기록": APPROVED}, status="자체검증", stage="끝", **PROBE)
+    run_dir.judge("T001", now_judge())
+    probe_result(run_dir, cmd=None, verdicts=verdicts)
+    freeze_ok(run_dir, "T001")
+    assert check(run_dir, load(run_dir), "자체검증", "완료", record=REC_NOTIFY) == PROBE_NOTIFY_FAIL + " " + why
+
+    run_dir.task("T002", "탐침", sections={"승인 기록": APPROVED}, status="자체검증", stage="끝", **PROBE)
+    run_dir.judge("T002", now_judge("T002"))
+    probe_result(run_dir, "T002", cmd=None, verdicts=["참", "**참**(로그 확인)"])   # 양성 대조
+    freeze_ok(run_dir, "T002")
+    assert check(run_dir, load(run_dir, "T002"), "자체검증", "완료", record=REC_NOTIFY) is None
+
+
 def test_probe_plan_without_record_table_does_not_notify(run_dir):
     run_dir.task("T001", "탐침", status="자체검증", stage="끝", **PROBE)
     run_dir.judge("T001", now_judge())

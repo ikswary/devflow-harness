@@ -382,7 +382,13 @@ def probe_block(top):
     rows = [[c.strip() for c in line.strip().strip("|").split("|")]
             for line in top["탐침 기록"].splitlines() if line.strip().startswith("|")]
     col = rows[0].index("판정") if rows and "판정" in rows[0] else 1
-    bad = sum(1 for r in rows[1:] if len(r) > col and r[col] in ("거짓", "판정불가"))
+    rows = [r for r in rows[1:] if not all(re.fullmatch(r":?-+:?", c) for c in r)]   # 머리 아래 구분선 줄은 가정 행이 아니다
+    if not rows:
+        return "탐침 기록 표에 가정 행 없음"
+    def verdict(r):   # 판정 칸의 첫 낱말(굵게 `*`·백틱·괄호 앞까지). `판정불가(로그 없음)`도 `판정불가`로 읽는다
+        m = re.match(r"[\s*`]*([^\s*`(（]*)", r[col] if len(r) > col else "")
+        return m.group(1)
+    bad = sum(1 for r in rows if verdict(r) != "참")
     return "탐침 가정 거짓·판정불가 {}".format(bad) if bad else ""
 
 
