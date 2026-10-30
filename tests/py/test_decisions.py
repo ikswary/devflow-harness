@@ -40,10 +40,27 @@ def test_na_decision_cell_cut_at_first_sentence():
 def test_da_malformed_lines_counted_in_last_line():
     text = "\n".join(["# 결정", "", KEEP_1, "- 2026-10-30 11:00:00 | 칸이 하나뿐"]) + "\n"
     lines, kept, superseded, malformed = decisions.brief_lines(text)
-    assert lines[-1] == "형식 밖 2줄"
+    assert lines[-1] == "형식 밖 2줄: # 결정, 2026-10-30 11:00:00"
     assert (kept, superseded, malformed) == (1, 0, 2)
     # 대조: 형식 밖 줄이 없으면 끝 줄도 없다
     assert decisions.brief_lines(KEEP_1 + "\n\n")[0][-1] == "- 2026-10-30 02:40:51 | 설계를 A·B·C로 나눔"
+
+
+def test_da_line_without_original_cell_is_malformed_and_shows_time():
+    text = "- 2026-10-30 14:35:18 | T015 | V-01은 안 (다)\n" + KEEP_1 + "\n"
+    lines, kept, superseded, malformed = decisions.brief_lines(text)
+    assert lines[0] == HEAD.format(1, 0)
+    assert (kept, superseded, malformed) == (1, 0, 1)
+    assert not [l for l in lines if l.endswith("T015")]
+    assert lines[-1] == "형식 밖 1줄: 2026-10-30 14:35:18"
+    # 대조: 형식대로인 줄만 있으면 끝 줄이 없고 결정 줄만 나온다
+    assert decisions.brief_lines(KEEP_1 + "\n")[0] == [HEAD.format(1, 0), "- 2026-10-30 02:40:51 | 설계를 A·B·C로 나눔"]
+
+
+def test_da_non_bullet_or_pipeless_line_shows_first_30_chars():
+    long = "x" * 40
+    lines = decisions.brief_lines(long + "\n- 파이프 없는 결정 줄\n")[0]
+    assert lines[-1] == "형식 밖 2줄: {}, - 파이프 없는 결정 줄".format("x" * 30)
 
 
 # --- (라) 명령행: --brief가 없거나 다르면 사용법과 종료 2 -------------------------------------------------------
