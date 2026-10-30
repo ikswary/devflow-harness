@@ -73,3 +73,17 @@ def test_cap_line_does_not_change_counts(workspace):   # (가)와 (다)의 count
 
     assert len(cap_lines(over)) == 1 and cap_lines(none) == []
     assert counts_line(over) == counts_line(none)
+
+
+def test_script_added_item_is_not_counted_against_cap(run_dir):   # 스크립트가 덧붙인 [판정 기준 정정] 항목은 상한에 세지 않는다(V-01)
+    run_dir.task("T001", "설계", status="승인대기",
+                 sections={"판정 기준 정정": "- 2026-10-15 09:30:00 | 정정 1 | 출처: 작성자 T001 | 원문: criteria.orig.md | 고친 문장: criteria.amend1.md"})
+    run_dir.result("T001", result("- 저장 방식을 정한다\n- 캐시 수명을 정한다"))
+    run_dir.judge("T001", JUDGE_OK)
+    set_cap(run_dir, 2)
+    proc = run_script("screen", run_dir, "T001")
+    assert proc.returncode == 0, proc.output
+    lines = proc.stdout.splitlines()
+
+    assert cap_lines(lines) == []
+    assert counts_line(lines).startswith("counts: n_decide=3 ")   # 덧붙은 항목까지 셋으로 세어졌다(양성 대조)
