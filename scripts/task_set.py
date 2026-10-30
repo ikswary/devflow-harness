@@ -118,8 +118,6 @@ UNLISTED_ONLY = " — --unlisted는 전이표에 없는 짝만 넘긴다"
 AMEND_MARKED = ("판정자가 뜬 뒤에는 판정 기준을 고치지 않는다(judge_started: {}). "
                 "재시도(--archive-judge)·판정불가 보관(--archive-judge --undecided)·--judge-clear 뒤에 고친다")
 AMEND_STATUS_NEW = "판정 기준 정정은 판정자가 뜨기 전(대기·진행·자체검증)에만"
-# 이 판본부터 시작한 task는 표지가 없으면 자체검증에서도 정정을 받는다
-JUDGE_MARK_VERSION = "1.1.0"
 
 
 class Unlisted(str):
@@ -449,13 +447,10 @@ def record_line(rec):
     return "- {} | {} | {} | 원문: {}".format(now_str(), point, decision, quoted)
 
 
-REUSE_FROM = "1.1.0"      # 이 판본 이상으로 시작한 task에만 재사용 거부를 건다(진행 중인 옛 task는 시작 당시 계약으로)
-
-
 def reuse_check(tasks, t, rec, now):
     """적을 승인 줄의 원문이 다른 task의 더 이른 승인 줄 원문과 같으면 (그 task id, 그 줄 시각), 아니면 None.
     기준 시각은 이 task의 approval_requested(없으면 now). 한 마디 답(devflow_lib.short_answer)은 견주지 않는다."""
-    if not devflow_lib.version_at_least(t.get("started_version"), REUSE_FROM):
+    if not devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V110):
         return None
     line = record_line(rec)
     text = devflow_lib.record_quote(line)
@@ -676,7 +671,7 @@ def amend_check(t, path, source, tasks):
     mark = str(t.get("judge_started", "") or "").strip()
     if mark:
         raise Reject(AMEND_MARKED.format(mark))   # 표지는 1.1.0 메인만 찍으므로 옛 task에 걸어도 바뀌지 않는다
-    if devflow_lib.version_at_least(t.get("started_version"), JUDGE_MARK_VERSION):
+    if devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V110):
         if t.get("status") not in ("대기", "진행", "자체검증"):
             raise Reject(AMEND_STATUS_NEW)
     elif t.get("status") not in ("대기", "진행"):

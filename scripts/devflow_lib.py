@@ -431,6 +431,7 @@ JUDGE_PREFIX = {kinds.JUDGE_FILES[r]: kinds.AGENTS[n].short + "-" for r, n in ((
 JUDGE_LINE = re.compile(r"^판정자:\s*(\S+)\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(:\d{2})?(?:\.\d+)?\s*(?:Z|[+-]\d{2}:?\d{2}|[A-Z]{2,4})?\s*$")
 MTIME_SLACK = 60    # 초. 판정자가 첫 줄 시각을 쓴 뒤 파일을 닫기까지의 틈(판정 102초 뒤의 메인 Edit를 잡는 폭)
 ISOLATION_CONTRACT_VERSION = "1.0.1"
+RULES_V110 = "1.1.0"   # 1.1.0 판본 문턱. 이 판본부터 시작한 task에만 영역·판정 표지·재사용 거부 규칙을 적용한다
 
 
 def is_new_task(t):
@@ -451,13 +452,10 @@ def uses_isolation_contract(t):
     return version_at_least(t.get("started_version", ""), ISOLATION_CONTRACT_VERSION)
 
 
-DOMAIN_RULES_VERSION = "1.1.0"
-
-
 def uses_domain_rules(t):
     """1.1.0부터 시작한 task에만 영역 규칙(화면 id 대조, 영역 판정 기준 주입, 문서 행, 경로 알림)을 적용한다.
     spawn_children.py는 부모 task의 값으로, 그 밖은 그 task의 값으로 본다."""
-    return version_at_least(t.get("started_version", ""), DOMAIN_RULES_VERSION)
+    return version_at_least(t.get("started_version", ""), RULES_V110)
 
 
 def resource_wait(t):
