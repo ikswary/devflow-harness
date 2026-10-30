@@ -7,9 +7,10 @@
 코드를 고치는 변경은 `kind: fix`로 만든다(구현 정의를 따른다. 메인의 `task_set.py new --from-answer`가 「건드릴 파일」로 정한다). 이 정의는 정본(요구사항, 기획, 화면, 설계)을 고치는 변경에만 쓴다. 화면 정본을 고치면 설계서(`ui\{묶음}.md`)와 와이어프레임(`ui\wireframes\{묶음}.html`)을 함께 `revised\ui\…`에 둔다(와이어프레임은 그대로 복사되고 변경 이력 절이 붙지 않는다).
 
 ## 먼저 읽을 것
-고칠 산출물의 블록에 해당하는 대상 kind 모듈(요구사항 개요면 `req-overview`, 상세면 `req-detail`, 기획이면 `brief`, 화면 정본이면 `ui-design`, 설계면 `design`의 모듈. 등록표 `references/registry/edges.md`의 `CHANGE_TARGETS`), 머리 파일의 `origin`이 가리키는 계기(사용자 원문 또는 지적).
-- 설계 작성자(`design-writer`): 대상이 설계면 `${CLAUDE_PLUGIN_ROOT}/references/practices/design-doc.md`, 화면 정본이면 `${CLAUDE_PLUGIN_ROOT}/references/practices/ui-spec.md`, 그리고 `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`
+고칠 산출물의 블록에 해당하는 대상 kind 모듈(요구사항 개요면 `req-overview`, 상세면 `req-detail`, 기획이면 `brief`, 화면 정본이면 `ui-design`, 설계면 `design`, 인프라 결정이면 `infra-design`. 등록표 `references/registry/edges.md`의 `CHANGE_TARGETS`), 머리 파일의 `origin`이 가리키는 계기(사용자 원문 또는 지적).
+- 설계 작성자(`design-writer`): 설계면 `${CLAUDE_PLUGIN_ROOT}/references/practices/design-doc.md`, 화면 정본이면 `${CLAUDE_PLUGIN_ROOT}/references/practices/ui-spec.md`, 그리고 `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`
 - 요구사항 작성자(`requirements-writer`): 없음
+- 인프라 작성자(`infra-writer`): `${CLAUDE_PLUGIN_ROOT}/references/practices/design-doc.md`
 
 ## 하는 일
 1. 계기를 읽는다. 사용자의 말을 넓히거나 좁혀 해석했으면 그 해석을 「답하신 것의 반영」에 적는다.

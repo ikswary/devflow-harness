@@ -100,6 +100,14 @@ _WRITER_SPEC = {
     "code-writer:implementation": (("implementation",), ("implementation-practice", "build-and-test", "test-rules",
                                                           "code-task")),
     "code-writer:fix": (("implementation",), ("implementation-practice", "build-and-test", "test-rules", "code-task")),
+    "code-writer:fe-implementation": (("fe-implementation",), ("code-task", "implementation-practice", "build-and-test",
+                                                                "test-rules", "ui-spec")),
+    "code-writer:be-implementation": (("be-implementation",), ("code-task", "implementation-practice", "build-and-test",
+                                                                "test-rules")),
+    "code-writer:probe": (("probe",), ("build-and-test",)),
+    "infra-writer:infra-design": (("infra-design",), ("design-doc", "release-practice")),
+    "infra-writer:probe": (("probe",), ("release-practice",)),
+    "infra-writer:change:infra-design": (("change", "infra-design"), ("design-doc",)),
     "verify-writer:flow-verify": (("verify",), ("code-review-checklist", "test-rules")),
     "verify-writer:full-verify": (("verify",), ("code-review-checklist", "test-rules")),
     "verify-writer:reverify": (("verify",), ("code-review-checklist", "test-rules")),
@@ -108,20 +116,26 @@ _WRITER_SPEC = {
     "release-writer:deploy-exec": (("deploy-exec",), ("release-practice",)),
 }
 # 변경 task의 대상 정의
-_CHANGE_TARGETS = ("req-overview", "req-detail", "brief", "design", "ui-design")
+_CHANGE_TARGETS = ("req-overview", "req-detail", "brief", "design", "ui-design", "infra-design")
 # 읽기 판정자가 판정하는 kind(변경은 대상마다)
 _READ_JUDGE_KINDS = (("question", "req-overview", "req-detail", "brief", "ui-design")
                      + tuple("change:" + t for t in _CHANGE_TARGETS)
                      + ("design", "implementation", "fix", "root-cause", "flow-verify", "full-verify", "reverify",
-                        "merge", "wrap-up", "deploy-plan", "deploy-exec"))
+                        "merge", "wrap-up", "deploy-plan", "deploy-exec",
+                        "infra-design", "probe", "fe-implementation", "be-implementation"))
 # 실행 판정자가 판정하는 kind
-_RUN_JUDGE_KINDS = ("implementation", "fix", "root-cause", "merge", "wrap-up", "deploy-exec")
-# 읽기 판정자의 판정용 방법 문서: test-rules(implementation·fix·design·root-cause·검증 셋), code-task(implementation·fix),
-# code-review-checklist(검증 셋)
+_RUN_JUDGE_KINDS = ("implementation", "fix", "root-cause", "merge", "wrap-up", "deploy-exec",
+                    "fe-implementation", "be-implementation")
+# 실행 판정 파일을 다른 모듈에서 읽는 kind(`agents/run-judge.md` 「읽을 것」)
+_RUN_CHECK_OF = {"fe-implementation": "implementation", "be-implementation": "implementation"}
+# 읽기 판정자의 판정용 방법 문서: test-rules(implementation·fix·fe·be·design·root-cause·검증 셋),
+# code-task(implementation·fix·fe·be), code-review-checklist(검증 셋), design-doc(infra-design)
 _READ_JUDGE_PRACTICES = {k: ("test-rules",) for k in ("design", "root-cause")}
-_READ_JUDGE_PRACTICES.update({k: ("test-rules", "code-task") for k in ("implementation", "fix")})
+_READ_JUDGE_PRACTICES.update({k: ("test-rules", "code-task")
+                              for k in ("implementation", "fix", "fe-implementation", "be-implementation")})
 _READ_JUDGE_PRACTICES.update({k: ("test-rules", "code-review-checklist")
                               for k in ("flow-verify", "full-verify", "reverify")})
+_READ_JUDGE_PRACTICES["infra-design"] = ("design-doc",)
 
 
 def _new_agent(agent, *files):
@@ -151,7 +165,7 @@ def _new_read_judge(kind, target=None):
 
 def _new_run_judge(kind):
     files = (JUDGE_ROLE,) + _formats_for("run-judge") + _practice_files("build-and-test") + (
-        "references/kinds/{}/run-check.md".format(definition_of(kind)),)
+        "references/kinds/{}/run-check.md".format(_RUN_CHECK_OF.get(kind, definition_of(kind))),)
     return frozenset(_new_agent("run-judge", *files))
 
 
@@ -186,12 +200,18 @@ BASELINE = {
     "design-writer:question": 42802,
     "code-writer:implementation": 54645,
     "code-writer:fix": 54645,
+    "code-writer:fe-implementation": 58737,
+    "code-writer:be-implementation": 50187,
+    "code-writer:probe": 38176,
     "verify-writer:flow-verify": 47398,
     "verify-writer:full-verify": 47398,
     "verify-writer:reverify": 47398,
     "release-writer:wrap-up": 41637,
     "release-writer:deploy-plan": 50122,
     "release-writer:deploy-exec": 47793,
+    "infra-writer:infra-design": 39050,
+    "infra-writer:probe": 35814,
+    "infra-writer:change:infra-design": 40575,
     "read-judge:question": 33056,
     "read-judge:req-overview": 35055,
     "read-judge:req-detail": 35353,
@@ -213,12 +233,19 @@ BASELINE = {
     "read-judge:wrap-up": 37212,
     "read-judge:deploy-plan": 46348,
     "read-judge:deploy-exec": 43368,
+    "read-judge:infra-design": 35506,
+    "read-judge:change:infra-design": 39105,
+    "read-judge:probe": 32270,
+    "read-judge:fe-implementation": 43797,
+    "read-judge:be-implementation": 43107,
     "run-judge:implementation": 31302,
     "run-judge:fix": 31302,
     "run-judge:root-cause": 30136,
     "run-judge:merge": 30136,
     "run-judge:wrap-up": 30822,
     "run-judge:deploy-exec": 31840,
+    "run-judge:fe-implementation": 31616,
+    "run-judge:be-implementation": 31616,
 }
 
 # ---------------------------------------------------------------------------

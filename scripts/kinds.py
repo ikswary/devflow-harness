@@ -107,7 +107,7 @@ KINDS = {
         "by_decide", None, True, True, True, False, True, True, False, "F",
         (), ("fix_generation",) + _CODE_HOOKS),
     "change": Kind(
-        "", "change.md", ("requirements-writer", "design-writer"), "always", "never",
+        "", "change.md", ("requirements-writer", "design-writer", "infra-writer"), "always", "never",
         "by_decide", None, False, False, False, True, False, False, False, "X",
         (), ("canon_check", "replace", "from_answer")),
     "flow-verify": Kind(
@@ -298,7 +298,7 @@ LIST_KEYS = frozenset(k for k, _, is_list in TASK_KEYS if is_list)
 BODY_KEYS = tuple(s for s, by in TASK_SECTIONS if "row" in by)
 OWN_SECTIONS = frozenset(s for s, by in TASK_SECTIONS if "own" in by)
 
-CHANGE_TARGETS = ("req-overview", "req-detail", "brief", "ui-design", "design")
+CHANGE_TARGETS = ("req-overview", "req-detail", "brief", "ui-design", "design", "infra-design")
 CHANGE_INHERITS = ("하는 일", "승인 화면", "자체 검증")
 EDGES = frozenset({(p, c) for p, k in KINDS.items() for c in k.children} | {("change", t) for t in CHANGE_TARGETS})
 

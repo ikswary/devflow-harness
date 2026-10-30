@@ -18,25 +18,17 @@ import reading
 from conftest import ROOT
 
 # (행위자, 상한, 그때 값, 사유). 평소 빈 목록
-_V104_NOTE = "1.0.4 판정자 규칙(묶기 J2·TR-B3, 절 이름 TR-R3, 반환 20줄 P-09)을 정의 본문에, 확인할 수 없는 기준의 꼴(N2)을 contract.md에 둠. 2026-10-30 사용자 결정: 상한 때문에 규칙을 지우거나 옮기지 않음. 줄일 후보: run-judge 「재시도와 흔들림」 줄의 설계 이유 괄호"
+_V104_NOTE = "1.0.4 판정자 규칙(묶기 J2·TR-B3, 절 이름 TR-R3, 반환 20줄 P-09)을 정의 본문에, 확인할 수 없는 기준의 꼴(N2)을 contract.md에 둠. 2026-10-30 사용자 결정: 상한 때문에 규칙을 지우거나 옮기지 않음. A1이 설계 이유 괄호를 지움(1.1.0)"
 _V110_NOTE = "1.1.0 설계 정의의 자식 kind·행 규칙 경우 파일·겹침 규칙과 머리 파일의 탐침 단계·변경 대상. 설계 문서 5.10: 줄일 곳을 찾지 못해 사용자 결정(T006)으로 보류. 줄일 후보: 판정자가 함께 읽는 공통 문서(contract.md·writer.md·task-file.md)의 겹치는 문장"
 PENDING_OVER: list[tuple[str, int, int, str]] = [
-    ("read-judge:question", 33056, 33485, _V104_NOTE),
-    ("read-judge:req-overview", 35055, 35183, _V104_NOTE),
-    ("read-judge:req-detail", 35353, 35452, _V104_NOTE),
-    ("read-judge:change:req-overview", 39535, 39954, _V104_NOTE),
-    ("read-judge:change:req-detail", 39833, 40223, _V104_NOTE),
-    ("read-judge:change:brief", 43841, 43878, _V104_NOTE),
     ("read-judge:design", 51164, 52768, _V110_NOTE),
-    ("read-judge:change:design", 50347, 52502, _V110_NOTE),
-    ("read-judge:change:ui-design", 44776, 44799, _V104_NOTE),
-    ("read-judge:deploy-plan", 46348, 46777, _V104_NOTE),
-    ("run-judge:implementation", 31302, 31736, _V104_NOTE),
-    ("run-judge:fix", 31302, 31736, _V104_NOTE),
-    ("run-judge:root-cause", 30136, 30570, _V104_NOTE),
-    ("run-judge:merge", 30136, 30570, _V104_NOTE),
-    ("run-judge:wrap-up", 30822, 31256, _V104_NOTE),
-    ("run-judge:deploy-exec", 31840, 32269, _V104_NOTE),
+    ("read-judge:change:design", 50347, 52619, _V110_NOTE),
+    ("run-judge:implementation", 31302, 31616, _V104_NOTE),
+    ("run-judge:fix", 31302, 31616, _V104_NOTE),
+    ("run-judge:root-cause", 30136, 30450, _V104_NOTE),
+    ("run-judge:merge", 30136, 30450, _V104_NOTE),
+    ("run-judge:wrap-up", 30822, 31136, _V104_NOTE),
+    ("run-judge:deploy-exec", 31840, 32149, _V104_NOTE),
     ("requirements-writer:question", 32165, 32245, "S2 task-file.md 탐침 단계 +86(A-H4). A·B 흐름의 실제 증가가 어림보다 커 여유 216이 4로 줄었다. S4 마감에서 다시 잰다"),
 ]
 
@@ -45,7 +37,7 @@ KIND_DIR = ROOT / "references" / "kinds"
 PLUGIN_PATH_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_./-]+\.md)")
 AUTHOR_LINE_RE = re.compile(r"- .+ 작성자\(`([a-z-]+)`\): (.*)\Z")
 # 작성자별 줄의 대상 조건 낱말 → 변경 대상(change.md 「먼저 읽을 것」)
-TARGET_WORDS = (("화면 정본이면", "ui-design"), ("설계면", "design"))
+TARGET_WORDS = (("화면 정본이면", "ui-design"), ("설계면", "design"), ("인프라 결정이면", "infra-design"))
 
 
 def over_budget(pending=None, sizes=None):
@@ -70,7 +62,7 @@ def test_pending_over_rows_are_baseline_rows_over_their_baseline():
 
 
 def test_read_budget():
-    assert len(reading.BASELINE) == 49
+    assert len(reading.BASELINE) == 62
     assert over_budget() == []
 
 
@@ -171,7 +163,7 @@ def expected(actor):
 
 def test_declared_reads_match_new_reads():
     actors = [a for a in reading.NEW_READS if a != "main"]
-    assert len(actors) == 49
+    assert len(actors) == 62
     problems = {a: (sorted(declared(a) - expected(a)), sorted(expected(a) - declared(a)))
                 for a in actors if declared(a) != expected(a)}
     assert problems == {}

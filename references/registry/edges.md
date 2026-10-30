@@ -28,6 +28,7 @@
 - `change` → `brief`
 - `change` → `req-overview`
 - `change` → `req-detail`
+- `change` → `infra-design`
 - `change` → `ui-design`
 - `change` → `design`
 - `flow-verify` → `fix`
@@ -37,6 +38,6 @@
 - `full-verify` → `fix`
 - `full-verify` → `reverify`
 - `deploy-plan` → `deploy-exec`
-- `CHANGE_TARGETS`: `req-overview`, `req-detail`, `brief`, `ui-design`, `design`
+- `CHANGE_TARGETS`: `req-overview`, `req-detail`, `brief`, `ui-design`, `design`, `infra-design`
 - `CHANGE_INHERITS`: `하는 일`, `승인 화면`, `자체 검증`
 
