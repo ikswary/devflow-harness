@@ -26,7 +26,7 @@
 - 탐침: 결과에 `## 탐침 기록` 절이 없으면(계획) 알림 불가, 있으면 그 표의 판정 칸에 `거짓`·`판정불가`가 있을 때 알림 불가.
 - 자식 목록의 셈(행·kind·[백로그]·안별)을 `셈:` 줄로 보이고, 여섯 칸과 `나눈 기준:` 줄의 "자식 N행/M종" 꼴 주장이 셈과 다르면
   `! 수치 대조` 줄, 제목이 같은 행이면 `! 같은 제목 자식 행` 줄을 낸다. 칸 내용·칸별 수·`counts:`·알림 조건은 그대로다.
-- 작성자가 쓴 「정해 주실 것」 수(스크립트가 덧붙인 항목 제외)가 「이번 실행의 값」 한 승인의 결정 수 상한(0이면 없음)을 넘으면 `! 결정 수 상한` 줄을 낸다(`counts:`는 그대로).
+- 작성자가 쓴 「정해 주실 것」 수(스크립트가 덧붙인 항목 제외)가 「이번 실행의 값」 한 승인의 결정 수 상한(0이면 없음)을 넘고 1.1.0부터 시작한 task이면 `! 결정 수 상한` 줄을 낸다(`counts:`는 그대로).
 
 사용:
   python screen.py {실행 폴더} {task id}
@@ -676,7 +676,7 @@ def main(argv):
             floor, devflow_lib.CTX_FLOOR_NOTE // 1000))
         devflow_lib.journal_append(run_dir, "메모", tid, "바닥 알림 {}K".format(floor))
     cap = devflow_lib.run_value(run_dir, "한 승인의 결정 수 상한", kinds.RUN_DEFAULTS["한 승인의 결정 수 상한"])
-    if cap and b["n_decide_claim"] > cap:
+    if cap and b["n_decide_claim"] > cap and devflow_lib.version_at_least(b["t"].get("started_version"), devflow_lib.RULES_V110):
         print()
         print("! 결정 수 상한: 정해 주실 것 {} > {}(「이번 실행의 값」) — 메인은 `나눠서 다시`를 추천으로 묻는다".format(b["n_decide_claim"], cap))
     print()
