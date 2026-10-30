@@ -244,21 +244,63 @@ def next_task_number(tasks):
 # 권고 문턱에서 바로 막으면 사람이 없을 때 실행이 멈춘다(2026-10-07 실행: 11:13에 300K를 넘었고 구현 시작이 11:18).
 # 1.0.3에서 300K·400K → 200K·300K: 메인은 턴마다 컨텍스트 전체를 다시 보낸다(2026-10-29 실행: 99턴에 15.4M).
 # 1.0.4에서 300K·500K: 재개 한 번이 약 2.5M(바닥 120~130K 캐시 쓰기)이라 재개 사이 호출이 적으면 낮은 문턱이 손해다.
-CTX_ADVISE = 300_000
-CTX_STOP = 500_000
+# 1.1.0에서 「이번 실행의 값」으로: 시작값은 등록표 RUN_DEFAULTS가 원천이고, 실행마다 run.md 행으로 바꾼다(ctx_thresholds).
+CTX_ADVISE = kinds.RUN_DEFAULTS["메인 컨텍스트 권함(K)"] * 1000
+CTX_STOP = kinds.RUN_DEFAULTS["메인 컨텍스트 멈춤(K)"] * 1000
+CTX_FLOOR_NOTE = 150_000   # 재개 바닥이 이 값 이상이면 screen.py가 한 번 알린다
 CTX_TAIL_BYTES = 4 * 1024 * 1024
 CTX_STALE_SEC = 600
 
 
-def main_context():
+def ctx_thresholds(run_dir=None):
+    """(권함, 멈춤) 토큰 문턱. run.md 「이번 실행의 값」의 `메인 컨텍스트 권함`·`멈춤` 행(K 단위), 없으면 시작값.
+    run_dir가 None이면 상수."""
+    if run_dir is None:
+        return CTX_ADVISE, CTX_STOP
+    return (run_value(run_dir, "메인 컨텍스트 권함", CTX_ADVISE // 1000) * 1000,
+            run_value(run_dir, "메인 컨텍스트 멈춤", CTX_STOP // 1000) * 1000)
+
+
+def resume_since(run_dir):
+    """journal.md에서 둘째 칸이 `재개`인 마지막 줄의 시각(지역 시각)을 epoch로. 없거나 못 읽으면 None."""
+    from datetime import datetime
+    p = os.path.join(run_dir, "journal.md")
+    if not os.path.isfile(p):
+        return None
+    last = None
+    for line in read_text(p).splitlines():
+        f = [c.strip() for c in line.split("|")]
+        if len(f) >= 2 and f[0].startswith("- ") and f[1] == "재개":
+            last = f[0][2:].strip()
+    if last is None:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(last, fmt).timestamp()
+        except ValueError:
+            pass
+    return None
+
+
+def _iso_epoch(ts):
+    """세션 기록의 `timestamp`(UTC ISO, 끝이 `Z`)를 epoch로. 못 읽으면 None."""
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except (AttributeError, ValueError):
+        return None
+
+
+def main_context(run_dir=None):
     """메인 세션의 지금 컨텍스트(마지막 호출의 input + cache_read + cache_creation 토큰)를 세션 기록에서 읽는다.
     (토큰 수, 세션 ID 앞 8자) 또는 (None, 측정 불가 이유)를 돌려준다.
     세션은 CLAUDE_CODE_SESSION_ID로 찾을 때만 잰다. 가장 최근 기록으로 추정하면 같은 프로젝트에서 동시에 도는
-    다른 세션을 잡는다(2026-10-07: 세 세션이 같은 프로젝트 폴더에서 함께 돌았다). 하위 에이전트 안에서도 이 변수는 메인 세션 ID다."""
+    다른 세션을 잡는다(2026-10-07: 세 세션이 같은 프로젝트 폴더에서 함께 돌았다). 하위 에이전트 안에서도 이 변수는 메인 세션 ID다.
+    run_dir를 주면 journal.md의 마지막 `재개` 줄 시각보다 이른 기록을 건너뛴다(/clear 앞 컨텍스트를 재지 않게)."""
     import glob
     import json
     import time
-    from datetime import datetime
+    since = resume_since(run_dir) if run_dir else None
     sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
     if not sid:
         return None, "세션 ID 환경 변수 없음"
@@ -267,7 +309,7 @@ def main_context():
     if not found:
         return None, "세션 기록 없음({})".format(sid[:8])
     path = found[0]
-    ctx, ts = None, None
+    ctx, ts, skipped = None, None, False
     with open(path, "rb") as fh:
         size = os.path.getsize(path)
         if size > CTX_TAIL_BYTES:
@@ -284,30 +326,37 @@ def main_context():
             if not u:
                 continue
             n = u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
-            if n:
-                ctx, ts = n, d.get("timestamp")
+            if not n:
+                continue
+            when = _iso_epoch(d.get("timestamp"))
+            if since is not None and when is not None and when < since:
+                skipped = True
+                continue
+            ctx, ts = n, d.get("timestamp")
     if ctx is None:
+        if skipped:
+            return None, "재개 뒤 기록 없음({})".format(sid[:8])
         return None, "usage 없음({})".format(sid[:8])
-    try:
-        age = time.time() - datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
-    except (AttributeError, ValueError):
-        age = 0
+    when = _iso_epoch(ts)
+    age = time.time() - when if when is not None else 0
     if age > CTX_STALE_SEC:
         # /clear 뒤 옛 세션을 읽어 권고가 되풀이되지 않게 한다.
         return None, "마지막 기록이 {}분 전({})".format(int(age // 60), sid[:8])
     return ctx, sid[:8]
 
 
-def main_context_line():
-    """`screen.py`와 `board.py --ready`가 맨 끝에 붙이는 한 줄. `counts:`로 시작하지 않는다(메인이 counts 줄을 읽는다)."""
-    ctx, info = main_context()
+def main_context_line(run_dir=None):
+    """`screen.py`와 `board.py --ready`가 맨 끝에 붙이는 한 줄. `counts:`로 시작하지 않는다(메인이 counts 줄을 읽는다).
+    run_dir를 주면 그 실행의 문턱(ctx_thresholds)과 재개 시각(main_context)을 쓴다."""
+    advise, stop = ctx_thresholds(run_dir)
+    ctx, info = main_context(run_dir)
     if ctx is None:
         return "메인 컨텍스트: 측정 불가({})".format(info)
     line = "메인 컨텍스트: {}K (세션 {})".format(ctx // 1000, info)
-    if ctx >= CTX_STOP:
-        line += " — {}K 넘음: 새 task를 띄우지 않고 정리 지점을 기다려 `/clear` 뒤 `devflow-harness 이어서`를 권함(SKILL.md 8절)".format(CTX_STOP // 1000)
-    elif ctx >= CTX_ADVISE:
-        line += " — {}K 넘음: 다음 정리 지점에서 `/clear` 뒤 `devflow-harness 이어서`를 권함(SKILL.md 8절)".format(CTX_ADVISE // 1000)
+    if ctx >= stop:
+        line += " — {}K 넘음: 새 task를 띄우지 않고 정리 지점을 기다려 `/clear` 뒤 `devflow-harness 이어서`를 권함(SKILL.md 8절)".format(stop // 1000)
+    elif ctx >= advise:
+        line += " — {}K 넘음: 다음 정리 지점에서 `/clear` 뒤 `devflow-harness 이어서`를 권함(SKILL.md 8절)".format(advise // 1000)
     return line
 
 
@@ -357,6 +406,18 @@ def run_value(run_dir, name, default):
     except OSError:
         pass
     return default
+
+
+def journal_append(run_dir, kind, tid, line):
+    """journal.md에 `- {YYYY-MM-DD HH:MM} | {일} | {id} | {줄}` 한 줄을 그 파일의 줄 끝 꼴로 더한다(덧붙이기 전용)."""
+    from datetime import datetime
+    p = os.path.join(run_dir, "journal.md")
+    eol = "\n"
+    if os.path.isfile(p):
+        with open(p, "rb") as f:
+            eol = "\r\n" if b"\r\n" in f.read() else "\n"   # 그 journal의 줄 끝 꼴을 따른다
+    with open(p, "a", encoding="utf-8", newline="") as f:
+        f.write("- {} | {} | {} | {}{}".format(datetime.now().strftime("%Y-%m-%d %H:%M"), kind, tid, line, eol))
 
 
 # ---------------------------------------------------------------------------
@@ -713,7 +774,7 @@ def record_check(t):
         lvl = rules_level(t)
         # 규칙 판 2 규칙으로 시작한 task는 받아오기 수정(메인이 병합 커밋을 commit=으로)과 합치기(exec.py가 commit에)도 본다
         if status == kinds.DONE and kind in kinds.commit_kinds(lvl) and not str(t.get("commit", "")).strip() \
-                and (lvl >= 2 or "받아오기" not in str(t.get("origin", ""))):
+                and (lvl >= 2 or "받아오기" not in str(t.get("origin", ""))) and not no_change(t):
             out.append(("R4", "코드 task가 완료인데 commit이 빔", [], 0))
         if str(t.get("approval_mode", "")).strip() == "승인" and not has_quoted_answer(t):
             out.append(("R5", "승인인데 「승인 기록」에 사용자 원문 줄이 없음", [], 0))
@@ -1144,6 +1205,11 @@ DOMAIN_CRITERIA = {
     "화면 경로": "(영역 판정) 화면 경로({경로})를 건드린 변경이 화면 동작을 바꾸는지 판정자가 확인했고, 바꾸면 결과 「알릴 것」에 있다.",
 }
 DOMAIN_CRITERIA_HEAD = "(스크립트 주입: 영역 판정)"
+
+
+def no_change(t):
+    """코드를 바꾸지 않은 코드 task인가(`no_change: true`, 메인이 적는다). 커밋이 없어도 R4·커밋 대기에 걸지 않는다."""
+    return str(t.get("no_change", "") or "").strip().lower() in ("true", "예")
 
 
 def user_origin(t):

@@ -14,12 +14,21 @@ r"""마무리 입력 모으기: 실행 하나의 task들에 흩어진 목록을 
     표준 출력 두 줄(결정 0 승인, 관점별 지적). 메인이 measure.md 그 실행 행의 비고 칸에 ` / `로 잇는다
   종료 코드: 0 정상(칸이 빠진 형식 경고는 목록 위에 적고 0), 2 사용법 오류,
              3 result.md나 「승인 화면」 절이 없는 `완료` task가 있음(목록 맨 위에 적힌다)
+  python collect.py {실행 폴더} --folder-wait
+    흐름마다 `폴더 대기: {흐름} {분}분 ({task 수}개) / 흐름 작성 {분}분`을 내고, {실행 폴더}\..\measure.md에서
+    첫 칸이 실행 폴더 이름인 마지막 행의 `비고` 칸에 `; `로 이어 덧붙인다(같은 흐름의 것은 바꾼다).
+    폴더 대기 = 코드 폴더에 쓰는 task의 대기 구간 [준비 시각, started]가 같은 흐름 다른 쓰는 task의 차지 구간
+    [started, 끝] 합집합과 겹친 분. 준비 시각은 created와 depends_on task들 approved 가운데 늦은 것, 끝은
+    통과(no_change이거나 두 판정 파일 「통과 못 한 기준」 0)하고 approval_requested가 있으면 그 시각, 그 밖은 approved.
+    끝이 없는 task는 빼고 센다. 차지 구간은 있으나 준비 시각을 못 정한 task는 `  준비 시각이 없어 대기를 못 잰 task {n}개`로 따로 낸다.
+    종료 코드 3 = 측정 기록에 이 실행 행이 없음(줄만 내고 파일은 그대로)
 """
 import fnmatch
 import os
 import re
 import sys
 
+import board
 import devflow_lib
 import kinds
 import shadow_check
@@ -71,6 +80,147 @@ def notified(run_dir, out_dir, flow):
     print("알림으로 지나간 task {}개 -> {}".format(len(blocks), path))
     return 0
 
+
+def occupied(t):
+    """차지 구간 (started, 끝)의 epoch. 끝이 없으면(열린 task) None."""
+    start = board._epoch(t.get("started"))
+    if start is None:
+        return None
+    asked = board._epoch(t.get("approval_requested"))
+    failed = 0
+    for name in kinds.JUDGE_FILES.values():
+        p = os.path.join(t["_dir"], name)
+        if os.path.isfile(p):
+            failed += devflow_lib.item_count(devflow_lib.sections(devflow_lib.read_text(p), level=2).get("통과 못 한 기준", ""))
+    # 통과한 코드 task는 커밋 뒤 승인대기로 가며 폴더를 놓고, 통과 못 한 것은 완료(approved)까지 커밋 대기로 막는다
+    if asked is not None and (devflow_lib.no_change(t) or failed == 0):
+        end = asked
+    else:
+        end = board._epoch(t.get("approved"))
+    if end is None or end < start:
+        return None
+    return start, end
+
+
+def ready_at(t, tasks):
+    """준비 시각: created와 depends_on task들의 approved 가운데 가장 늦은 것. 하나도 못 읽으면 None."""
+    deps = t.get("depends_on") or []
+    if not isinstance(deps, list):
+        deps = [d.strip() for d in str(deps).strip("[]").split(",") if d.strip()]
+    times = [board._epoch(t.get("created"))] + [board._epoch(tasks[d].get("approved")) for d in deps if d in tasks]
+    times = [x for x in times if x is not None]
+    return max(times) if times else None
+
+
+def union_minutes(intervals):
+    """구간 (시작, 끝) epoch들의 합집합 길이(분, 반올림)."""
+    total, cur = 0.0, None
+    for s, e in sorted(intervals):
+        if cur is None or s > cur[1]:
+            if cur is not None:
+                total += cur[1] - cur[0]
+            cur = [s, e]
+        else:
+            cur[1] = max(cur[1], e)
+    if cur is not None:
+        total += cur[1] - cur[0]
+    return int(round(total / 60))
+
+
+def flow_wait(tasks, flow):
+    """(폴더 대기 분, 겹친 task 수, 흐름 작성 분, 끝이 없어 뺀 task 수, 준비 시각이 없어 대기를 못 잰 task 수).
+    흐름의 코드 폴더에 쓰는 task만 센다."""
+    spans, skipped = {}, 0
+    for tid, t in tasks.items():
+        if t.get("flow") != flow or not board.writes(t):
+            continue
+        occ = occupied(t)
+        if occ is None:
+            skipped += 1
+            continue
+        spans[tid] = occ
+    wait_min, n_tasks, unready = 0, 0, 0
+    for tid, (start, _) in spans.items():
+        ready = ready_at(tasks[tid], tasks)
+        if ready is None:
+            unready += 1
+            continue
+        if ready >= start:
+            continue
+        # 대기 구간과 다른 task 차지 구간의 겹침을 합집합으로 센다(둘이 함께 차지한 시간을 두 번 세지 않는다)
+        cut = [(max(s, ready), min(e, start)) for o, (s, e) in spans.items() if o != tid and min(e, start) > max(s, ready)]
+        minutes = union_minutes(cut)
+        if minutes > 0:
+            wait_min += minutes
+            n_tasks += 1
+    return wait_min, n_tasks, union_minutes(spans.values()), skipped, unready
+
+
+def _cells(line):
+    r"""표 행을 `|`로 가른 조각(맨 앞·맨 끝 조각 포함). `\|`는 칸 안 글자로 둔다."""
+    return re.split(r"(?<!\\)\|", line)
+
+
+def write_note(measure_path, run_name, segments):
+    """측정 기록에서 첫 칸이 run_name인 마지막 행의 `비고` 칸에 조각을 `; `로 덧붙인다(같은 흐름의 조각은 바꾼다).
+    파일·`비고` 열·행이 없으면 파일을 그대로 두고 False."""
+    if not os.path.isfile(measure_path):
+        return False
+    with open(measure_path, "r", encoding="utf-8-sig", newline="") as f:
+        lines = f.read().splitlines(keepends=True)
+    col, row = None, None
+    for i, line in enumerate(lines):
+        if not line.lstrip().startswith("|"):
+            continue
+        parts = [c.strip() for c in _cells(line.strip())]
+        if col is None:
+            if "비고" in parts:
+                col = parts.index("비고")
+            continue
+        if len(parts) > 1 and parts[1] == run_name:
+            row = i
+    if row is None:
+        return False
+    body = lines[row].rstrip("\r\n")
+    end = lines[row][len(body):]
+    parts = _cells(body)
+    while len(parts) < col + 2:   # 칸이 모자란 행은 빈 칸을 채운다(맨 끝 조각은 닫는 `|` 뒤)
+        parts.insert(len(parts) - 1, " ")
+    keep = [p.strip() for p in parts[col].split("; ") if p.strip() and p.strip() != "-"]
+    for seg in segments:
+        key = seg.split(" ", 3)[:3]   # `폴더 대기:` `{흐름}`
+        keep = [p for p in keep if p.split(" ", 3)[:3] != key]
+        keep.append(seg)
+    parts[col] = " " + "; ".join(keep) + " "
+    lines[row] = "|".join(parts) + end
+    with open(measure_path, "w", encoding="utf-8", newline="") as f:
+        f.write("".join(lines))
+    return True
+
+
+def folder_wait(run_dir):
+    """흐름마다 폴더 대기 줄을 내고 측정 기록 이 실행 행의 `비고`에 덧붙인다. 행이 없으면 3."""
+    tasks = devflow_lib.load_tasks(run_dir)
+    segments = []
+    for flow in sorted({t.get("flow") for t in tasks.values() if t.get("flow") and board.writes(t)}):
+        wait_min, n_tasks, busy_min, skipped, unready = flow_wait(tasks, flow)
+        seg = "폴더 대기: {} {}분 ({}개) / 흐름 작성 {}분".format(flow, wait_min, n_tasks, busy_min)
+        print(seg)
+        if skipped:
+            print("  끝이 없어 뺀 task {}개".format(skipped))
+        if unready:
+            print("  준비 시각이 없어 대기를 못 잰 task {}개".format(unready))
+        segments.append(seg)
+    if not segments:
+        print("폴더 대기: 코드 폴더에 쓰는 task 없음")
+        return 0
+    base = os.path.abspath(run_dir).rstrip("\\/")
+    measure_path = os.path.join(os.path.dirname(base), "measure.md")
+    if not write_note(measure_path, os.path.basename(base), segments):
+        print("측정 기록에 이 실행 행 없음: {} (파일 그대로) -> {}".format(os.path.basename(base), measure_path))
+        return 3
+    print("비고에 덧붙임 -> {}".format(measure_path))
+    return 0
 
 
 PERSPECTIVES = ("보안", "운영 제약", "데이터 정합", "정확성", "시험", "관례", "그 밖")
@@ -144,6 +294,8 @@ def measure(run_dir):
 
 def main(argv):
     devflow_lib.utf8_stdout()
+    if len(argv) == 3 and argv[2] == "--folder-wait":
+        return folder_wait(argv[1])
     if len(argv) >= 3 and argv[2] in ("--shadow-inputs", "--shadow-open", "--shadow-freeze", "--shadow-b-freeze", "--shadow-check"):
         return shadow_check.main([argv[0], argv[1]] + argv[2:])
     if len(argv) == 4 and argv[2] == "--shadow-init":

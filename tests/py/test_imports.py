@@ -23,7 +23,7 @@ LAYERS = {
     "task_set": 2, "spawn_children": 2, "exec": 2, "machine_check": 2, "apply_revision": 2, "eol_setup": 2,
     "shadow_check": 2,
     "board": 2, "screen": 2, "retry_diff": 2,
-    "board_ascii": 3, "board_dash": 3, "collect": 3, "conventions": 3, "visual": 3,
+    "board_ascii": 3, "board_dash": 3, "collect": 3, "conventions": 3, "decisions": 3, "visual": 3,
 }
 SAME_LAYER_FROM = 2   # 이 층부터 같은 층 간선을 허용한다(0·1층은 아래로만)
 

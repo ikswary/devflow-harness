@@ -191,17 +191,17 @@ def plugin_version(root=None):
 # 머리 파일 키(formats.md 3절 표의 순서): (이름, 채우는 길, 목록 여부).
 # 채우는 길: script(스크립트만) / option(전용 옵션만) / selfcheck(진행→자체검증 전이(`--status 자체검증`)와 함께서만) / kv(`키=값`)
 _SCRIPT = ("started_version", "rules", "started", "approval_requested", "approved", "created", "done_via",
-           "criteria_amended", "exported_commit", "origin", "fix_generation")
+           "criteria_amended", "exported_commit", "origin", "fix_generation", "judge_started")
 _OPTION = ("status", "retry", "kind")
 _SELFCHECK = ("machine_check",)
 _LISTS = ("depends_on", "closes_ac", "partial_ac")
 _KEY_ORDER = ("id", "title", "kind", "block", "status", "parent", "depends_on", "flow", "difficulty", "closes_ac",
-              "partial_ac", "one_line", "origin", "cause_task", "fix_generation", "commit", "running_agent",
-              "waiting_user", "retry", "started_version", "rules", "machine_check", "done_via", "criteria_amended",
-              "judge_method", "approval_mode", "n_decide", "n_todo", "n_notify", "n_unverified", "n_children",
-              "split_criterion", "shrunk_reason", "awaiting_answer_apply", "external_progress", "stage",
-              "exported_commit", "partial_flow", "deploy_outcome", "deployed_commit", "created", "started",
-              "approval_requested", "approved")
+              "partial_ac", "one_line", "origin", "cause_task", "fix_generation", "commit", "no_change",
+              "running_agent", "judge_started", "waiting_user", "retry", "started_version", "rules", "machine_check",
+              "done_via", "criteria_amended", "judge_method", "approval_mode", "n_decide", "n_todo", "n_notify",
+              "n_unverified", "n_children", "split_criterion", "shrunk_reason", "awaiting_answer_apply",
+              "external_progress", "stage", "exported_commit", "partial_flow", "deploy_outcome", "deployed_commit",
+              "created", "started", "approval_requested", "approved")
 
 
 def _fill_of(key):
@@ -235,7 +235,9 @@ TASK_SECTIONS = (
 RUN_KEYS = ("kind", "status", "project", "base_branch", "round", "integration_branch", "integration_dir",
             "harness_version", "start_task", "previous_run", "session_id")
 RUN_DEFAULTS = {"동시에 도는 흐름": 2, "수정 세대 상한": 2, "자체 검증 재시도": 2, "판정불가 다시 돌림": 2,
-                "한 승인의 결정 수 상한": 0, "보는 자료 줄 수": 40, "fable로 띄울 역할": "없음"}   # 마지막 값은 숫자가 아니다: 역할 이름(예: design-writer)을 쉼표로
+                "메인 컨텍스트 권함(K)": 300, "메인 컨텍스트 멈춤(K)": 500,
+                "한 승인의 결정 수 상한": 0, "보는 자료 줄 수": 40,
+                "fable로 띄울 역할": "없음"}   # 마지막 값은 숫자가 아니다: 역할 이름(예: design-writer)을 쉼표로
 
 # ---------------------------------------------------------------------------
 # 파생 함수와 이름(엔진이 상수 대신 부른다)

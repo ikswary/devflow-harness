@@ -2,8 +2,8 @@
 
 사용:
   python task_set.py {실행 폴더} {id} [키=값 …] [--status S] [--record "지점|결정|원문"] [--reason "문장"]
-                     [--reuse-answer "이유"] [--unlisted "이유"] [--archive-judge] [--amend-criteria {파일} --source "출처"]
-                     [--screen-snapshot] [--now 키,…]
+                     [--reuse-answer "이유"] [--unlisted "이유"] [--archive-judge [--undecided]] [--amend-criteria {파일} --source "출처"]
+                     [--judge-start 이름,…] [--judge-clear] [--screen-snapshot] [--now 키,…]
   python task_set.py {실행 폴더} new --kind K --title "제목" --body-from {파일} [--parent T] [--depends-on T,…]
                      [--flow F] [--origin "근거"] [--from-answer T] [키=값 …]
   python task_set.py {실행 폴더} --check [id]
@@ -39,7 +39,18 @@
                      "자체 검증 재시도", 시작값 2)에 닿았으면 하지 않고 종료 코드 3. `자체검증→진행`은 이것과 함께만.
                      보관한 판정과 같은 n으로 수정 전 사본을 tasks\\{id}\\before.r{n}\\에 뜬다(MANIFEST.md, files\\,
                      코드 kind면 code.patch. 상한 SNAPSHOT_MAX_BYTES, 사본이 실패해도 보관은 하고 목록에 이유. retry_diff.py가 읽는다).
-  --amend-criteria {파일} --source "출처"   판정 전(대기·진행)에 「판정 기준」을 바꾼다. 출처는
+                     판정 표지 judge_started도 비운다.
+  --undecided        (--archive-judge와 함께) 판정불가 보관. 보관할 판정의 「통과 못 한 기준」 항목이 모두 판정불가
+                     꼬리표(judge.md는 환경, judge-run.md는 환경·대상)이고 하나 이상일 때만 받는다. 재시도 상한·판정 미완료를
+                     보지 않고 retry와 「재시도 범위」를 그대로 둔다(보관·사본·표지 비움은 같다). external_progress가
+                     `자원 대기:`이면 종료 코드 3.
+  --judge-start 이름[,이름…]  판정자를 띄우기 전에 표지 `judge_started: {시각} {이름} …`을 쓴다(진행·자체검증에서만).
+                     다시 부르면 없던 이름만 덧붙이고 시각은 첫 값을 둔다. 표지가 있으면 --amend-criteria를 받지 않는다.
+  --judge-clear      judge.md·judge-run.md가 둘 다 없을 때만 표지를 비우고 journal에 메모(있으면 종료 코드 3).
+                     표지가 이미 비었으면 `표지 없음`(종료 코드 0, 파일 그대로).
+                     --undecided·--judge-start·--judge-clear는 --amend-criteria와 같은 호출에서 받지 않는다.
+  --amend-criteria {파일} --source "출처"   판정자가 뜨기 전(대기·진행, 1.1.0부터 시작한 task는 자체검증도.
+                     표지 judge_started가 있으면 상태와 상관없이 거부)에 「판정 기준」을 바꾼다. 출처는
                      `작성자 {이상 신호 위치}` / `판정자 {대안 문장 위치}` / `사용자 답 {task id} {승인 기록 시각}`
                      (사용자 답은 그 승인 기록 줄에 원문이 있어야 받는다). criteria.amend{n}.md와 「판정 기준 정정」에 남는다.
   --add "절|줄"       본문 절(넘길 이상 신호, 영향받는 task와 처리, 범위 등)에 한 줄을 더한다. 판정 기준·승인 기록처럼
@@ -103,6 +114,12 @@ Reject = devflow_lib.Reject
 OPTION_ONLY = "{}는 전용 옵션으로만 바꾼다(status → --status, retry → --archive-judge, kind → new --kind)"
 SELFCHECK_ONLY = "{}=값은 진행→자체검증 전이(--status 자체검증)와 함께서만"
 UNLISTED_ONLY = " — --unlisted는 전이표에 없는 짝만 넘긴다"
+# 판정 기준 정정의 거부 문구(D-C7). 옛 task(1.1.0 전에 시작)의 문구는 amend_check 안에 그대로 둔다
+AMEND_MARKED = ("판정자가 뜬 뒤에는 판정 기준을 고치지 않는다(judge_started: {}). "
+                "재시도(--archive-judge)·판정불가 보관(--archive-judge --undecided)·--judge-clear 뒤에 고친다")
+AMEND_STATUS_NEW = "판정 기준 정정은 판정자가 뜨기 전(대기·진행·자체검증)에만"
+# 이 판본부터 시작한 task는 표지가 없으면 자체검증에서도 정정을 받는다
+JUDGE_MARK_VERSION = "1.1.0"
 
 
 class Unlisted(str):
@@ -413,13 +430,7 @@ def auto_freeze(run_dir, t, old, new, rec, old_stage):
 # ---------------------------------------------------------------- 하위 작업
 
 def journal(run_dir, kind, tid, line):
-    p = os.path.join(run_dir, "journal.md")
-    eol = "\n"
-    if os.path.isfile(p):
-        with open(p, "rb") as f:
-            eol = "\r\n" if b"\r\n" in f.read() else "\n"   # 그 journal의 줄 끝 꼴을 따른다
-    with open(p, "a", encoding="utf-8", newline="") as f:
-        f.write("- {} | {} | {} | {}{}".format(now_str()[:16], kind, tid, line, eol))
+    devflow_lib.journal_append(run_dir, kind, tid, line)
 
 
 def parse_record(raw):
@@ -497,25 +508,49 @@ def failed_numbers(paths):
     return sorted(nums), loose
 
 
-def archive_check(run_dir, t):
-    """보관할 수 있는지만 본다(파일을 바꾸지 않는다). (retry, 보관할 파일 목록)."""
+def archive_check(run_dir, t, undecided=False):
+    """보관할 수 있는지만 본다(파일을 바꾸지 않는다). (retry, 보관할 파일 목록).
+    undecided(판정불가 보관)면 재시도 상한과 판정 미완료 대신 꼬리표 조건과 자원 대기를 본다."""
     d = t["_dir"]
-    cap = devflow_lib.run_value(run_dir, "자체 검증 재시도", kinds.RUN_DEFAULTS["자체 검증 재시도"])
     retry = int(str(t.get("retry", "0") or "0").strip() or 0)
-    if retry >= cap:
-        raise Reject("재시도 상한 {}: 다시 띄우지 않고 통과 못 한 채 승인으로 올린다(SKILL.md 2절 「실패 처리」)".format(cap))
-    progress = devflow_lib.judge_run_contract_problems(t)
-    if progress:
-        raise Reject("판정 미완료라 재시도를 보관하지 않음: " + "; ".join(progress))
+    if undecided:
+        wait = devflow_lib.resource_wait(t)
+        if wait:
+            raise Reject("자원 대기라 판정불가로 보관하지 않음: " + wait)
+    else:
+        cap = devflow_lib.run_value(run_dir, "자체 검증 재시도", kinds.RUN_DEFAULTS["자체 검증 재시도"])
+        if retry >= cap:
+            raise Reject("재시도 상한 {}: 다시 띄우지 않고 통과 못 한 채 승인으로 올린다(SKILL.md 2절 「실패 처리」)".format(cap))
+        progress = devflow_lib.judge_run_contract_problems(t)
+        if progress:
+            raise Reject("판정 미완료라 재시도를 보관하지 않음: " + "; ".join(progress))
     present = [n for n in ("judge.md", "judge-run.md") if os.path.isfile(os.path.join(d, n))]
     if not present:
         raise Reject("보관할 판정 파일(judge.md·judge-run.md)이 없음")
+    if undecided:
+        undecided_check(d, present)
     return retry, present
 
 
-def archive_judge(run_dir, t, doc):
+def undecided_check(d, present):
+    """보관할 판정의 「통과 못 한 기준」 항목이 모두 판정불가 꼬리표이고 하나 이상인지 본다. `대상`은 실행 판정의
+    항목에서만 꼬리표로 읽는다(screen.split_tagged와 같은 규칙)."""
+    import screen
+    tagged = other = 0
+    for name in present:
+        text = devflow_lib.sections(devflow_lib.read_text(os.path.join(d, name)), level=2).get("통과 못 한 기준", "")
+        keep, target, env = screen.split_tagged(text, allow_target=(name == kinds.JUDGE_FILES["run"]))
+        tagged += env + len(target)
+        other += devflow_lib.item_count(keep) - env   # 남긴 글에서 `환경`이 아닌 항목(실패, 지시, 읽기 판정의 대상)
+    if other:
+        raise Reject("판정불가가 아닌 항목이 있음: --undecided 없이 보관한다(재시도)")
+    if not tagged:
+        raise Reject("판정불가 항목이 없음: --undecided 없이 보관한다")
+
+
+def archive_judge(run_dir, t, doc, undecided=False):
     d = t["_dir"]
-    retry, present = archive_check(run_dir, t)
+    retry, present = archive_check(run_dir, t, undecided)
     n = retry + 1
     while any(os.path.exists(os.path.join(d, x)) for x in ("judge.r{}.md".format(n), "judge-run.r{}.md".format(n))):
         n += 1
@@ -525,6 +560,10 @@ def archive_judge(run_dir, t, doc):
         os.replace(os.path.join(d, name), os.path.join(d, dst))
         moved.append(dst)
     snap = make_snapshot(run_dir, t, n)   # 판정 파일을 옮긴 뒤, 「재시도 범위」를 쓰기 전
+    if doc.get("judge_started"):
+        doc.set("judge_started", "")   # 보관한 판정의 판정자는 끝났다. 다음 판정자를 띄울 때 다시 찍는다
+    if undecided:
+        return moved, snap   # 판정불가 보관은 재시도로 세지 않는다(retry·「재시도 범위」 그대로)
     nums, loose = failed_numbers([os.path.join(d, m) for m in moved])
     lines = ["- 회차 {} (보관한 판정: {}): 고칠 기준: {}. 그 기준 안에서는 판정자가 적지 않은 같은 종류의 결함도 고친다. 다른 기준과 판정자의 권장은 고치지 않는다. 판정자의 대안 문장은 그대로 옮기지 않고, 그 근거 줄과 원천을 열어 확인한 뒤 쓴다(어긋나면 원천을 따르고 「알릴 것」에 적는다).".format(
         retry + 1, ", ".join(moved), ", ".join(str(x) for x in nums) if nums else "(번호 없음 — 아래 항목)")]
@@ -634,7 +673,13 @@ def _write_snapshot(run_dir, t, n, out_dir, shown):
 
 def amend_check(t, path, source, tasks):
     """판정 기준 정정을 받을 수 있는지만 본다(파일을 바꾸지 않는다)."""
-    if t.get("status") not in ("대기", "진행"):
+    mark = str(t.get("judge_started", "") or "").strip()
+    if mark:
+        raise Reject(AMEND_MARKED.format(mark))   # 표지는 1.1.0 메인만 찍으므로 옛 task에 걸어도 바뀌지 않는다
+    if devflow_lib.version_at_least(t.get("started_version"), JUDGE_MARK_VERSION):
+        if t.get("status") not in ("대기", "진행", "자체검증"):
+            raise Reject(AMEND_STATUS_NEW)
+    elif t.get("status") not in ("대기", "진행"):
         raise Reject("판정 기준 정정은 판정자가 뜨기 전(대기·진행)에만")
     src = (source or "").strip()
     if not src.startswith(("작성자 ", "판정자 ", "사용자 답 ")):
@@ -665,6 +710,29 @@ def amend_criteria(run_dir, t, doc, path, source, tasks):
     doc.append_line("판정 기준 정정", "- {} | 정정 {} | 출처: {} | 원문: {} | 고친 문장: criteria.amend{}.md".format(
         now_str(), n, src, prev, n), before=AFTER_CRITERIA)
     doc.set("criteria_amended", now_str())
+
+
+def judge_start(t, doc, names):
+    """판정자를 띄우기 전의 표지. 없던 이름만 덧붙이고 시각은 첫 값을 둔다."""
+    if t.get("status") not in ("진행", "자체검증"):
+        raise Reject("--judge-start는 진행·자체검증에서만(지금 {})".format(t.get("status")))
+    parts = (doc.get("judge_started") or "").split()
+    stamp, have = (parts[:2], parts[2:]) if len(parts) >= 2 else (now_str().split(), [])
+    added = [x for x in dict.fromkeys(names) if x not in have]
+    doc.set("judge_started", " ".join(stamp + have + added))
+
+
+def judge_clear(run_dir, t, doc):
+    """판정 파일이 없을 때 표지를 비우고 journal에 남긴다. 표지가 이미 비었으면 False(파일 그대로)."""
+    present = [n for n in ("judge.md", "judge-run.md") if os.path.isfile(os.path.join(t["_dir"], n))]
+    if present:
+        raise Reject("판정 파일이 있음({}): 표지를 지우지 않는다(--archive-judge로 보관하면 함께 비운다)".format(", ".join(present)))
+    old = (doc.get("judge_started") or "").strip()
+    if not old:
+        return False
+    doc.set("judge_started", "")
+    journal(run_dir, "메모", t["id"], "판정 표지 지움: " + old)
+    return True
 
 
 def code_dir(run_dir, t):
@@ -852,7 +920,7 @@ def main(argv):
         return cmd_check(run_dir, args[1] if len(args) > 1 else "")
     flags_with_value = {"--add", "--status", "--record", "--reason", "--unlisted", "--amend-criteria", "--source", "--now",
                         "--kind", "--title", "--body-from", "--parent", "--depends-on", "--flow", "--origin", "--block",
-                        "--from-answer", "--reuse-answer"}
+                        "--from-answer", "--judge-start", "--reuse-answer"}
     kv, opts, i = [], {}, 1
     while i < len(args):
         a = args[i]
@@ -874,6 +942,10 @@ def main(argv):
             return 2
     if args[0] == "new":
         return cmd_new(run_dir, args, kv)
+    judge_names = [x.strip() for x in str(opts.get("--judge-start", "")).split(",") if x.strip()]
+    if "--judge-start" in opts and not judge_names:
+        print("--judge-start에는 판정자 이름(쉼표로 여럿)이 필요")
+        return 2
 
     tid = args[0]
     tasks = devflow_lib.load_tasks(run_dir)
@@ -912,6 +984,13 @@ def main(argv):
         plan_move = t.get("kind") == "probe" and ("stage", "기록") in kv
         if plan_move and os.path.isfile(os.path.join(t["_dir"], "judge.plan.md")):
             raise Reject("judge.plan.md가 이미 있음(계획 판정을 이미 옮김) — 탐침의 stage=기록은 한 번만")
+        marks = [o for o in ("--undecided", "--judge-start", "--judge-clear") if o in opts]
+        if "--amend-criteria" in opts and marks:
+            raise Reject("--amend-criteria와 {}는 따로 부른다".format("·".join(marks)))
+        if opts.get("--undecided") and not opts.get("--archive-judge"):
+            raise Reject("--undecided는 --archive-judge와 함께")
+        if opts.get("--archive-judge") and ("--judge-start" in opts or "--judge-clear" in opts):
+            raise Reject("--archive-judge는 표지를 비운다. --judge-start·--judge-clear는 따로 부른다")
         # 검사를 모두 마친 뒤에 파일을 바꾼다(거부되면 아무것도 바꾸지 않는다)
         why = check_transition(run_dir, t, old, new, dict(ctx, archived=bool(opts.get("--archive-judge"))))
         if why and not (opts.get("--unlisted") and isinstance(why, Unlisted)):
@@ -933,11 +1012,17 @@ def main(argv):
         res = os.path.join(t["_dir"], "result.md")
         if opts.get("--screen-snapshot") and not os.path.isfile(res):
             raise Reject("result.md가 없음")
+        undecided = bool(opts.get("--undecided"))
         if opts.get("--archive-judge"):
-            archive_check(run_dir, t)
+            archive_check(run_dir, t, undecided)
         if "--amend-criteria" in opts:
             amend_check(t, opts["--amend-criteria"], opts.get("--source") or "", tasks)
-        # 여기부터 쓰기
+        # 여기부터 쓰기(표지 둘은 거부할 수 있어 맨 앞에. --amend-criteria·--archive-judge와는 함께 오지 않는다)
+        if judge_names:
+            judge_start(t, doc, judge_names)
+            print("judge_started: " + doc.get("judge_started"))
+        if opts.get("--judge-clear") and not judge_clear(run_dir, t, doc):
+            print("표지 없음")
         if plan_move and os.path.isfile(os.path.join(t["_dir"], "judge.md")):
             os.replace(os.path.join(t["_dir"], "judge.md"), os.path.join(t["_dir"], "judge.plan.md"))
             print("judge.md → judge.plan.md(계획 판정을 옮김. 기록 단계의 읽기 판정이 judge.md를 새로 쓴다)")
@@ -951,8 +1036,8 @@ def main(argv):
                 for line in touch_path_warnings(run_dir, t, add_line):
                     print(line)
         if opts.get("--archive-judge"):
-            moved, snap = archive_judge(run_dir, t, doc)
-            print("보관: " + ", ".join(moved))
+            moved, snap = archive_judge(run_dir, t, doc, undecided)
+            print("보관: " + ", ".join(moved) + (" (판정불가 보관: retry·「재시도 범위」 그대로)" if undecided else ""))
             for line in snap:
                 print(line)
 

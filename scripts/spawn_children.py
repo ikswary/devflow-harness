@@ -15,6 +15,7 @@
   「판정 기준」 끝(`(스크립트 주입: 영역 판정)` 줄 아래)에 넣는다. 「건드릴 파일」이 모두 프로젝트 설정의 문서 경로인 행(문서 행)은
   자동 의존을 받지 않고 그 흐름의 앞 코드 행으로도 세지 않는다.
 - --depends-on: 모든 자식에 공통으로 더할 의존(예: 답을 반영하는 변경 task).
+- --now: 자식의 `created` 값. 없으면 지금 시각(`YYYY-MM-DD HH:MM:SS`, `task_set.py new`와 같은 꼴).
 - 자식마다 `criteria.orig.md`(만들 때의 판정 기준)를 함께 쓴다.
 - 코드 task 행(백로그·고르지 않은 안 밖)의 흐름에 flow.md가 없으면 함께 만든다(`status: 폴더 없음`, `role`, `round`).
   메인은 폴더를 만들 때 branch·dir·status를 채운다.
@@ -38,6 +39,7 @@
 import os
 import re
 import sys
+from datetime import datetime
 
 import devflow_lib
 import kinds
@@ -323,7 +325,7 @@ def main(argv):
     def opt(name):
         return argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else ""
     common_dep = split_list(opt("--depends-on"))
-    now = opt("--now")
+    now = opt("--now") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     over_cap = None
     if "--over-cap" in argv:
         over_cap = "백로그" if opt("--over-cap") == "백로그" else "만듦"

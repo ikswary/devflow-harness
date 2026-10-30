@@ -1,6 +1,6 @@
 ## 3. 머리 파일 `task.md`
 
-맨 앞 `---` 사이에 `키: 값`을 한 줄씩 쓴다. 목록은 `[a, b]`. `spawn_children.py`·`task_set.py`만 쓴다(메인이 돌린다). 손으로 고치지 않는다.
+맨 앞 `---` 사이에 `키: 값`을 한 줄씩 쓴다. 목록은 `[a, b]`. `spawn_children.py`·`task_set.py`만 쓴다(메인이 돌린다).
 
 | 키 | 값 |
 |---|---|
@@ -16,11 +16,11 @@
 | `origin` | 만든 근거. 지적·사용자 원문의 위치, 백로그를 처리하는 실행이면 원래 task 폴더의 경로. 사용자 답이 계기면 `사용자 {task id} {답 시각}`으로 시작(`task_set.py new --from-answer`가 채움. 이런 코드 task는 알림으로 지나가지 않는다) |
 | `cause_task` | 지적일 때 원인이 된 task id |
 | `fix_generation` | 수정 세대(스크립트가 채움: 재검증이 낸 수정은 그 재검증이 의존하는 수정의 최대 세대 + 1, 흐름별·전체 검증이 낸 수정은 0). 자체 검증 재시도와 다른 것을 센다 |
-| `commit` | 커밋 해시 |
+| `commit`, `no_change` | 커밋 해시 / 코드 변경 없음이면 `true` |
 | `running_agent` | 지금 도는 에이전트 인스턴스 이름. 끝나면 비운다 |
-| `waiting_user` | 사용자 할 일 한 줄. 사용자만 할 수 있는 일이 끝나야 이 task가 다음 단계로 갈 때 그 일을 적는다. 여럿이면 한 줄로 묶는다(예 `비밀 파일 준비 외 1건`). 비거나 키가 없으면 대기가 아니다. 메인만 적고 지운다. 쓰지 않는 꼴: 줄바꿈, ` #`(공백 뒤 `#`, 뒤가 주석으로 버려짐), `[`로 시작해 `]`로 끝남(목록으로 읽힘). `대기` task에 차 있으면 `board.py --ready`가 "사용자 할 일 대기"로 못 띄움에 둔다 |
+| `waiting_user` | 사용자만 할 수 있는 일이 끝나야 이 task가 다음 단계로 갈 때 그 일 한 줄. 여럿이면 한 줄로 묶는다(예 `비밀 파일 준비 외 1건`). 비거나 키가 없으면 대기가 아니다. 메인만 적고 지운다. 쓰지 않는 꼴: 줄바꿈, ` #`(공백 뒤 `#`, 뒤가 주석으로 버려짐), `[`로 시작해 `]`로 끝남(목록으로 읽힘). `대기` task에 차 있으면 `board.py --ready`가 "사용자 할 일 대기"로 못 띄움에 둔다 |
 | `retry` | 자체 검증 재시도 횟수(0~2). `task_set.py --archive-judge`가 올린다 |
-| `started_version`, `rules`, `machine_check`, `done_via`, `criteria_amended` | 스크립트가 채움: 시작 때의 하네스 판본(이 키가 있는 task에만 기록 점검 `devflow_lib.record_check`), 시작 때의 규칙 판(2부터 `stage` 전이를 강제), 구현·수정의 `machine_check.py` 종료 코드, `백로그`(다른 곳에서 처리된 백로그를 `완료`로), 판정 기준 정정 시각 |
+| `started_version`, `rules`, `machine_check`, `done_via`, `criteria_amended`, `judge_started` | 스크립트가 채움: 시작 때의 하네스 판본(있는 task에만 기록 점검 `record_check`), 시작 때의 규칙 판(2부터 `stage` 전이를 강제), 구현·수정의 `machine_check.py` 종료 코드, `백로그`(다른 곳에서 처리된 백로그를 `완료`로), 판정 기준 정정 시각, 판정자 표지 |
 | `judge_method` | 판정 방법 요약. 예: `실행함 3 · 전부 대조 2 · 해당 없음 1` |
 | `approval_mode` | `승인` / `알림` |
 | `n_decide`, `n_todo`, `n_notify`, `n_unverified`, `n_children` | 승인 화면의 칸별 항목 수와 자식 행 수(`screen.py`의 `counts:` 줄) |
@@ -32,7 +32,7 @@
 | `exported_commit` | (`wrap-up`) 내보낸 뒤 개발 기준 브랜치의 끝(`exec.py`가 채움). 이 task에 의존하는 task가 올릴 커밋으로 읽는다 |
 | `partial_flow` | (`flow-verify`) `true`면 보류된 구현을 빼고 남은 것만 검증한다(사용자 답 뒤 메인이 적음) |
 | `deploy_outcome`, `deployed_commit` | (`deploy-exec`) 결과 승인의 답(유지/되돌림/보류)과 올라간 커밋 해시. 뒤 환경 배포의 사전 조건이 읽는다 |
-| `created`, `started`, `approval_requested`, `approved` | 시각(스크립트가 찍는 `YYYY-MM-DD HH:MM:SS`. 옛 값 `HH:MM`도 읽는다). `judged`는 옛 실행만(판정 시각은 판정 파일 첫 줄) |
+| `created`, `started`, `approval_requested`, `approved` | 스크립트가 찍는 시각 `YYYY-MM-DD HH:MM:SS`(옛 값 `HH:MM`도 읽음). `judged`는 옛 실행만(판정 시각은 판정 파일 첫 줄) |
 
 본문 절(이 순서): `## 범위`, `## 판정 기준`, (스크립트가 쓰는 `## 판정 기준 정정`, `## 재시도 범위`), `## 건드릴 파일`(한 줄에 `- 경로` 하나, `*`·`**` 가능. 설명은 괄호나 ` — ` 뒤에. 경로는 실행 폴더 기준이거나 그 실행의 절대·`_workspace/{실행}/` 경로. 비면 `(없음)`), `## 시그니처와 결정 번호`, `## 정본의 절`, `## 영향받는 task와 처리`, `## 넘길 이상 신호`, (스크립트가 쓰는 `## 표 밖 전이`), `## 승인 기록`.
 

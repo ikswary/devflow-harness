@@ -104,7 +104,7 @@ def test_2c_task_file_keys_are_task_keys():
     keys = [k for line in text.splitlines() if line.startswith("| `")
             for k in re.findall(r"`([^`]+)`", line.split("|")[1])]
     names = [k for k, _, _ in kinds.TASK_KEYS]
-    assert len(names) == 44
+    assert len(names) == 46
     assert sorted(keys) == sorted(names), "task-file.md 키 칸과 TASK_KEYS가 다름: {}".format(
         sorted(set(keys) ^ set(names)))
 
