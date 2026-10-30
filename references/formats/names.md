@@ -5,15 +5,15 @@
 | 실행 폴더 | `{호출한 폴더}\_workspace\{YYYY-MM-DD}-{짧은 영문 슬러그}` | `_workspace\2026-01-01-example` |
 | task id | `T` + 세 자리 일련번호. 실행 안에서 만든 순서 | `T007` |
 | task 폴더 | `tasks\{task id}\` | `tasks\T007\` |
-| 묶음·흐름 이름 | 짧은 영문 소문자와 하이픈. 공통은 `common` | `contact-form` |
+| 묶음·흐름 이름 | 짧은 영문 소문자와 하이픈. 공통은 `common`. `infra`는 인프라 결정 정본 `design\infra.md`와 겹쳐 쓰지 않는다 | `contact-form` |
 | 통합 브랜치 | `harness/{슬러그}/integration` | `harness/example/integration` |
 | 흐름 브랜치 | `harness/{슬러그}/{흐름}` | `harness/example/common` |
 | 수정 흐름 | 흐름 이름 `fixes`. 다시 연 회차(`run.md` `round` n ≥ 2)의 수정·통합 흐름은 `fixes-r{n}`·`integration-r{n}` | `harness/example/fixes` |
 | 배포 폴더 흐름 | 배포만으로 시작할 때 `deploy-{n}`(n은 이 실행에서 몇 번째 배포 폴더인지, 1부터. 다시 연 실행에서 겹치지 않게) | `harness/example/deploy-1` |
 | 코드 폴더 | `{저장소 폴더 이름}-{슬러그}-{흐름 또는 integration}`. 저장소 폴더 옆에 둔다 | `myapp-example-common` |
-| 에이전트 인스턴스 | `{역할 줄임}-{task id}` (다시 띄우면 `-r{n}`을 붙인다) | `code-T012`, `rjudge-T012`, `code-T012-r1` |
+| 에이전트 인스턴스 | `{역할 줄임}-{task id}` (다시 띄우면 `-r{n}`, 탐침의 기록 단계는 `-rec`을 붙인다) | `code-T012`, `rjudge-T012`, `code-T012-r1`, `infra-T020-rec` |
 
-역할 줄임: `req`(devflow-harness:requirements-writer), `cause`(devflow-harness:cause-writer), `design`(devflow-harness:design-writer), `code`(devflow-harness:code-writer), `verify`(devflow-harness:verify-writer), `release`(devflow-harness:release-writer), `rjudge`(devflow-harness:read-judge), `xjudge`(devflow-harness:run-judge).
+역할 줄임: `req`(devflow-harness:requirements-writer), `cause`(devflow-harness:cause-writer), `design`(devflow-harness:design-writer), `code`(devflow-harness:code-writer), `infra`(devflow-harness:infra-writer), `verify`(devflow-harness:verify-writer), `release`(devflow-harness:release-writer), `rjudge`(devflow-harness:read-judge), `xjudge`(devflow-harness:run-judge).
 
 흐름이 하나뿐인 실행도 흐름 브랜치는 `harness/{슬러그}/{흐름}`이고 통합 브랜치는 없다.
 

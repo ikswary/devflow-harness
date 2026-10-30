@@ -1,7 +1,7 @@
 # devflow-harness 공통 계약
 
 ## 파일이 진실이다
-**파일이 진실이고 컨텍스트는 캐시다.** 대화 맥락은 사라진다. 메인과 에이전트 여덟 종이 작업 전에 읽는다.
+**파일이 진실이고 컨텍스트는 캐시다.** 대화 맥락은 사라진다. 메인과 에이전트 아홉 종이 작업 전에 읽는다.
 
 ## 쓰는 곳이 정해져 있다
 **쓰는 곳이 정해져 있다.** 작성자: 자기 task 폴더의 `result.md`(와 `revised\`), 정본을 처음 쓰는 task면 그 정본, 코드 task면 코드 폴더의 코드, 기록 문서를 맡은 정의면 그 정의가 정한 코드 폴더의 문서. 읽기 판정: 자기가 판정하는 task 폴더의 `judge.md`. 실행 판정: 자기가 판정하는 task 폴더의 `judge-run.md`와 `logs\`. 판정 파일의 첫 줄은 `판정자: {인스턴스 이름} {YYYY-MM-DD HH:MM:SS}`(`references/formats/judge-file.md`). 머리 파일(`task.md`), 다른 task의 파일, `decisions.md`, `journal.md`, `flow.md`, `conventions.md`, `exec.md`, `approved-cmds-*.md`는 누구도 쓰지 않는다(메인과 스크립트의 것).

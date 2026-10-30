@@ -2,7 +2,7 @@
 
 작업 공간: `{호출한 작업 디렉터리}\_workspace\{실행 폴더}`. 대상이 다른 폴더여도 위치를 바꾸지 않는다. `_workspace/`가 저장소의 제외 목록(`git rev-parse --git-path info/exclude`가 가리키는 파일)에 없으면 추가한다.
 
-1. **발견 점검**: 사용 가능한 에이전트 유형에 진입 「구성」의 에이전트 8종이 모두 있는지 확인한다. 하나라도 없으면 진행하지 않고 사용자에게 알린다. 범용 에이전트로 조용히 대체하지 않는다. `board.py --ready`에 `! 에이전트 정의` 줄이 있으면(판정자 정의가 이 판의 규칙과 맞지 않음) task를 띄우지 않고 사용자에게 알린다. 판정자 정의, 판정자 공통(`references/roles/judge.md`), 형식 파일 `references/formats/judge-file.md`·`judge-run-file.md`의 판정 파일 규칙을 바꾸면 두 정의의 `def-version` 표지와 `kinds.DEF_VERSION_MIN`을 함께 올린다.
+1. **발견 점검**: 사용 가능한 에이전트 유형에 진입 「구성」의 에이전트 9종이 모두 있는지 확인한다. 하나라도 없으면 진행하지 않고 사용자에게 알린다. 범용 에이전트로 조용히 대체하지 않는다. `board.py --ready`에 `! 에이전트 정의` 줄이 있으면(판정자 정의가 이 판의 규칙과 맞지 않음) task를 띄우지 않고 사용자에게 알린다. 판정자 정의, 판정자 공통(`references/roles/judge.md`), 형식 파일 `references/formats/judge-file.md`·`judge-run-file.md`의 판정 파일 규칙을 바꾸면 두 정의의 `def-version` 표지와 `kinds.DEF_VERSION_MIN`을 함께 올린다.
 2. `_workspace`에서 `run.md`가 있고 `status: 진행`인 실행을 찾는다(`state.md`가 있는 폴더는 옛 하네스의 실행이니 건드리지 않는다).
    - 있고 요청이 "이어서"면 → **재개**(0절 4).
    - 있는데 새 요청이면 → 묻는다: 진행 중인 실행에 더함 / (요청이 끝난 다른 실행의 후속이면) 그 실행 다시 열기 / 새 실행.
