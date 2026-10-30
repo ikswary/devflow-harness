@@ -1026,6 +1026,10 @@ def main(argv):
         if plan_move and os.path.isfile(os.path.join(t["_dir"], "judge.md")):
             os.replace(os.path.join(t["_dir"], "judge.md"), os.path.join(t["_dir"], "judge.plan.md"))
             print("judge.md → judge.plan.md(계획 판정을 옮김. 기록 단계의 읽기 판정이 judge.md를 새로 쓴다)")
+            old_mark = (doc.get("judge_started") or "").strip()
+            if old_mark:
+                doc.set("judge_started", "")   # 계획 판정의 판정자는 끝났다. 기록 단계의 판정자를 띄울 때 다시 찍는다
+                journal(run_dir, "메모", t["id"], "판정 표지 지움: " + old_mark)
         if "--amend-criteria" in opts:
             amend_criteria(run_dir, t, doc, opts["--amend-criteria"], opts.get("--source"), tasks)
         if opts.get("--screen-snapshot"):

@@ -955,6 +955,22 @@ def test_probe_record_stage_moves_plan_judge_cli(run_dir):
     assert (d / "judge.plan.md").read_text(encoding="utf-8") == plan
 
 
+def test_probe_record_stage_clears_judge_mark_cli(run_dir, tmp_path):
+    mark = "2026-10-30 10:00:00 rjudge-T001"
+    make(run_dir, status="진행", stage="실행", judge=now_judge(), judge_started=mark, **PROBE)
+    r = run_script("task_set", run_dir, "T001", "stage=기록")
+    assert r.returncode == 0, r.output
+    assert (run_dir.task_dir("T001") / "judge.plan.md").is_file()
+    assert front_value(run_dir, "judge_started") == ""
+    fixed = write(tmp_path / "criteria-new.md", "1. 고친 판정 기준\n")
+    r = run_script("task_set", run_dir, "T001", "--amend-criteria", fixed, "--source", "작성자 이상 신호 1")
+    assert r.returncode == 0, r.output
+    assert task_set.AMEND_MARKED.split("{}")[0] not in r.output, r.output
+    b = run_script("board", run_dir, "--resume")
+    assert b.returncode == 0 and "T001" in b.output, b.output
+    assert "--judge-clear" not in b.output, b.output
+
+
 def test_record_stage_of_other_stage_kind_keeps_judge_cli(run_dir):
     # 양성 대조: stage 기록이 있는 배포 실행은 judge.md를 옮기지 않는다
     make(run_dir, kind="deploy-exec", block="배포", status="진행", stage="확인", judge=READ_JUDGE, **NEW)
