@@ -15,6 +15,9 @@
 - 통과 못 한 코드 task: 커밋 안내 한 줄과 이 task에 의존하는 대기 task.
 - 재검증의 수정 행이 수정 세대 상한에 닿으면 「정해 주실 것」에 상한 항목((가) 만들기/(나) 백로그/(다) 설계 변경)을 더한다.
 - 사용자 원문을 계기로 만든 코드 task(`origin: 사용자 …`)는 알림 불가.
+- 영역 규칙(1.1.0부터 시작한 task): 코드 task의 「건드릴 파일」이 프로젝트 설정 「경로 목록」의 인프라 경로에 들면 알림 불가.
+  「경로 목록」의 `감지한 실행`이 이 실행이고 다른 task에 승인 요청·승인이 없으면 「알릴 것」 뒤에 `- [경로 목록]` 줄
+  (칸 수·`counts:`에 넣지 않음, 알림이면 알림 줄에도).
 - 자식 목록의 셈(행·kind·[백로그]·안별)을 `셈:` 줄로 보이고, 여섯 칸과 `나눈 기준:` 줄의 "자식 N행/M종" 꼴 주장이 셈과 다르면
   `! 수치 대조` 줄, 제목이 같은 행이면 `! 같은 제목 자식 행` 줄을 낸다. 칸 내용·칸별 수·`counts:`·알림 조건은 그대로다.
 - 「정해 주실 것」 수가 「이번 실행의 값」 한 승인의 결정 수 상한(0이면 없음)을 넘으면 `! 결정 수 상한` 줄을 낸다(`counts:`는 그대로).
@@ -466,6 +469,9 @@ def build(run_dir, tid, tasks=None):
         notify_ok = counts["n_decide"] == 0 and counts["n_todo"] == 0 and not blocked and not user_answer
     else:
         notify_ok = judged == 0 and not blocked
+    # 1.1.0부터 시작한 코드 task는 「건드릴 파일」이 인프라 경로에 들면 알림으로 지나가지 않는다(작업 트리는 보지 않음)
+    infra_paths = devflow_lib.touched_in_paths(t, "인프라") if code_task and devflow_lib.uses_domain_rules(t) else []
+    notify_ok = notify_ok and not infra_paths
     notify_kind = t.get("kind") in kinds.NOTIFY_KINDS and t.get("kind") not in kinds.NEVER_NOTIFY_KINDS
     return {
         "t": t, "tasks": tasks, "screen": screen, "missing": missing, "unparsed": unparsed, "failed": failed,
@@ -473,8 +479,22 @@ def build(run_dir, tid, tasks=None):
         "move_failed": move_failed, "notify_ok": notify_ok and notify_kind, "notify_kind": notify_kind,
         "code_task": code_task, "user_answer": user_answer, "judged": judged, "notes": notes, "env_n": env_n, "commit_hint": commit_hint,
         "facts": facts, "claims": claims, "judges_ok": judges_ok, "judges_why": judges_why,
-        "resource_wait": resource_wait,
+        "resource_wait": resource_wait, "infra_paths": infra_paths,
+        "paths_note": paths_note(run_dir, tasks, tid) if devflow_lib.uses_domain_rules(t) else "",
     }
+
+
+def paths_note(run_dir, tasks, tid):
+    """경로 목록 알림 줄. 프로젝트 설정 「경로 목록」의 `감지한 실행`이 이 실행이고 다른 task에 승인 요청·승인 시각이
+    없으면(그 실행의 첫 화면) 한 줄, 아니면 빈 글. 칸 수와 `counts:`에는 넣지 않는다."""
+    paths = devflow_lib.project_paths(run_dir)
+    if paths["실행"] != os.path.basename(os.path.abspath(run_dir)):
+        return ""
+    if any(str(o.get(key, "") or "").strip() for otid, o in tasks.items() if otid != tid
+           for key in ("approval_requested", "approved")):
+        return ""
+    return "- [경로 목록] 화면: {} / 인프라: {} / 문서: {} — 틀렸으면 이 답에서 고쳐 주세요".format(
+        *(", ".join(paths[key]) or "없음" for key in ("화면", "인프라", "문서")))
 
 
 def notify_status(run_dir, tid, tasks=None):
@@ -484,6 +504,8 @@ def notify_status(run_dir, tid, tasks=None):
         return False, b["error"]
     if not b["notify_kind"]:
         return False, "{}는 알림으로 지나가지 않는다".format(b["t"].get("kind"))
+    if b["infra_paths"]:
+        return False, "인프라 경로: " + ", ".join(b["infra_paths"])
     return b["notify_ok"], "screen.py 알림 조건 {}".format("충족" if b["notify_ok"] else "미충족")
 
 
@@ -528,11 +550,11 @@ def main(argv):
     for cell in kinds.CELLS:
         text = screen.get(cell, "")
         print()
-        if cell == "알릴 것" and others:
-            # 다른 task의 걸림은 이 task의 칸 수(counts:·n_notify)에 넣지 않고 따로 센다
+        if cell == "알릴 것" and (others or b["paths_note"]):
+            # 다른 task의 걸림과 경로 목록 줄은 이 task의 칸 수(counts:·n_notify)에 넣지 않고 따로 센다
             print("■ {} ({}){}".format(cell, devflow_lib.item_count(text), extra))
             own = text if devflow_lib.item_count(text) else ""
-            print("\n".join(x for x in (own, "\n".join(b["notes"])) if x))
+            print("\n".join(x for x in (own, "\n".join(b["notes"]), b["paths_note"]) if x))
             continue
         print("■ {} ({})".format(cell, devflow_lib.item_count(text)))
         print(text if text else "- 없음")
@@ -573,6 +595,9 @@ def main(argv):
     if not b["notify_kind"]:
         print("알림 조건: 미충족({}는 알림으로 지나가지 않는다)".format(t.get("kind")))
         return 0
+    if b["infra_paths"]:
+        print("알림 조건: 미충족(인프라 경로: {})".format(", ".join(b["infra_paths"])))
+        return 0
     why = "통과 못 한 기준·판정불가·판정 미완료·자원 대기 없음, 형식 문제 없음"
     if b["code_task"] and b["user_answer"]:
         print("알림 조건: 미충족(사용자 원문을 계기로 만든 task — origin {})".format(t.get("origin", "")))
@@ -581,8 +606,9 @@ def main(argv):
             why, "충족" if b["notify_ok"] else "미충족", counts["n_notify"], counts["n_unverified"]))
     else:
         print("알림 조건(네 칸이 비고 {}): {}".format(why, "충족" if b["notify_ok"] else "미충족"))
-    if b["notify_ok"] and b["notes"]:
-        print("알림 줄에 함께 적을 것: " + " / ".join(n[2:].split(chr(10))[0] for n in b["notes"]))
+    together = b["notes"] + ([b["paths_note"]] if b["paths_note"] else [])
+    if b["notify_ok"] and together:
+        print("알림 줄에 함께 적을 것: " + " / ".join(n[2:].split(chr(10))[0] for n in together))
     return 0
 
 

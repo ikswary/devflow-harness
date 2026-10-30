@@ -447,6 +447,8 @@ def required_judges(t):
             need.add("read")
         if kind == "be-implementation" and contract_token(t):
             need.add("read")   # 「시그니처와 결정 번호」에 [계약]이 있는 서버 구현
+        if uses_domain_rules(t) and touched_in_paths(t, "화면"):
+            need.add("read")   # 화면 경로에 닿는 구현(판정자가 "화면 동작을 바꾸는가"를 본다)
     if kind == "deploy-exec" and os.path.isfile(os.path.join(t["_dir"], "result.md")):
         need.add("read")   # 배포 기록(result.md)을 쓴 뒤의 읽기 판정
     if kind == "merge" and "충돌" in branch_judgements(t).values():
@@ -1083,6 +1085,17 @@ def path_in_list(path, patterns):
         if re.fullmatch(regex, p):
             return True
     return False
+
+
+def touched_in_paths(t, key):
+    """머리 파일 「건드릴 파일」 경로 가운데 프로젝트 설정 경로 목록 `key`(화면·인프라·문서)에 드는 것.
+    실행 폴더는 `t["_dir"]`의 두 단계 위다. 경로 목록이 없으면 빈 목록."""
+    if not t.get("_dir"):
+        return []
+    patterns = project_paths(os.path.dirname(os.path.dirname(t["_dir"])))[key]
+    if not patterns:
+        return []
+    return [p for p in touch_paths(t.get("_sections", {}).get("건드릴 파일", "")) if path_in_list(p, patterns)]
 
 
 SPEC_SKIP = ("overview.md", "brief.md")

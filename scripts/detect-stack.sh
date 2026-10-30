@@ -82,3 +82,23 @@ echo "## 배포 단서"
 ls -d .github/workflows/* Jenkinsfile .gitlab-ci.yml Dockerfile* docker-compose*.y*ml serverless.y*ml template.y*ml cdk.json Procfile appspec.yml 2>/dev/null | sed 's/^/- /' | lim
 find . -maxdepth 3 \( $PRUNE \) -prune -o \( -name 'Chart.yaml' -o -name 'kustomization.y*ml' -o -name 'deploy*.sh' \) -print 2>/dev/null | sed 's|^\./|- |' | lim
 echo "- (없으면 배포 방식 미확인 — 배포 블록에서 사용자에게 확인)"
+echo
+
+# 경로 단서: 프로젝트 설정 「경로 목록」에 그대로 옮길 패턴 꼴(폴더는 `{폴더}/**`, 파일은 경로 그대로).
+# 이미 적은 폴더 아래의 후보는 다시 적지 않는다.
+nested() { LC_ALL=C sort -u | awk '{for(i=1;i<=n;i++) if(index($0, k[i] "/")==1) next; print; if(sub(/\/\*\*$/, "")) k[++n]=$0}'; }
+none() { awk '{print "- " $0; c++} END{if(!c) print "- 없음"}'; }
+ui_file() { find "$1" \( $PRUNE \) -prune -o -type f \( -name '*.tsx' -o -name '*.jsx' -o -name '*.vue' -o -name '*.svelte' -o -name '*.html' -o -name '*.kt' \) -print 2>/dev/null | head -1; }
+echo "## 경로 단서"
+echo "### 화면 경로 후보"
+find . -maxdepth 3 \( $PRUNE \) -prune -o -type d \( -name client -o -name web -o -name frontend -o -name components \
+  -o -path '*/src/routes' -o -path '*/src/pages' -o -path '*/app/src/main' \) -print 2>/dev/null \
+  | while read -r d; do [ -n "$(ui_file "$d")" ] && echo "${d#./}/**"; done \
+  | nested | none | lim
+echo "### 인프라 경로 후보"
+{ find . -maxdepth 3 \( $PRUNE \) -prune -o -type d \( -name migrations -o -name migration -o -name deploy -o -name infra -o -path './.github/workflows' \) -print 2>/dev/null | sed 's|$|/**|'
+  find . -maxdepth 3 \( $PRUNE \) -prune -o -type f \( -name install.sql -o -name 'wrangler.*' -o -name 'Dockerfile*' -o -name '*.tf' -o -name Chart.yaml -o -name 'kustomization.y*ml' \) -print 2>/dev/null
+} | sed 's|^\./||' | nested | none | lim
+echo "### 문서 경로 후보"
+{ find . -maxdepth 3 \( $PRUNE \) -prune -o -type d -name docs -print 2>/dev/null | sed 's|$|/**|'; [ -f README.md ] && echo README.md; } \
+  | sed 's|^\./||' | nested | none | lim
