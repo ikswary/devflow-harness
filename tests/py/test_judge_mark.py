@@ -248,3 +248,52 @@ def test_c10_judge_clear(run_dir):
     assert r.returncode == 0, r.output
     assert "표지 없음" in r.stdout
     assert journal.read_text(encoding="utf-8") == before
+
+
+# ⑬ V-05: 같은 호출의 --status가 바뀐 뒤 상태로 --judge-start를 검사한다(대조: --status 없는 대기는 ②처럼 거부)
+def test_c13_judge_start_checked_against_status_after_transition(run_dir):
+    run_dir.task("T001", "표지 시험", status="대기", **NEW)
+    r = run_script("task_set", run_dir, "T001", "--status", "진행", "--judge-start", "rjudge-T001")
+    assert r.returncode == 0, r.output
+    assert front_value(run_dir, "status") == "진행"
+    mark = front_value(run_dir, "judge_started").split()
+    assert STAMP.match(" ".join(mark[:2])) and mark[2:] == ["rjudge-T001"]
+    assert "judge_started: " in r.stdout
+
+
+# ⑭ 전이가 거부되면 표지도 쓰지 않는다(대기→자체검증은 전이 목록에 없다)
+def test_c14_rejected_transition_leaves_no_mark(run_dir):
+    run_dir.task("T001", "표지 시험", status="대기", **NEW)
+    r = run_script("task_set", run_dir, "T001", "--status", "자체검증", "--judge-start", "rjudge-T001")
+    assert r.returncode == 3, r.output
+    assert "judge_started: " not in r.stdout
+    assert front_value(run_dir, "status") == "대기"
+    assert front_value(run_dir, "judge_started") is None
+
+
+# ⑮ 허용된 전이로 판정자를 띄울 수 없는 상태(보류)가 되는 호출이면 표지를 거부하고 상태도 바꾸지 않는다(대조: ⑬의 진행은 받음)
+def test_c15_status_after_transition_not_judgeable_rejected_atomically(run_dir):
+    run_dir.task("T001", "표지 시험", status="진행", **NEW)
+    r = run_script("task_set", run_dir, "T001", "--status", "보류", "--reason", "x", "--judge-start", "rjudge-T001")
+    assert r.returncode == 3, r.output
+    assert "--judge-start는 진행·자체검증에서만(전이 뒤 보류)" in r.output
+    assert front_value(run_dir, "status") == "진행"
+    assert front_value(run_dir, "judge_started") is None
+
+
+# ⑯ 진행→자체검증과 함께 줘도 표지가 찍히고, 이미 표지가 있으면 시각을 두고 새 이름만 덧붙인다
+def test_c16_judge_start_with_selfcheck_transition_keeps_stamp_and_appends(run_dir):
+    run_dir.task("T001", "표지 시험", status="진행", judge_started=MARK, **NEW)
+    r = run_script("task_set", run_dir, "T001", "--status", "자체검증", "--judge-start", "xjudge-T001")
+    assert r.returncode == 0, r.output
+    assert front_value(run_dir, "status") == "자체검증"
+    assert front_value(run_dir, "judge_started").split() == MARK.split() + ["xjudge-T001"]
+
+
+# ⑰ --status와 같은 호출에 다른 키(키=값)가 섞여도 표지가 찍힌다
+def test_c17_judge_start_with_status_and_other_key(run_dir):
+    run_dir.task("T001", "표지 시험", status="대기", **NEW)
+    r = run_script("task_set", run_dir, "T001", "--status", "진행", "--judge-start", "rjudge-T001", "one_line=x")
+    assert r.returncode == 0, r.output
+    assert front_value(run_dir, "one_line") == "x"
+    assert front_value(run_dir, "judge_started").split()[2:] == ["rjudge-T001"]

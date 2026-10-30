@@ -44,7 +44,7 @@
                      꼬리표(judge.md는 환경, judge-run.md는 환경·대상)이고 하나 이상일 때만 받는다. 재시도 상한·판정 미완료를
                      보지 않고 retry와 「재시도 범위」를 그대로 둔다(보관·사본·표지 비움은 같다). external_progress가
                      `자원 대기:`이면 종료 코드 3.
-  --judge-start 이름[,이름…]  판정자를 띄우기 전에 표지 `judge_started: {시각} {이름} …`을 쓴다(진행·자체검증에서만).
+  --judge-start 이름[,이름…]  판정자를 띄우기 전에 표지 `judge_started: {시각} {이름} …`을 쓴다(진행·자체검증에서만. 같은 호출의 --status가 있으면 전이 뒤 상태로 본다).
                      다시 부르면 없던 이름만 덧붙이고 시각은 첫 값을 둔다. 표지가 있으면 --amend-criteria를 받지 않는다.
   --judge-clear      judge.md·judge-run.md가 둘 다 없을 때만 표지를 비우고 journal에 메모(있으면 종료 코드 3).
                      표지가 이미 비었으면 `표지 없음`(종료 코드 0, 파일 그대로).
@@ -709,10 +709,13 @@ def amend_criteria(run_dir, t, doc, path, source, tasks):
     doc.set("criteria_amended", now_str())
 
 
-def judge_start(t, doc, names):
-    """판정자를 띄우기 전의 표지. 없던 이름만 덧붙이고 시각은 첫 값을 둔다."""
-    if t.get("status") not in ("진행", "자체검증"):
-        raise Reject("--judge-start는 진행·자체검증에서만(지금 {})".format(t.get("status")))
+def judge_start(t, doc, names, new_status=None):
+    """판정자를 띄우기 전의 표지. 없던 이름만 덧붙이고 시각은 첫 값을 둔다.
+    같은 호출의 --status가 있으면 전이 뒤 상태로 검사한다(전이 검사는 이미 통과했다)."""
+    now = new_status or t.get("status")
+    if now not in ("진행", "자체검증"):
+        raise Reject("--judge-start는 진행·자체검증에서만({} {})".format(
+            "전이 뒤" if now != t.get("status") else "지금", now))
     parts = (doc.get("judge_started") or "").split()
     stamp, have = (parts[:2], parts[2:]) if len(parts) >= 2 else (now_str().split(), [])
     added = [x for x in dict.fromkeys(names) if x not in have]
@@ -1016,7 +1019,7 @@ def main(argv):
             amend_check(t, opts["--amend-criteria"], opts.get("--source") or "", tasks)
         # 여기부터 쓰기(표지 둘은 거부할 수 있어 맨 앞에. --amend-criteria·--archive-judge와는 함께 오지 않는다)
         if judge_names:
-            judge_start(t, doc, judge_names)
+            judge_start(t, doc, judge_names, new)
             print("judge_started: " + doc.get("judge_started"))
         if opts.get("--judge-clear") and not judge_clear(run_dir, t, doc):
             print("표지 없음")
