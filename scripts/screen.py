@@ -12,7 +12,11 @@
 - 판정불가 꼬리표(SKILL.md 2절 표): `대상:`은 「확인 안 된 것」으로 옮겨 알림을 막지 않는다. `대상: 기준선 없음 {명령}`은
   decisions.md에 "기준선 질문 {명령}"이 없으면 「정해 주실 것」에 기준선 질문 한 항목을 더한다. `환경:`은 머리 줄에 센다.
 - 마무리·합치기: 보류와 보류에 막힌 task를 「알릴 것」에 "[보류로 남김]"으로(합치기는 그 흐름의 것만).
-- 통과 못 한 코드 task: 커밋 안내 한 줄과 이 task에 의존하는 대기 task.
+- 통과 못 한 코드 task: 커밋 안내 한 줄(`no_change: true`면 없음)과 이 task에 의존하는 대기 task.
+- 메인용 두 블록(머리 파일 「넘길 이상 신호」, judge.md 「확인 방법 요약」)은 한 줄로 줄이고 전문은 `tasks\\{id}\\screen-main.md`에 쓴다.
+  "메인이 처리할 것"은 `MAIN_SIGNAL_WORDS` 가운데 하나가 든 이상 신호 항목이다.
+- 재개 바닥 알림: journal.md의 마지막 `재개 바닥 {n}K` 메모가 150K 이상이고 그 뒤 `바닥 알림` 메모가 없으면
+  `counts:` 줄 앞에 `! 재개 바닥` 줄을 내고 journal에 `바닥 알림 {n}K` 메모를 더한다(재개마다 한 번).
 - 재검증의 수정 행이 수정 세대 상한에 닿으면 「정해 주실 것」에 상한 항목((가) 만들기/(나) 백로그/(다) 설계 변경)을 더한다.
 - 사용자 원문을 계기로 만든 코드 task(`origin: 사용자 …`)는 알림 불가.
 - 자식 목록의 셈(행·kind·[백로그]·안별)을 `셈:` 줄로 보이고, 여섯 칸과 `나눈 기준:` 줄의 "자식 N행/M종" 꼴 주장이 셈과 다르면
@@ -41,6 +45,10 @@ CLAIM_ROW_RES = (re.compile(r"자식(?:[ \t]|행|task)*(?<!\d)(\d+)(?:개|행)")
                  re.compile(r"(?<!\d)(\d+)(?:개|행)(?:[ \t]|의)*자식"))
 CLAIM_PAIR_RE = re.compile(r"(?<!\d)(\d+)행[/·, \t](\d+)종")
 CLAIM_NOTE = "(메인은 결과를 고치지 않는다. 작성자에게 「승인 화면」만 다시 쓰게 하거나 셈 값을 함께 보인다)"
+# 메인이 처리할 이상 신호의 낱말(공통 계약 「실행을 흔들지 않는다」·「우회하지 않는다」). 요약 줄은 앞 SUMMARY_CHARS자까지
+MAIN_SIGNAL_WORDS = ("권한 거부", "자원 대기", "PID", "잠금")
+SUMMARY_CHARS = 100
+FLOOR_RE = re.compile(r"^재개 바닥 (\d+)K")
 
 
 def children_lines(result_text):
@@ -358,6 +366,54 @@ def amendments(t):
     return out
 
 
+def main_summary(t, judge_top):
+    """메인용 두 블록의 (이상 신호 줄 목록, 확인 방법 줄, screen-main.md 본문). 두 블록이 다 비면 ([], None, None)."""
+    signals = t["_sections"].get("넘길 이상 신호", "")
+    signals = "" if signals == "(없음)" else signals
+    method = judge_top.get("확인 방법 요약", "")
+    if not signals and not method:
+        return [], None, None
+    signal_lines, method_line = [], None
+    path = "tasks\\{}\\screen-main.md".format(t["id"])   # 골든이 운영체제와 무관하게 글자 그대로
+    if signals:
+        head, its = items(signals)
+        its = [it for it in its if not devflow_lib.EMPTY_ITEM.match(it[0].strip())]
+        if not its and "".join(head).strip():
+            its = [["- " + " ".join(l.strip() for l in head if l.strip())]]   # `- ` 항목 없이 쓴 글은 한 건
+        todo = [it for it in its if any(w in "\n".join(it) for w in MAIN_SIGNAL_WORDS)]
+        signal_lines.append("■ 이상 신호 {}건 · 메인이 처리할 것 {}건 → {}".format(len(its), len(todo), path))
+        if todo:
+            signal_lines.append("  " + todo[0][0][2:].strip()[:SUMMARY_CHARS])
+    if method:
+        first = next((l.strip() for l in method.splitlines() if l.strip()), "")
+        method_line = "■ 자체 검증의 확인 방법: " + first[:SUMMARY_CHARS]
+    body = "# {} 메인용 전문\n\n## 이상 신호\n{}\n\n## 자체 검증의 확인 방법\n{}\n".format(
+        t["id"], signals or "- 없음", method or "- 없음")
+    return signal_lines, method_line, body
+
+
+def floor_alert(run_dir):
+    """journal.md의 마지막 `재개 바닥 {n}K` 메모의 n이 CTX_FLOOR_NOTE 이상이고 그 뒤 `바닥 알림` 메모가 없으면 n, 아니면 None.
+    `재개 바닥 측정 불가(…)` 메모도 마지막 바닥으로 센다(값이 없어 알리지 않음)."""
+    p = os.path.join(run_dir, "journal.md")
+    if not os.path.isfile(p):
+        return None
+    floor, alerted = None, False
+    for line in devflow_lib.read_text(p).splitlines():
+        cells = [c.strip() for c in line[2:].split("|")] if line.startswith("- ") else []
+        if len(cells) < 4 or cells[1] != "메모":
+            continue
+        note = "|".join(cells[3:]).strip()
+        if note.startswith("재개 바닥"):
+            m = FLOOR_RE.match(note)
+            floor, alerted = (int(m.group(1)) if m else None), False
+        elif note.startswith("바닥 알림"):
+            alerted = True
+    if floor is None or alerted or floor * 1000 < devflow_lib.CTX_FLOOR_NOTE:
+        return None
+    return floor
+
+
 def build(run_dir, tid, tasks=None):
     """화면 재료를 계산한다. 출력 없이 dict를 돌려준다(task_set.py가 알림 조건을 볼 때도 쓴다)."""
     tasks = tasks or devflow_lib.load_tasks(run_dir)
@@ -450,7 +506,7 @@ def build(run_dir, tid, tasks=None):
     code_task = t.get("kind") in kinds.AUTO_DEPEND_KINDS
     judged = sum(counts.values())
     commit_hint = []
-    if code_task and devflow_lib.item_count(failed) and not str(t.get("commit", "")).strip():
+    if code_task and devflow_lib.item_count(failed) and not str(t.get("commit", "")).strip() and not devflow_lib.no_change(t):
         # 통과 못 한 코드 task는 사람이 답해 완료될 때 커밋한다(SKILL.md 6절 「커밋」)
         commit_hint.append("커밋: 변경 task로 고침·원인 분석을 고르면 지금 변경을 커밋한 위에서 고칩니다. "
                            "보류를 고르면 커밋하지 않은 변경을 패치로 치울지 함께 묻습니다.")
@@ -519,11 +575,12 @@ def main(argv):
         print()
         print("■ 자원 대기")
         print("- {}".format(b["resource_wait"]))
-    signals = t["_sections"].get("넘길 이상 신호", "")
-    if signals and signals != "(없음)":
+    signal_lines, method_line, main_text = main_summary(t, b["judge_top"])
+    if main_text is not None:
+        devflow_lib.write_text(os.path.join(t["_dir"], "screen-main.md"), main_text)
+    if signal_lines:
         print()
-        print("■ 이상 신호")
-        print(signals)
+        print("\n".join(signal_lines))
     for cell in kinds.CELLS:
         text = screen.get(cell, "")
         print()
@@ -535,10 +592,9 @@ def main(argv):
             continue
         print("■ {} ({})".format(cell, devflow_lib.item_count(text)))
         print(text if text else "- 없음")
-    if b["judge_top"].get("확인 방법 요약"):
+    if method_line:
         print()
-        print("■ 자체 검증의 확인 방법")
-        print(b["judge_top"]["확인 방법 요약"])
+        print(method_line)
     if b["criterion"] is not None:
         print()
         print("■ 만들 task {}개 (나눈 기준: {})".format(len(kids), b["criterion"] or "적히지 않음"))
@@ -559,6 +615,12 @@ def main(argv):
     if warn:
         print()
         print("\n".join(warn))
+    floor = floor_alert(run_dir)
+    if floor is not None:
+        print()
+        print("! 재개 바닥 {}K({}K 이상): 하네스 밖 도구 정의가 큼. 이 프로젝트에 필요 없는 MCP 서버를 끄면 줄어듦".format(
+            floor, devflow_lib.CTX_FLOOR_NOTE // 1000))
+        devflow_lib.journal_append(run_dir, "메모", tid, "바닥 알림 {}K".format(floor))
     print()
     print("counts: n_decide={n_decide} n_todo={n_todo} n_notify={n_notify} n_unverified={n_unverified} n_children={kids}".format(
         kids=len(kids), **counts))

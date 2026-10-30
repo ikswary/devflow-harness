@@ -12,7 +12,8 @@
   python board.py {실행 폴더} --cycles        의존 고리만(있으면 종료 코드 3)
   python board.py {실행 폴더} --log           승인 기록을 시간순으로
   python board.py {실행 폴더} --resume        재개 때 볼 것(진행·자체검증·승인대기, 실행 중 에이전트와 그 결과 파일의 마지막
-                                              수정 시각, 외부 작업 진행, 답 반영 대기). `--now "시각"`으로 기준 시각을 줄 수 있다
+                                              수정 시각, 외부 작업 진행, 답 반영 대기, 판정 파일이 덜 찬 판정자 표지).
+                                              `--now "시각"`으로 기준 시각을 줄 수 있다
   python board.py {작업 공간} --backlog       작업 공간의 모든 실행에서 남은 백로그
 """
 import os
@@ -153,9 +154,10 @@ def flow_cap(run_dir):
 
 
 def commit_waiting(tasks, flow):
-    """흐름에서 통과 못 한 채 사람을 기다리는(승인대기, commit 빔) 코드 task id. 커밋 전이라 받아오기와 다음 쓰는 task를 막는다."""
+    """흐름에서 통과 못 한 채 사람을 기다리는(승인대기, commit 빔) 코드 task id. 커밋 전이라 받아오기와 다음 쓰는 task를 막는다.
+    코드를 바꾸지 않은 task(`no_change: true`)는 커밋할 것이 없어 뺀다."""
     return [o["id"] for o in tasks.values() if flow and o.get("flow") == flow and o.get("kind") in kinds.AUTO_DEPEND_KINDS
-            and o.get("status") == "승인대기" and not str(o.get("commit", "")).strip()]
+            and o.get("status") == "승인대기" and not str(o.get("commit", "")).strip() and not devflow_lib.no_change(o)]
 
 
 def flow_done(tasks, name, f, holds):
@@ -486,6 +488,9 @@ def print_resume(tasks, run_dir=None, now=None):
                 notes.append("외부 작업 진행: {} (실행 기록을 보여 주고 먼저 묻는다)".format(progress))
         if str(t.get("awaiting_answer_apply", "")).lower() in ("true", "예"):
             notes.append("답 반영 대기")
+        mark = str(t.get("judge_started", "") or "").strip()
+        if mark and t.get("status") in ("진행", "자체검증") and not devflow_lib.judges_present(t)[0]:
+            notes.append("판정자 표지 {} (에이전트 목록에서 이름을 찾는다. 없고 판정 파일도 없으면 --judge-clear 뒤 다시 띄운다)".format(mark))
         if notes:
             print("- {} {}: {}".format(tid, t.get("title", ""), " / ".join(notes)))
 
