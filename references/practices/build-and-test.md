@@ -1,6 +1,6 @@
 # 빌드·테스트 실행과 보고
 
-읽는 kind: `question`, `root-cause`, `implementation`, `fix`. 실행 판정자도 읽는다.
+읽는 kind: `question`, `root-cause`, `probe`, `implementation`, `fix`. 실행 판정자도 읽는다.
 
 ## 명령 고르기
 - 먼저 `recon.md`의 명령을 쓴다. 없으면 아래 기본값을 쓰고 보고서에 "recon에 없음"이라고 적는다.

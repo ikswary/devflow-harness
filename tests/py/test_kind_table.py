@@ -1,4 +1,4 @@
-"""특성 시험 ①: kind 17 × 속성 8의 지금 값(함수 단위).
+"""특성 시험 ①: kind 19 × 속성 8의 지금 값(함수 단위).
 
 기대값은 `design/peer-alignment.md` 1.1 표에서 옮긴 데이터다(아래 `EXPECTED`). 실제 값은 스크립트의 상수와 판정 함수에서
 읽는다. 기대값을 같은 코드로 계산하지 않는다.
@@ -9,7 +9,7 @@
 - 알림 정책: `kinds.notify_policy`, `kinds.STAGE_KINDS`, `kinds.NEVER_NOTIFY_KINDS`
 - stage: `kinds.stages_of`
 - 코드 폴더 쓰기: `board.writes`
-- 흐름 상한 셈: `kinds.KINDS[kind].writers`의 code-writer, 파생 `kinds.CODE_WRITER_KINDS`
+- 흐름 상한 셈: `kinds.KINDS[kind].writers`의 code-writer와 `writes_code_dir`, 파생 `kinds.CODE_WRITER_KINDS`
 - 자동 의존: `kinds.KINDS[kind].auto_depends_in_flow`, 파생 `kinds.AUTO_DEPEND_KINDS`
 - 표시 글자: `kinds.glyph`
 """
@@ -28,6 +28,7 @@ NEVER = "불가"
 MERGE_STAGES = ("실행승인", "실행", "결과승인", "끝")
 WRAP_STAGES = ("실행승인", "실행", "결과승인", "끝")
 DEPLOY_STAGES = ("사전조건", "직전확인", "명령", "확인", "결과승인", "브랜치", "기록", "넣기승인", "넣기", "끝")
+PROBE_STAGES = ("실행승인", "실행", "기록", "결과승인", "끝")
 
 # kind: (블록, 읽기 판정, 실행 판정, 알림, stage, 코드 폴더 쓰기, 흐름 상한 셈, 자동 의존, 글자)
 EXPECTED = {
@@ -35,9 +36,12 @@ EXPECTED = {
     "brief":          ("기획",     "늘",        "—", ASK_ONLY,    "—",           "—", "—", "—", "B"),
     "req-overview":   ("요구사항", "늘",        "—", ASK_ONLY,    "—",           "—", "—", "—", "Q"),
     "req-detail":     ("요구사항", "늘",        "—", ASK_ONLY,    "—",           "—", "—", "—", "Q"),
+    "infra-design":   ("설계",     "늘",        "—", ASK_ONLY,    "—",           "—", "—", "—", "I"),
     "root-cause":     ("원인 분석", "늘",       "늘", ASK_ONLY,   "—",           "예", "—", "—", "C"),
     "ui-design":      ("설계",     "늘",        "—", ASK_ONLY,    "—",           "—", "—", "—", "U"),
     "design":         ("설계",     "늘",        "—", ASK_ONLY,    "—",           "—", "—", "—", "S"),
+    # probe의 작성자에 code-writer가 있지만 코드 폴더에 쓰지 않아 흐름 상한에 세지 않는다
+    "probe":          ("설계",     "늘",        "—", STAGED,      PROBE_STAGES,  "—", "—", "—", "P"),
     "implementation": ("구현",     "조건",      "늘", DECIDE_ZERO, "—",          "예", "예", "예", ""),
     "fix":            ("구현",     "늘",        "늘", DECIDE_ZERO, "—",          "예", "예", "예", "F"),
     "change":         ("",         "늘",        "—", DECIDE_ZERO, "—",           "—", "—", "—", "X"),
@@ -60,9 +64,9 @@ BRANCH_LINE = "- 2026-10-15 10:00:00 | 브랜치 판정 | 실행승인:1 | {} | 
 CONFLICT_EXEC = BRANCH_LINE.format("충돌")
 
 
-def test_expected_table_covers_the_seventeen_kinds():
-    # 기대 데이터가 17행이고, 스크립트가 아는 kind 집합(블록 표·글자 표)과 같다
-    assert len(EXPECTED) == 17
+def test_expected_table_covers_the_nineteen_kinds():
+    # 기대 데이터가 19행이고, 스크립트가 아는 kind 집합(블록 표·글자 표)과 같다
+    assert len(EXPECTED) == 19
     assert set(EXPECTED) == set(kinds.KINDS)
 
 
@@ -128,7 +132,7 @@ def test_kind_attributes(kind, lib, tmp_path):
         "stage": kinds.stages_of(kind) or "—",
         # change는 「건드릴 파일」이 비어 있는 꼴로 본다(정본 밖 경로를 고치는 옛 실행의 change는 `writes`가 참)
         "코드 폴더 쓰기": _yes(board.writes(_task(tmp_path / "w", "t", kind))),
-        "흐름 상한 셈": _yes("code-writer" in kinds.KINDS[kind].writers),
+        "흐름 상한 셈": _yes("code-writer" in kinds.KINDS[kind].writers and kinds.KINDS[kind].writes_code_dir),
         "자동 의존": _yes(kinds.KINDS[kind].auto_depends_in_flow),
         "글자": kinds.glyph(kind),
     }

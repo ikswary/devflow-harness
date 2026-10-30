@@ -4,9 +4,9 @@
 
 | 절 | 파일 |
 | --- | --- |
-| 1. kind 17 | `references/registry/kinds.md` |
+| 1. kind 19 | `references/registry/kinds.md` |
 | 2. 간선 | `references/registry/edges.md` |
-| 3. 에이전트 8 | `references/registry/agents.md` |
+| 3. 에이전트 9 | `references/registry/agents.md` |
 | 4. 값 집합 | `references/registry/values.md` |
 | 5. 머리 파일 키와 본문 절 | `references/registry/task-keys.md` |
 | 6. run.md 키와 시작값 | `references/registry/run-keys.md` |

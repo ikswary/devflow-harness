@@ -1,10 +1,11 @@
-## 3. 에이전트 8
+## 3. 에이전트 9
 
 | 에이전트 | role | model | tools | short | required_tools | has_def_version |
 | --- | --- | --- | --- | --- | --- | --- |
 | requirements-writer | writer | opus | Read, Grep, Glob, Bash, Write, Edit | req | — | — |
 | cause-writer | writer | opus | Read, Grep, Glob, Bash, Write, Edit | cause | — | — |
 | design-writer | writer | opus | Read, Grep, Glob, Bash, Write, Edit | design | — | — |
+| infra-writer | writer | opus | Read, Grep, Glob, Bash, Write, Edit | infra | — | — |
 | code-writer | writer | opus | Read, Grep, Glob, Bash, Write, Edit | code | — | — |
 | verify-writer | writer | opus | Read, Grep, Glob, Bash, Write, Edit | verify | — | — |
 | release-writer | writer | sonnet | Read, Grep, Glob, Bash, Write, Edit | release | — | — |

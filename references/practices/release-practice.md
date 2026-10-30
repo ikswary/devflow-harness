@@ -1,6 +1,6 @@
 # 마무리와 배포
 
-읽는 kind: `wrap-up`, `deploy-plan`, `deploy-exec`.
+읽는 kind: `infra-design`, `probe`, `wrap-up`, `deploy-plan`, `deploy-exec`.
 
 ## A. 마무리
 

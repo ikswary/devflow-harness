@@ -1,6 +1,6 @@
 # 설계서 작성법
 
-읽는 kind: `question`, `design`, `change`.
+읽는 kind: `question`, `infra-design`, `design`, `change`.
 
 설계서는 구현자가 추가 질문 없이 작업을 시작할 수 있을 만큼 구체적이어야 하고, 리뷰어가 "왜 이렇게 했는지"를 판단할 수 있을 만큼 이유가 있어야 한다.
 

@@ -1,14 +1,14 @@
 ## 8. 파생 집합
 
-- `STAGE_KINDS`: `merge`, `wrap-up`, `deploy-exec`
+- `STAGE_KINDS`: `probe`, `merge`, `wrap-up`, `deploy-exec`
 - `AUTO_DEPEND_KINDS`: `implementation`, `fix`
 - `TOUCH_FILES_KINDS`: `implementation`, `fix`
 - `READBACK_KINDS`: `implementation`, `fix`
 - `CODE_DIR_KINDS`: `root-cause`, `implementation`, `fix`, `merge`
-- `CANON_WRITER_KINDS`: `question`, `brief`, `req-overview`, `req-detail`, `ui-design`, `design`, `change`
+- `CANON_WRITER_KINDS`: `question`, `brief`, `req-overview`, `req-detail`, `infra-design`, `ui-design`, `design`, `change`
 - `VERIFY_KINDS`: `flow-verify`, `reverify`, `full-verify`
-- `NOTIFY_KINDS`: `question`, `implementation`, `fix`, `change`, `reverify`, `merge`
-- `NOTIFY_BY_DECIDE_KINDS`: `implementation`, `fix`, `change`
+- `NOTIFY_KINDS`: `question`, `probe`, `implementation`, `fix`, `change`, `reverify`, `merge`
+- `NOTIFY_BY_DECIDE_KINDS`: `probe`, `implementation`, `fix`, `change`
 - `NEVER_NOTIFY_KINDS`: `deploy-plan`, `deploy-exec`
 - `CODE_WRITER_KINDS`: `implementation`, `fix`, `merge`
 - `commit_kinds(1)`: `implementation`, `fix`

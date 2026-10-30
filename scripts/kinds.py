@@ -1,4 +1,4 @@
-"""등록표: kind 17·에이전트 8·값 집합·머리 파일 키·판본 칸의 유일한 원천.
+"""등록표: kind 19·에이전트 9·값 집합·머리 파일 키·판본 칸의 유일한 원천.
 
 엔진 스크립트는 이 모듈의 이름과 파생 함수만 쓴다. 이 모듈은 표준 라이브러리만 import하고 다른 스크립트를
 import하지 않는다(R2). 목차 `references/core/registry.md`와 절마다 파일 `references/registry/*.md`는 이 모듈의
@@ -47,6 +47,7 @@ class Agent(NamedTuple):
 
 MERGE_STAGES = ("실행승인", "실행", "결과승인", "끝")
 DEPLOY_STAGES = ("사전조건", "직전확인", "명령", "확인", "결과승인", "브랜치", "기록", "넣기승인", "넣기", "끝")
+PROBE_STAGES = ("실행승인", "실행", "기록", "결과승인", "끝")
 _CODE_HOOKS = ("machine_check", "required_judges", "flow_auto_depends", "touch_files", "readback", "from_answer",
                "flow_md")
 
@@ -67,6 +68,10 @@ KINDS = {
         "요구사항", "req-detail.md", ("requirements-writer",), "always", "never",
         "none", None, False, False, False, True, False, False, False, "Q",
         ("design",), ()),
+    "infra-design": Kind(
+        "설계", "infra-design.md", ("infra-writer",), "always", "never",
+        "none", None, False, False, False, True, False, False, False, "I",
+        ("probe", "implementation"), ("infra_premise",)),
     "root-cause": Kind(
         "원인 분석", "root-cause.md", ("cause-writer",), "always", "always",
         "none", None, True, False, False, False, False, False, False, "C",
@@ -79,6 +84,10 @@ KINDS = {
         "설계", "design.md", ("design-writer",), "always", "never",
         "none", None, False, False, False, True, False, False, False, "S",
         ("implementation", "flow-verify", "full-verify", "wrap-up", "deploy-plan"), ()),
+    "probe": Kind(
+        "설계", "probe.md", ("infra-writer", "code-writer"), "always", "never",
+        "by_decide", PROBE_STAGES, False, False, False, False, False, False, False, "P",
+        (), ("stage_rule", "exec_points", "default_cwd", "notify_gate", "judge_plan")),
     "implementation": Kind(
         "구현", "implementation.md", ("code-writer",), "conditional", "always",
         "by_decide", None, True, True, True, False, True, True, False, "",
@@ -126,6 +135,7 @@ AGENTS = {
     "requirements-writer": Agent("writer", "opus", _WRITER_TOOLS, "req", (), False),
     "cause-writer": Agent("writer", "opus", _WRITER_TOOLS, "cause", (), False),
     "design-writer": Agent("writer", "opus", _WRITER_TOOLS, "design", (), False),
+    "infra-writer": Agent("writer", "opus", _WRITER_TOOLS, "infra", (), False),
     "code-writer": Agent("writer", "opus", _WRITER_TOOLS, "code", (), False),
     "verify-writer": Agent("writer", "opus", _WRITER_TOOLS, "verify", (), False),
     "release-writer": Agent("writer", "sonnet", _WRITER_TOOLS, "release", (), False),
@@ -266,7 +276,7 @@ VERIFY_KINDS = kinds_where(verify_family=True)
 NOTIFY_BY_DECIDE_KINDS = kinds_where(notify="by_decide")
 NOTIFY_KINDS = NOTIFY_BY_DECIDE_KINDS | kinds_where(notify="all_cells")
 NEVER_NOTIFY_KINDS = kinds_where(notify="never")
-CODE_WRITER_KINDS = kinds_where(writers=lambda w: "code-writer" in w)
+CODE_WRITER_KINDS = kinds_where(writers=lambda w: "code-writer" in w, writes_code_dir=True)
 
 SCRIPT_KEYS = frozenset(k for k, fill, _ in TASK_KEYS if fill == "script")
 OPTION_KEYS = frozenset(k for k, fill, _ in TASK_KEYS if fill == "option")
@@ -284,7 +294,7 @@ EDGES = frozenset({(p, c) for p, k in KINDS.items() for c in k.children} | {("ch
 FORMATS_DIR = "references/formats"
 FORMAT_FILES = (("names", 1), ("run-folder", 2), ("task-file", 3), ("result-file", 4), ("judge-file", 5),
                 ("judge-run-file", 5), ("run-files", 6), ("prompt", 7), ("return", 8))
-# 독자별 formats 파일. writer = 작성자 에이전트 6
+# 독자별 formats 파일. writer = 작성자 에이전트 7
 FORMATS_READERS = {
     "writer": ("task-file", "result-file", "return"),
     "read-judge": ("task-file", "judge-file", "return"),

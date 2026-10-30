@@ -2,16 +2,16 @@
 
 등록표 `scripts/kinds.py`가 저장소의 다른 원천과 같은지 파일을 읽어 대조한다.
 - 시험 1(a): `references/formats/task-file.md` 표의 `kind`·`block` 행 값 칸은 `references/registry/kinds.md`를 가리키고
-  `KINDS`의 이름을 백틱으로 적지 않는다, `len(KINDS) == 17`
+  `KINDS`의 이름을 백틱으로 적지 않는다, `len(KINDS) == 19`
 - 시험 1(b): `definition`의 집합 = `references/kinds/`의 파일 집합(양방향)
 - 시험 1(c): 엔진(`scripts/*.py`, `kinds.py` 제외)의 kind 이름만으로 된 집합·목록·튜플 리터럴(2개 이상)과 kind 키만의
   사전 리터럴은 (파일 이름, 원소)가 허용 목록 `HOOK_LITERALS`에 있고, 허용 목록의 kind는 모두 훅이 있다
 - 시험 1(d): 엔진의 kind 리터럴(docstring·주석 제외)마다 그 kind의 `engine_hooks`가 비어 있지 않다
 - 시험 2(다): `references/formats/task-file.md` 표 첫 칸의 키 = `TASK_KEYS`의 이름(V-09. 생성 대신 대조)
 - 시험 2: `writers`의 에이전트 이름 ⊆ `AGENTS`, `AGENTS` = `agents/*.md`(양방향), 이름마다 frontmatter `name`·`model`·`tools`가 같음
-- 시험 2(나): 에이전트 정의 8의 틀 — frontmatter 다음 빈 줄 아닌 줄이 루트 줄 `플러그인 폴더:`, 판정자 둘은
+- 시험 2(나): 에이전트 정의 9의 틀 — frontmatter 다음 빈 줄 아닌 줄이 루트 줄 `플러그인 폴더:`, 판정자 둘은
   그다음 판 표지 `판 표지:`, 그다음 H1 `# devflow-harness:{이름} — {역할}`, `##` 차례가 「역할」·「읽을 것」·「역할 고유 규칙」·
-  「반환에 덧붙일 것」, 「읽을 것」의 formats 파일 = `kinds.FORMATS_READERS`(작성자 여섯은 `writer`, 판정자는 자기 이름)
+  「반환에 덧붙일 것」, 「읽을 것」의 formats 파일 = `kinds.FORMATS_READERS`(작성자 일곱은 `writer`, 판정자는 자기 이름)
 - 시험 3: `kinds.md_files()`의 파일마다(목차 `references/core/registry.md`와 절 파일 `references/registry/*.md`)
   작업 트리 바이트 = 생성 내용, `references/registry/`에 그 밖의 파일 없음
 - 시험 4: TS 다섯 자리(`hooks/panel-map.ts` `WRITE_KINDS`·`FOLDED_STATES`·`STATUS_MARK` 키, `hooks/status-view.ts`
@@ -96,7 +96,7 @@ def test_1a_formats_kind_rows_point_to_registry():
         named = sorted(k for k in kinds.KINDS if "`{}`".format(k) in value)
         assert named == [], "`{}` 행 값 칸에 kind 이름: {}".format(key, named)
         assert "`references/registry/kinds.md`" in value, "`{}` 행 값 칸이 등록표를 가리키지 않음: {}".format(key, value)
-    assert len(kinds.KINDS) == 17
+    assert len(kinds.KINDS) == 19
 
 
 def test_2c_task_file_keys_are_task_keys():
@@ -112,7 +112,7 @@ def test_2c_task_file_keys_are_task_keys():
 def test_1b_definitions_match_kind_files():
     entries = set(os.listdir(KIND_DIR))
     files = {e for e in entries if os.path.isfile(os.path.join(KIND_DIR, e))}
-    assert len(files) == 14, sorted(files)
+    assert len(files) == 16, sorted(files)
     definitions = {k.definition for k in kinds.KINDS.values()}
     assert definitions - files == set(), "등록표에만 있는 정의 파일"
     assert files - definitions == set(), "references/kinds/에만 있는 파일"
@@ -123,13 +123,13 @@ def test_1b_definitions_match_kind_files():
 
 def test_2_agents_match_writers_and_agent_files():
     writer_names = {w for k in kinds.KINDS.values() for w in k.writers if w != "main"}
-    assert writer_names == {"requirements-writer", "cause-writer", "design-writer", "code-writer", "verify-writer",
-                            "release-writer", "run-judge"}
+    assert writer_names == {"requirements-writer", "cause-writer", "design-writer", "infra-writer", "code-writer",
+                            "verify-writer", "release-writer", "run-judge"}
     assert writer_names <= set(kinds.AGENTS)
     assert "read-judge" not in writer_names and "read-judge" in kinds.AGENTS
 
     files = {p.stem for p in AGENT_DIR.glob("*.md")}
-    assert len(files) == 8, sorted(files)
+    assert len(files) == 9, sorted(files)
     assert set(kinds.AGENTS) - files == set(), "등록표에만 있는 에이전트"
     assert files - set(kinds.AGENTS) == set(), "agents/에만 있는 정의 파일"
 
@@ -177,7 +177,7 @@ def ag_problems(name, text):
 
 def test_2b_agent_frames_and_formats_files():
     files = sorted(AGENT_DIR.glob("*.md"))
-    assert len(files) == 8, [p.name for p in files]
+    assert len(files) == 9, [p.name for p in files]
     assert [w for p in files for w in ag_problems(p.stem, p.read_text(encoding="utf-8"))] == []
 
 
@@ -379,7 +379,7 @@ def common_layer_files():
 
 
 def upper_names():
-    """kind 정의 파일 14와 방법 문서(`references/practices/`·`stacks/`)의 파일 이름."""
+    """kind 정의 파일 16과 방법 문서(`references/practices/`·`stacks/`)의 파일 이름."""
     names = {k.definition[:-3] for k in kinds.KINDS.values()}
     practices = ROOT / "references" / "practices"
     names |= {p.stem for p in practices.glob("*.md")} | {p.stem for p in (practices / "stacks").glob("*.md")}
@@ -475,11 +475,14 @@ KIND_EXCEPTIONS = [
     ("agents/code-writer.md", "description: ", "E3"),
     ("agents/code-writer.md", "- `implementation`, `fix` →", "E3"),
     ("agents/code-writer.md", "- `merge`(충돌 해결) →", "E3"),
+    ("agents/code-writer.md", "- `probe`(설계가 낸 탐침) →", "E3"),
     ("agents/design-writer.md", "description: ", "E3"),
     ("agents/design-writer.md", "- `question`(설계로 시작하는 요청의 질문", "E3"),
     ("agents/design-writer.md", "- `ui-design` →", "E3"),
     ("agents/design-writer.md", "- `design` →", "E3"),
     ("agents/design-writer.md", "- `change`(화면·설계 정본) →", "E3"),
+    ("agents/infra-writer.md", "- `infra-design` →", "E3"),
+    ("agents/infra-writer.md", "- `probe`(인프라 결정이 낸 탐침) →", "E3"),
     ("agents/release-writer.md", "description: ", "E3"),
     ("agents/release-writer.md", "- `wrap-up`: 앞 절반", "E3"),
     ("agents/release-writer.md", "- `deploy-plan`: 배포 계획 전체", "E3"),
@@ -739,7 +742,7 @@ def module_problems(path):
 
 def all_module_problems(label):
     files = module_files()
-    assert len(files) == 14, [p.name for p in files]
+    assert len(files) == 16, [p.name for p in files]
     subs = [s for p in files for s in sub_files(p.name)]
     assert len(subs) >= 14, subs   # main-order 아홉, 경우 파일, run-check
     return [w for p in files for w in module_problems(p) if w.startswith(label + " ")]
