@@ -25,7 +25,8 @@ r"""밖으로 나가는 명령(합치기, 개발 기준 브랜치에 넣기, pus
   [유지 뒤]      배포 실행의 deploy_outcome이 유지일 때만 돈다(아니면 건너뜀으로 적는다).
 
 --step 전에 보는 것
-  - 상태: 합치기·마무리·배포 실행은 `진행`이고 stage가 묻는 단계·`끝`이 아님. 그 밖의 kind는 승인으로 `완료`된 뒤.
+  - 상태: 합치기·마무리·배포 실행은 `진행`이고 stage가 묻는 단계·`끝`이 아님. 탐침은 `진행`이고 stage `실행`.
+    그 밖의 kind는 승인으로 `완료`된 뒤.
   - 한 번만: 얼린 뒤 같은 줄을 이미 돌렸으면(사용자 실행·건너뜀 포함) 거부. 다시 돌리려면 새 승인과 --refreeze.
   - 기대 브랜치(07 §A4, 원천에서 읽음): 합치기는 flow.md `branch` → run.md `integration_branch`, 마무리는
     `integration_branch`(흐름 하나면 그 흐름의 `branch`) → `base_branch`, 배포 실행 넣기는 배포 폴더의 브랜치 →
@@ -35,6 +36,8 @@ r"""밖으로 나가는 명령(합치기, 개발 기준 브랜치에 넣기, pus
     넣는 브랜치를 꺼낸 폴더(git worktree)도 비어야 한다(편집이 커밋되기 전에 넣지 않게).
     예외: `git add …`·`git commit …` 단독 줄(남은 변경을 커밋하는 줄), 원래 폴더의 병합 줄(병합이 바꾸는 파일과
     커밋 안 된 변경이 겹치지 않으면 됨. references/kinds/wrap-up/main-order.md 「뒤 절반」 2)과 `update-ref`·`push` 단독 줄.
+    탐침(기본 폴더: 머리 파일 flow의 flow.md `dir`, 없으면 원래 폴더)의 병합 줄이 아닌 줄은 작업 트리를 쓰지 않는
+    줄이라(계획 판정) 확인하지 않고, 커밋 안 된 변경 수를 exec.md 줄 끝에 `(탐침: …)`로 적는다.
 병합 줄(`git … merge …`)은 앞뒤 해시로 병합 부모·앞감기를 판정해 exec.md에 적고, 병합이 끝나면
 합치기는 머리 파일 `commit`, 마무리는 `exported_commit`에 새 끝을 적는다.
 
@@ -267,6 +270,10 @@ def default_cwd(run_dir, tasks, t, point):
     kind = t.get("kind", "")
     if kind == "merge":
         return meta_value(meta, "integration_dir") or project
+    if kind == "probe":
+        # 탐침 줄은 작업 트리를 쓰지 않으므로 흐름이 없으면 원래 폴더에서 돈다(설계 A-18)
+        flow = flows_of(run_dir).get(t.get("flow", ""), {}) if t.get("flow", "") else {}
+        return meta_value(flow, "dir") or project
     if kind == "deploy-exec" and point in ("실행승인", "되돌림"):
         import board
         flows = flows_of(run_dir)
@@ -360,6 +367,11 @@ def pre_check(run_dir, tasks, t, point, cwd, line):
             if d:
                 raise Reject("넣는 브랜치 {}를 꺼낸 폴더({})에 커밋 안 된 변경: {} — 편집을 커밋한 뒤 넣는다".format(
                     src, other, ", ".join(d[:5])))
+    if t.get("kind") == "probe" and not is_merge:
+        dirty = dirty_files(cwd)
+        if dirty is None:
+            return src, tgt, "(탐침: 작업 트리를 쓰지 않는 줄, git 저장소 아님)"
+        return src, tgt, "(탐침: 작업 트리를 쓰지 않는 줄, 커밋 안 된 변경 {}개)".format(len(dirty))
     if single(line, CONSUME_LINE):
         return src, tgt, ""
     dirty = dirty_files(cwd)
@@ -408,7 +420,11 @@ def outcome(t):
 def step_allowed(t, point, label):
     """상태와 한 번만(07 §A4: 승인 한 번은 그 실행 한 번)."""
     kind, st = t.get("kind", ""), t.get("status", "")
-    if kind in kinds.STAGE_KINDS:
+    if kind == "probe":
+        if st != "진행" or devflow_lib.stage_of(t) != "실행":
+            raise Reject("탐침의 실행 단계가 아님(상태 {}, stage {}): 실행승인 답과 함께 진행·stage=실행으로 바꾼 뒤 돌린다".format(
+                st, devflow_lib.stage_of(t) or "-"))
+    elif kind in kinds.STAGE_KINDS:
         stage = devflow_lib.stage_of(t)
         if st != "진행" or stage in kinds.ASK_STAGES or stage == "끝":
             raise Reject("실행 단계가 아님(상태 {}, stage {}): 승인 기록과 함께 진행·실행 단계로 바꾼 뒤 돌린다".format(st, stage or "-"))
@@ -459,7 +475,8 @@ def step(run_dir, tid, point, n, cwd=None):
     argv = [shell, "-c", cmd] if shell else cmd
     with open(log, "wb") as f:
         rc = subprocess.run(argv, cwd=cwd, stdout=f, stderr=subprocess.STDOUT, shell=not shell).returncode
-    append_exec(t, "- {} | {} | 종료 코드 {} | 로그 {} | 지점 {} | 폴더 {}".format(now(), cmd, rc, log, label, cwd))
+    append_exec(t, "- {} | {} | 종료 코드 {} | 로그 {} | 지점 {} | 폴더 {}{}".format(
+        now(), cmd, rc, log, label, cwd, " | " + note if t.get("kind") == "probe" and note else ""))
     judged = ""
     after = rev(cwd, "HEAD")
     if is_merge or (merging and CONSUME_LINE.match(cmd)):

@@ -2,7 +2,7 @@
 
 메인은 이 출력을 사용자에게 보여 주고(AskUserQuestion의 본문), 마지막 `counts:` 줄의 값을 머리 파일에 적는다.
 맨 끝 `메인 컨텍스트:` 줄은 메인이 보고 SKILL.md 8절대로 한다(사용자 화면에는 옮기지 않는다).
-결과 본문은 읽지 않는다. 표본 대조는 메인이 따로 한다.
+결과 본문은 읽지 않는다(탐침의 기록 표는 알림 조건을 위해 읽는다). 표본 대조는 메인이 따로 한다.
 
 화면에서 이 스크립트가 하는 일(메인은 result.md를 고치지 않는다):
 - 판정자의 「칸 분류 확인」대로 항목을 옮긴다(formats.md 5절의 줄 형식).
@@ -18,6 +18,7 @@
 - 영역 규칙(1.1.0부터 시작한 task): 코드 task의 「건드릴 파일」이 프로젝트 설정 「경로 목록」의 인프라 경로에 들면 알림 불가.
   「경로 목록」의 `감지한 실행`이 이 실행이고 다른 task에 승인 요청·승인이 없으면 「알릴 것」 뒤에 `- [경로 목록]` 줄
   (칸 수·`counts:`에 넣지 않음, 알림이면 알림 줄에도).
+- 탐침: 결과에 `## 탐침 기록` 절이 없으면(계획) 알림 불가, 있으면 그 표의 판정 칸에 `거짓`·`판정불가`가 있을 때 알림 불가.
 - 자식 목록의 셈(행·kind·[백로그]·안별)을 `셈:` 줄로 보이고, 여섯 칸과 `나눈 기준:` 줄의 "자식 N행/M종" 꼴 주장이 셈과 다르면
   `! 수치 대조` 줄, 제목이 같은 행이면 `! 같은 제목 자식 행` 줄을 낸다. 칸 내용·칸별 수·`counts:`·알림 조건은 그대로다.
 - 「정해 주실 것」 수가 「이번 실행의 값」 한 승인의 결정 수 상한(0이면 없음)을 넘으면 `! 결정 수 상한` 줄을 낸다(`counts:`는 그대로).
@@ -362,6 +363,17 @@ def amendments(t):
     return out
 
 
+def probe_block(top):
+    """탐침의 알림을 막는 이유(없으면 빈 글). 계획(「탐침 기록」 절 없음)은 늘 승인, 기록은 거짓·판정불가 가정이 있으면 승인."""
+    if "탐침 기록" not in top:
+        return "탐침 계획(「탐침 기록」 절 없음)은 늘 승인"
+    rows = [[c.strip() for c in line.strip().strip("|").split("|")]
+            for line in top["탐침 기록"].splitlines() if line.strip().startswith("|")]
+    col = rows[0].index("판정") if rows and "판정" in rows[0] else 1
+    bad = sum(1 for r in rows[1:] if len(r) > col and r[col] in ("거짓", "판정불가"))
+    return "탐침 가정 거짓·판정불가 {}".format(bad) if bad else ""
+
+
 def build(run_dir, tid, tasks=None):
     """화면 재료를 계산한다. 출력 없이 dict를 돌려준다(task_set.py가 알림 조건을 볼 때도 쓴다)."""
     tasks = tasks or devflow_lib.load_tasks(run_dir)
@@ -472,6 +484,8 @@ def build(run_dir, tid, tasks=None):
     # 1.1.0부터 시작한 코드 task는 「건드릴 파일」이 인프라 경로에 들면 알림으로 지나가지 않는다(작업 트리는 보지 않음)
     infra_paths = devflow_lib.touched_in_paths(t, "인프라") if code_task and devflow_lib.uses_domain_rules(t) else []
     notify_ok = notify_ok and not infra_paths
+    probe_why = probe_block(top) if t.get("kind") == "probe" else ""
+    notify_ok = notify_ok and not probe_why
     notify_kind = t.get("kind") in kinds.NOTIFY_KINDS and t.get("kind") not in kinds.NEVER_NOTIFY_KINDS
     return {
         "t": t, "tasks": tasks, "screen": screen, "missing": missing, "unparsed": unparsed, "failed": failed,
@@ -479,7 +493,7 @@ def build(run_dir, tid, tasks=None):
         "move_failed": move_failed, "notify_ok": notify_ok and notify_kind, "notify_kind": notify_kind,
         "code_task": code_task, "user_answer": user_answer, "judged": judged, "notes": notes, "env_n": env_n, "commit_hint": commit_hint,
         "facts": facts, "claims": claims, "judges_ok": judges_ok, "judges_why": judges_why,
-        "resource_wait": resource_wait, "infra_paths": infra_paths,
+        "resource_wait": resource_wait, "infra_paths": infra_paths, "probe_block": probe_why,
         "paths_note": paths_note(run_dir, tasks, tid) if devflow_lib.uses_domain_rules(t) else "",
     }
 
@@ -506,6 +520,8 @@ def notify_status(run_dir, tid, tasks=None):
         return False, "{}는 알림으로 지나가지 않는다".format(b["t"].get("kind"))
     if b["infra_paths"]:
         return False, "인프라 경로: " + ", ".join(b["infra_paths"])
+    if b["probe_block"]:
+        return False, b["probe_block"]
     return b["notify_ok"], "screen.py 알림 조건 {}".format("충족" if b["notify_ok"] else "미충족")
 
 
@@ -597,6 +613,9 @@ def main(argv):
         return 0
     if b["infra_paths"]:
         print("알림 조건: 미충족(인프라 경로: {})".format(", ".join(b["infra_paths"])))
+        return 0
+    if b["probe_block"]:
+        print("알림 조건: 미충족({})".format(b["probe_block"]))
         return 0
     why = "통과 못 한 기준·판정불가·판정 미완료·자원 대기 없음, 형식 문제 없음"
     if b["code_task"] and b["user_answer"]:

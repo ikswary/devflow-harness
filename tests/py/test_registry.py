@@ -248,7 +248,7 @@ HOOK_LITERALS = {
     ("devflow_lib.py", frozenset({"flow-verify", "full-verify"})),                       # 자식 수정 세대 0
     ("screen.py", frozenset({"wrap-up", "merge"})),                                      # 보류로 남김 줄
     ("spawn_children.py", frozenset({"fix", "reverify"})),                               # over-cap 백로그
-    ("task_set.py", frozenset({"merge", "wrap-up", "deploy-exec"})),                     # auto_freeze 지점(사전 키)
+    ("task_set.py", frozenset({"merge", "wrap-up", "deploy-exec", "probe"})),            # auto_freeze 지점(사전 키)
 }
 
 

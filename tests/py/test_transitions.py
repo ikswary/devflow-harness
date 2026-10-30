@@ -8,7 +8,12 @@
   라이브러리의 `harness_version`을 바꿔 끼운다.
 - 명령행 사례는 거부 이유 줄만 단언하고 출력 전체를 대조하지 않는다. 이름 바꾸기 task가 바꾸는 거부 문구(배포 실행의
   stage 끝 조건)는 바뀌는 경로 밖 부분만 단언한다.
+- 탐침(설계 domain 3.4~3.6): 전이는 함수 단위로, `stage=기록`의 판정 파일 옮김과 `exec.py --step`의 폴더·작업 트리는
+  명령행으로 돌린다(`--step`은 임시 git 저장소를 원래 폴더로 둔다).
 """
+import subprocess
+from datetime import datetime
+
 import pytest
 
 import exec as execmod
@@ -842,3 +847,199 @@ def test_old_deploy_task_does_not_require_new_cross_task_authority(run_dir):
     t = make(run_dir, kind="deploy-exec", block="배포", status="진행", stage="끝", deploy_outcome="유지",
              deployed_commit="abc1234", run_judge=RUN_JUDGE, started_version="1.0.0", rules="2")
     assert rule(run_dir, t, "진행", "완료", record=REC_OK) is None
+
+
+# ================================================================ 탐침 단계 (설계 domain 3.4~3.6, A-17·A-18)
+
+PROBE = dict(kind="probe", block="설계", **NEW)
+PROBE_CMD = "echo probe-ok"
+PROBE_NOTIFY_FAIL = "알림 불가:"
+PROBE_VIA_JUDGE = "탐침은 읽기 판정을 거친다(자체검증)"
+PROBE_TABLE = "\n## 탐침 기록\n| 가정 | 판정 | 관찰 | 근거 로그 |\n|---|---|---|---|\n"
+
+
+def probe_result(run_dir, tid="T001", cmd=PROBE_CMD, verdicts=None):
+    """탐침 result.md. cmd가 있으면 「정해 주실 것」에 그 줄의 ```cmd 울타리(계획), verdicts가 있으면 「탐침 기록」 표(기록)."""
+    decide = "- 실험 명령을 돌릴지\n  ```cmd\n  {}\n  ```".format(cmd) if cmd else "- 없음"
+    text = ("# {} 탐침 결과\n\n## 승인 화면\n### 정해 주실 것\n{}\n### 하실 일·허용 요청\n- 없음\n### 알릴 것\n- 없음\n"
+            "### 답하신 것의 반영\n- 없음\n### 확인 안 된 것\n- 없음\n### 건수만\n- 가정 {}\n\n"
+            "## 스스로 줄임\n없음\n\n## 본문\n가정과 관찰\n").format(tid, decide, len(verdicts or []) or 1)
+    if verdicts is not None:
+        text += PROBE_TABLE + "".join("| G-{} | {} | 출력 ok | logs/exec-실행승인-1.log |\n".format(i, v)
+                                      for i, v in enumerate(verdicts, 1))
+    run_dir.result(tid, text)
+
+
+def now_judge(tid="T001"):
+    """판정 시각이 지금인 읽기 판정(기록 점검이 판정 파일 시각과 견준다)."""
+    return READ_JUDGE.replace("2026-10-15 10:00:00", datetime.now().strftime("%Y-%m-%d %H:%M:%S")).replace("T001", tid)
+
+
+def set_project(run_dir, folder):
+    p = run_dir.path / "run.md"
+    write(p, p.read_text(encoding="utf-8").replace("status: 진행\n", "status: 진행\nproject: {}\n".format(folder), 1))
+
+
+# (가) 자체검증 → 승인대기는 묻는 단계(실행승인·결과승인)와 함께만
+def test_probe_selfcheck_to_waiting_needs_ask_stage(run_dir):
+    t = make(run_dir, status="자체검증", stage="", judge=READ_JUDGE, **PROBE)
+    assert check(run_dir, t, "자체검증", "승인대기") \
+        == "probe의 승인대기는 묻는 단계와 함께(stage=결과승인/넣기승인/실행승인/직전확인)"
+    t2 = make(run_dir, "T002", status="자체검증", stage="실행승인", judge=READ_JUDGE, **PROBE)
+    assert check(run_dir, t2, "자체검증", "승인대기") is None
+    t3 = make(run_dir, "T003", status="자체검증", stage="결과승인", judge=READ_JUDGE, **PROBE)
+    assert check(run_dir, t3, "자체검증", "승인대기") is None
+
+
+def test_probe_stage_outside_probe_stages_rejected_cli(run_dir):
+    make(run_dir, status="자체검증", judge=READ_JUDGE, **PROBE)
+    r = run_script("task_set", run_dir, "T001", "--status", "승인대기", "stage=넣기승인")
+    assert r.returncode == 3, r.output
+    assert "probe의 stage는 실행승인/실행/기록/결과승인/끝" in r.output
+    assert front_value(run_dir, "status") == "자체검증"
+
+
+# (나) 승인대기(실행승인) → 진행 stage=실행 --record가 실행승인 명령을 얼린다
+def test_probe_run_approval_freezes_commands_cli(run_dir):
+    make(run_dir, status="승인대기", stage="실행승인", approval_requested="2026-10-15 09:00:00", judge=READ_JUDGE, **PROBE)
+    probe_result(run_dir)
+    frozen = run_dir.task_dir("T001") / "approved-cmds-실행승인.md"
+
+    r0 = run_script("task_set", run_dir, "T001", "--status", "진행", "stage=실행")
+    assert r0.returncode == 3 and "승인대기→진행은 --record" in r0.output, r0.output
+    assert not frozen.exists()
+
+    r = run_script("task_set", run_dir, "T001", "--status", "진행", "stage=실행", "--record", "승인|실행 승인|승인")
+    assert r.returncode == 0, r.output
+    assert frozen.is_file(), r.output
+    assert "1. " + PROBE_CMD in frozen.read_text(encoding="utf-8").splitlines()
+    assert (front_value(run_dir, "status"), front_value(run_dir, "stage")) == ("진행", "실행")
+
+
+# (다) 진행 → 승인대기, 진행 → 완료는 탐침에서 거부(읽기 판정을 거친다)
+def test_probe_run_to_waiting_or_done_rejected(run_dir):
+    t = make(run_dir, status="진행", stage="실행승인", judge=READ_JUDGE, **PROBE)
+    assert check(run_dir, t, "진행", "승인대기") == PROBE_VIA_JUDGE
+    t["stage"] = "끝"
+    assert check(run_dir, t, "진행", "완료", record=REC_OK) == PROBE_VIA_JUDGE
+    m = make(run_dir, "T002", kind="merge", status="진행", stage="실행승인", **NEW)   # 같은 짝을 받는 단계 kind(양성 대조)
+    assert check(run_dir, m, "진행", "승인대기") is None
+
+
+def test_probe_run_to_waiting_or_done_rejected_cli(run_dir):
+    make(run_dir, status="진행", stage="실행", judge=READ_JUDGE, **PROBE)
+    r = run_script("task_set", run_dir, "T001", "--status", "승인대기", "stage=실행승인")
+    assert r.returncode == 3 and PROBE_VIA_JUDGE in r.output, r.output
+    r2 = run_script("task_set", run_dir, "T001", "--status", "완료", "stage=끝", "--record", "승인|승인|승인")
+    assert r2.returncode == 3 and PROBE_VIA_JUDGE in r2.output, r2.output
+    assert (front_value(run_dir, "status"), front_value(run_dir, "stage")) == ("진행", "실행")
+
+
+# (라) stage=기록이 judge.md(계획 판정)를 judge.plan.md로 옮기고, judge.plan.md가 이미 있으면 거부
+def test_probe_record_stage_moves_plan_judge_cli(run_dir):
+    plan = now_judge()
+    make(run_dir, status="진행", stage="실행", judge=plan, **PROBE)
+    d = run_dir.task_dir("T001")
+
+    r = run_script("task_set", run_dir, "T001", "stage=기록")
+    assert r.returncode == 0, r.output
+    assert not (d / "judge.md").exists()
+    assert (d / "judge.plan.md").read_text(encoding="utf-8") == plan
+    assert front_value(run_dir, "stage") == "기록"
+
+    write(d / "judge.md", "기록 단계의 판정\n")
+    r2 = run_script("task_set", run_dir, "T001", "stage=기록")
+    assert r2.returncode == 3, r2.output
+    assert "judge.plan.md가 이미 있음" in r2.output
+    assert (d / "judge.md").read_text(encoding="utf-8") == "기록 단계의 판정\n"
+    assert (d / "judge.plan.md").read_text(encoding="utf-8") == plan
+
+
+def test_record_stage_of_other_stage_kind_keeps_judge_cli(run_dir):
+    # 양성 대조: stage 기록이 있는 배포 실행은 judge.md를 옮기지 않는다
+    make(run_dir, kind="deploy-exec", block="배포", status="진행", stage="확인", judge=READ_JUDGE, **NEW)
+    r = run_script("task_set", run_dir, "T001", "stage=기록")
+    assert r.returncode == 0, r.output
+    assert (run_dir.task_dir("T001") / "judge.md").is_file()
+    assert not (run_dir.task_dir("T001") / "judge.plan.md").exists()
+
+
+# (마) 자체검증 → 완료(알림)는 승인 기록이 있어도 「탐침 기록」 표의 거짓·판정불가로 막히고, 모두 참이면 받는다
+def test_probe_notify_done_follows_record_table(run_dir):
+    approved = {"승인 기록": APPROVED}   # 실행승인 답이 이미 있다
+    run_dir.task("T001", "탐침", sections=approved, status="자체검증", stage="끝", **PROBE)
+    run_dir.judge("T001", now_judge())
+    probe_result(run_dir, cmd=None, verdicts=["참", "거짓"])
+    freeze_ok(run_dir, "T001")
+    why = check(run_dir, load(run_dir), "자체검증", "완료", record=REC_NOTIFY)
+    assert why == PROBE_NOTIFY_FAIL + " 탐침 가정 거짓·판정불가 1"
+
+    run_dir.task("T002", "탐침", sections=approved, status="자체검증", stage="끝", **PROBE)
+    run_dir.judge("T002", now_judge("T002"))
+    probe_result(run_dir, "T002", cmd=None, verdicts=["참", "참"])
+    freeze_ok(run_dir, "T002")
+    assert check(run_dir, load(run_dir, "T002"), "자체검증", "완료", record=REC_NOTIFY) is None
+
+
+def test_probe_plan_without_record_table_does_not_notify(run_dir):
+    run_dir.task("T001", "탐침", status="자체검증", stage="끝", **PROBE)
+    run_dir.judge("T001", now_judge())
+    probe_result(run_dir, cmd=None)
+    freeze_ok(run_dir, "T001")
+    why = check(run_dir, load(run_dir), "자체검증", "완료", record=REC_NOTIFY)
+    assert why == PROBE_NOTIFY_FAIL + " 탐침 계획(「탐침 기록」 절 없음)은 늘 승인"
+
+
+def test_probe_notify_done_needs_verify(run_dir):
+    run_dir.task("T001", "탐침", status="자체검증", stage="끝", **PROBE)
+    run_dir.judge("T001", now_judge())
+    probe_result(run_dir, cmd=None, verdicts=["참"])
+    why = check(run_dir, load(run_dir), "자체검증", "완료", record=REC_NOTIFY)
+    assert why == "exec.py --verify 실패(얼린 지점 없음(exec.py --freeze)) — stage=결과승인으로 승인을 받는다"
+
+
+# (바) 승인대기(결과승인) → 완료 stage=끝 --record는 --verify가 실패해도 받는다
+def test_probe_result_approval_done_skips_verify(run_dir):
+    t = make(run_dir, status="승인대기", stage="끝", judge=READ_JUDGE, **PROBE)
+    assert execmod.verify(str(run_dir), t)[0] is False            # 얼린 지점이 없어 검증은 실패
+    assert check(run_dir, t, "승인대기", "완료", record=REC_OK, old_stage="결과승인") is None
+    assert check(run_dir, t, "승인대기", "완료", record=REC_OK, old_stage="실행승인") \
+        == "exec.py --verify 실패(얼린 지점 없음(exec.py --freeze)) — stage=결과승인으로 승인을 받는다"
+
+
+# (사) exec.py --step: 흐름이 없는 탐침은 원래 폴더(run.md project)에서, 커밋 안 된 변경이 있어도 돌고 exec.md에 `탐침:`
+def test_probe_step_runs_in_project_with_dirty_tree_cli(run_dir, tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    init = subprocess.run(["git", "init", "-q", str(project)], capture_output=True, text=True)
+    assert init.returncode == 0, "git init 실패(git을 PATH에 두고 다시 돌린다): " + init.stderr
+    write(project / "BACKLOG.md", "커밋 안 된 파일\n")
+    set_project(run_dir, project)
+    make(run_dir, status="진행", stage="실행", **PROBE)
+    freeze_ok(run_dir, "T001", ran=False)
+
+    r = run_script("exec", run_dir, "T001", "--step", "실행승인:1")
+    assert r.returncode == 0, r.output
+    line = (run_dir.task_dir("T001") / "exec.md").read_text(encoding="utf-8").splitlines()[-1]
+    assert " | 종료 코드 0 | " in line and " | 지점 실행승인:1 | " in line
+    assert " | 폴더 {} | ".format(project) in line
+    assert line.endswith("| (탐침: 작업 트리를 쓰지 않는 줄, 커밋 안 된 변경 1개)")
+
+
+def test_probe_step_rejected_outside_run_stage_cli(run_dir):
+    make(run_dir, status="진행", stage="기록", **PROBE)
+    freeze_ok(run_dir, "T001", ran=False)
+    r = run_script("exec", run_dir, "T001", "--step", "실행승인:1")
+    assert r.returncode == 3, r.output
+    assert "탐침의 실행 단계가 아님(상태 진행, stage 기록)" in r.output
+    assert not (run_dir.task_dir("T001") / "exec.md").exists()
+
+
+def test_probe_default_cwd_is_flow_dir_then_project(run_dir):
+    set_project(run_dir, "P:/project")
+    run_dir.flow("probe-flow", dir="F:/flow-dir")
+    t = make(run_dir, status="진행", stage="실행", flow="probe-flow", **PROBE)
+    t2 = make(run_dir, "T002", status="진행", stage="실행", **PROBE)
+    tasks = run_dir.tasks()
+    assert execmod.default_cwd(str(run_dir), tasks, t, "실행승인") == "F:/flow-dir"
+    assert execmod.default_cwd(str(run_dir), tasks, t2, "실행승인") == "P:/project"

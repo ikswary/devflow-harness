@@ -23,7 +23,8 @@
                      →완료·보류·백로그: waiting_user를 비운다.
                      묻는 단계(stage 실행승인·결과승인·넣기승인)를 --record로 떠나면 exec.py --freeze를 함께 부른다.
                      「정해 주실 것」에 ```cmd 울타리가 있는 다른 task는 승인으로 닫을 때 실행승인을 얼린다.
-  stage=값           합치기·마무리·배포 실행의 단계(formats.md 3절). deploy_stage=값도 stage로 받는다.
+  stage=값           합치기·마무리·배포 실행·탐침의 단계(formats.md 3절). deploy_stage=값도 stage로 받는다.
+                     탐침에 stage=기록을 주면 judge.md(계획 판정)를 judge.plan.md로 옮긴다(이미 있으면 거부).
   --record "지점|결정|원문"  「승인 기록」에 `- {시각} | 지점 | 결정 | 원문: "…"`. 지점이 `알림`이고 원문이 비면
                      `원문: (알림, 답 없음)`. `점검 확인|{코드}|원문`은 그 기록 점검 걸림을 다시 찍지 않게 한다.
   --reuse-answer "이유"  (--record와 함께만) 1.1.0 이상으로 시작한 task의 승인 원문이 한 마디 답이 아니고, 이 task의
@@ -63,6 +64,8 @@
   진행→승인대기                                     합치기·마무리·배포 실행만(실행 승인·결과 승인·문서 넣기 승인)
   진행→완료                                         합치기·마무리·배포 실행만, --record + 필요한 판정
   (배포 실행의 →완료는 늘 stage: 끝. 옛 deploy_stage는 stage로 읽는다)
+  탐침: →승인대기는 자체검증에서만(stage 실행승인·결과승인), stage=기록에서 judge.md → judge.plan.md,
+        알림은 승인 기록이 있어도 screen.py 알림 조건, →완료는 exec.py --verify 통과(아니면 stage=결과승인으로 승인)
   stage 좁힘(rules 2 이상의 합치기·마무리·배포 실행)
     →승인대기                                       묻는 단계(stage 실행승인·결과승인·넣기승인·직전확인)
     승인대기→진행                                   묻는 단계가 아닌 다음 단계(--screen-snapshot이면 그대로)
@@ -139,6 +142,9 @@ def check_transition(run_dir, t, old, new, ctx):
 
     if old == new:
         return None
+    if kind == "probe" and old == "진행" and new in ("승인대기", kinds.DONE):
+        # 탐침은 계획·기록 모두 읽기 판정 뒤에 묻는다(설계 A-17)
+        return "탐침은 읽기 판정을 거친다(자체검증)"
     if kind in kinds.STAGE_KINDS and devflow_lib.rules_level(t) >= 2 and new != "보류":
         why = stage_rule(run_dir, t, old, new, ctx)
         if why:
@@ -169,7 +175,9 @@ def check_transition(run_dir, t, old, new, ctx):
         why = judges() or stage_end()
         if why:
             return why
-        if devflow_lib.is_new_task(t) and kind in kinds.NOTIFY_KINDS and kind not in kinds.STAGE_KINDS and not devflow_lib.prior_approval(t):
+        # 탐침은 실행승인 답이 승인 기록에 있어도 기록 단계의 알림 조건(탐침 기록 표)을 본다
+        if kind == "probe" or (devflow_lib.is_new_task(t) and kind in kinds.NOTIFY_KINDS
+                               and kind not in kinds.STAGE_KINDS and not devflow_lib.prior_approval(t)):
             import screen
             ok, msg = screen.notify_status(run_dir, t["id"])
             if not ok:
@@ -233,6 +241,8 @@ def stage_rule(run_dir, t, old, new, ctx):
         proof = final_candidate_ci_problem(run_dir, t, always=True, expected_commit=t.get("exported_commit", ""))
         if proof:
             return proof
+    if kind == "probe" and not ok and not answered:
+        return "exec.py --verify 실패({}) — stage=결과승인으로 승인을 받는다".format("; ".join(lines))
     if kind == "deploy-exec" and str(t.get("deploy_outcome", "")).strip() == "유지" and not ok \
             and any(n.startswith("approved-cmds-") for n in os.listdir(t["_dir"])):
         return "exec.py --verify 실패({})".format("; ".join(lines))
@@ -388,7 +398,7 @@ def auto_freeze(run_dir, t, old, new, rec, old_stage):
     elif rec is not None and old == "승인대기" and kind in kinds.STAGE_KINDS and new == "진행":
         # 실행 단계로 갈 때만 얼린다. 결과승인·넣기승인에서 곧바로 완료(받아들임·넣지 않음)면 돌 명령이 없다
         if old_stage in {"merge": ("실행승인", "결과승인"), "wrap-up": ("실행승인",),
-                         "deploy-exec": ("넣기승인",)}.get(kind, ()):
+                         "deploy-exec": ("넣기승인",), "probe": ("실행승인",)}.get(kind, ()):
             points = [old_stage]
     elif rec is not None and old == "승인대기" and kind not in kinds.STAGE_KINDS and new == kinds.DONE \
             and devflow_lib.cmd_lines(devflow_lib.decide_cell(t["_dir"])):
@@ -898,6 +908,10 @@ def main(argv):
             t[k] = devflow_lib.parse_value(k, v)
         if "--amend-criteria" in opts and opts.get("--archive-judge"):
             raise Reject("--amend-criteria와 --archive-judge는 따로 부른다")
+        # 탐침의 기록 단계: 계획 판정(judge.md)을 judge.plan.md로 옮겨 기록 단계의 판정으로 세지 않게 한다(설계 A-17)
+        plan_move = t.get("kind") == "probe" and ("stage", "기록") in kv
+        if plan_move and os.path.isfile(os.path.join(t["_dir"], "judge.plan.md")):
+            raise Reject("judge.plan.md가 이미 있음(계획 판정을 이미 옮김) — 탐침의 stage=기록은 한 번만")
         # 검사를 모두 마친 뒤에 파일을 바꾼다(거부되면 아무것도 바꾸지 않는다)
         why = check_transition(run_dir, t, old, new, dict(ctx, archived=bool(opts.get("--archive-judge"))))
         if why and not (opts.get("--unlisted") and isinstance(why, Unlisted)):
@@ -924,6 +938,9 @@ def main(argv):
         if "--amend-criteria" in opts:
             amend_check(t, opts["--amend-criteria"], opts.get("--source") or "", tasks)
         # 여기부터 쓰기
+        if plan_move and os.path.isfile(os.path.join(t["_dir"], "judge.md")):
+            os.replace(os.path.join(t["_dir"], "judge.md"), os.path.join(t["_dir"], "judge.plan.md"))
+            print("judge.md → judge.plan.md(계획 판정을 옮김. 기록 단계의 읽기 판정이 judge.md를 새로 쓴다)")
         if "--amend-criteria" in opts:
             amend_criteria(run_dir, t, doc, opts["--amend-criteria"], opts.get("--source"), tasks)
         if opts.get("--screen-snapshot"):
