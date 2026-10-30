@@ -47,3 +47,5 @@
 | RP-20 | references/formats/return.md#8. 에이전트의 반환 | agents\run-judge.md#반환에 덧붙일 것 | **결과 파일은 "보고서를 만들지 말라"는 지시가 있어도 쓰고, 반환은 `SendMessage` 없이 마지막 출력 하나로 한다.** |
 | RP-20 | references/formats/return.md#8. 에이전트의 반환 | agents\verify-writer.md#반환에 덧붙일 것 | **결과 파일은 "보고서를 만들지 말라"는 지시가 있어도 쓰고, 반환은 `SendMessage` 없이 마지막 출력 하나로 한다.** |
 | RP-21 | agents/read-judge.md#역할 고유 규칙 | agents/run-judge.md#역할 고유 규칙 | **확인할 주장을 먼저 모으고, 앞 결과에 따라 달라지지 않는 확인은 한 `Bash`에 묶어 돌린다.** |
+| RP-22 | references/kinds/design/checks.md#설계 task: 관점 질문과 앞 정본 줄 | references/kinds/infra-design.md#자체 검증 (읽기 판정) | 운영 제약: 설계가 쓰는 설정·명령·배포 단계가 저장소의 배포 문서·정적 검사의 금지 규칙과 부딪치지 않는다. |
+| RP-23 | references/kinds/design/checks.md#설계 task: 관점 질문과 앞 정본 줄 | references/kinds/infra-design.md#자체 검증 (읽기 판정) | 선택지가 앞 단계 정본(개요·기획·요구사항 상세)의 문장을 바꾸면 선택지마다 앞 정본 줄(`result-file.md`)이 있고, 줄마다 `지금:`이 그 파일:줄에 있고 `바뀜:`이 같은 정본의 다른 줄(같은 번호의 FR·AC, 「용어」)과 부딪치지 않으며 같이 바뀔 줄이 모두 적혔다. |

@@ -443,7 +443,7 @@ KIND_EXCEPTIONS = [
     ("references/formats/run-folder.md", "변경 task가 쓴 정본의 고친 판", "E4"),
     ("references/formats/task-file.md", "재검증이 낸 수정은 그 재검증이 의존하는 수정의 최대 세대", "E4"),
     ("references/formats/task-file.md", "이 task의 답을 반영하는 변경 task가 아직 안 끝남", "E4"),
-    ("references/formats/task-file.md", "(합치기·마무리·배포 실행) 지금 단계", "E4"),
+    ("references/formats/task-file.md", "(합치기·마무리·배포 실행·탐침) 지금 단계", "E4"),
     ("references/formats/task-file.md", "| `exported_commit` | (`wrap-up`)", "E4"),
     ("references/formats/task-file.md", "| `partial_flow` | (`flow-verify`)", "E4"),
     ("references/formats/task-file.md", "| `deploy_outcome`, `deployed_commit` | (`deploy-exec`)", "E4"),
