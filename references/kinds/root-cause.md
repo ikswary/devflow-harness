@@ -27,7 +27,9 @@
 - 건수만: 기각한 가설 수
 
 ## 자식 목록
-자식 kind: `implementation`, `flow-verify`, `wrap-up`, `design`
+자식 kind: `implementation`, `fe-implementation`, `be-implementation`, `flow-verify`, `wrap-up`, `design`
+
+원인이 화면 코드면 `fe-implementation`, 서버 코드면 `be-implementation`, 그 밖은 `implementation`으로 수정안 행을 쓴다.
 
 **수정안마다** 자식 행을 미리 적는다(범위, 판정 기준, 건드릴 파일, 고쳐졌음을 확인하는 방법). 승인에서 고른 안의 행만 메인이 구현 task로 만든다(행에 `- option: 수정안/가`처럼 안을 적는다. 여러 안에 걸치면 쉼표로. 메인이 고른 안을 `spawn_children.py --option`으로, 사용자가 나중에 하자고 한 안은 `--backlog-option`으로 넘긴다). 그리고 다음 행을 넣는다.
 - 흐름별 검증 task(`kind: flow-verify`): 범위, 판정 기준(재현 테스트 통과, 영향 범위에서 고치기로 한 곳), 써 볼 방법.

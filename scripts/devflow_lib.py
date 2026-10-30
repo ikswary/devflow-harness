@@ -415,6 +415,11 @@ def branch_judgements(t):
     return judged
 
 
+def contract_token(t):
+    """머리 파일 「시그니처와 결정 번호」에 `[계약]` 토큰이 있는가(서버 구현의 읽기 판정 조건)."""
+    return "[계약]" in t.get("_sections", {}).get("시그니처와 결정 번호", "")
+
+
 def required_judges(t):
     """이 task가 `완료`·`승인대기`로 가기 전에 있어야 하는 판정({"read", "run"}). 각 정의의 「자체 검증」에서 뽑았다.
     구현의 실행 판정은 늘 둔다(문서만 바꾸는 구현은 관련 테스트가 recon 「문서를 읽는 검사」).
@@ -427,10 +432,12 @@ def required_judges(t):
         need.add("run")
     if k is not None and k.read_judge == "always":
         need.add("read")
-    if kind == "implementation":
+    if kind in kinds.IMPLEMENT_KINDS and k.read_judge == "conditional":
         cells = result_cells(t) or {}
         if t.get("closes_ac") or str(t.get("machine_check", "")).strip() == "3" or item_count(cells.get("알릴 것", "")):
             need.add("read")
+        if kind == "be-implementation" and contract_token(t):
+            need.add("read")   # 「시그니처와 결정 번호」에 [계약]이 있는 서버 구현
     if kind == "deploy-exec" and os.path.isfile(os.path.join(t["_dir"], "result.md")):
         need.add("read")   # 배포 기록(result.md)을 쓴 뒤의 읽기 판정
     if kind == "merge" and "충돌" in branch_judgements(t).values():

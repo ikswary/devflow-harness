@@ -2,7 +2,7 @@
 
 등록표 `scripts/kinds.py`가 저장소의 다른 원천과 같은지 파일을 읽어 대조한다.
 - 시험 1(a): `references/formats/task-file.md` 표의 `kind`·`block` 행 값 칸은 `references/registry/kinds.md`를 가리키고
-  `KINDS`의 이름을 백틱으로 적지 않는다, `len(KINDS) == 19`
+  `KINDS`의 이름을 백틱으로 적지 않는다, `len(KINDS) == 21`
 - 시험 1(b): `definition`의 집합 = `references/kinds/`의 파일 집합(양방향)
 - 시험 1(c): 엔진(`scripts/*.py`, `kinds.py` 제외)의 kind 이름만으로 된 집합·목록·튜플 리터럴(2개 이상)과 kind 키만의
   사전 리터럴은 (파일 이름, 원소)가 허용 목록 `HOOK_LITERALS`에 있고, 허용 목록의 kind는 모두 훅이 있다
@@ -96,7 +96,7 @@ def test_1a_formats_kind_rows_point_to_registry():
         named = sorted(k for k in kinds.KINDS if "`{}`".format(k) in value)
         assert named == [], "`{}` 행 값 칸에 kind 이름: {}".format(key, named)
         assert "`references/registry/kinds.md`" in value, "`{}` 행 값 칸이 등록표를 가리키지 않음: {}".format(key, value)
-    assert len(kinds.KINDS) == 19
+    assert len(kinds.KINDS) == 21
 
 
 def test_2c_task_file_keys_are_task_keys():
@@ -112,7 +112,7 @@ def test_2c_task_file_keys_are_task_keys():
 def test_1b_definitions_match_kind_files():
     entries = set(os.listdir(KIND_DIR))
     files = {e for e in entries if os.path.isfile(os.path.join(KIND_DIR, e))}
-    assert len(files) == 16, sorted(files)
+    assert len(files) == 18, sorted(files)
     definitions = {k.definition for k in kinds.KINDS.values()}
     assert definitions - files == set(), "등록표에만 있는 정의 파일"
     assert files - definitions == set(), "references/kinds/에만 있는 파일"
@@ -379,7 +379,7 @@ def common_layer_files():
 
 
 def upper_names():
-    """kind 정의 파일 16과 방법 문서(`references/practices/`·`stacks/`)의 파일 이름."""
+    """kind 정의 파일 18과 방법 문서(`references/practices/`·`stacks/`)의 파일 이름."""
     names = {k.definition[:-3] for k in kinds.KINDS.values()}
     practices = ROOT / "references" / "practices"
     names |= {p.stem for p in practices.glob("*.md")} | {p.stem for p in (practices / "stacks").glob("*.md")}
@@ -474,6 +474,8 @@ KIND_EXCEPTIONS = [
     ("agents/cause-writer.md", "- `root-cause` →", "E3"),
     ("agents/code-writer.md", "description: ", "E3"),
     ("agents/code-writer.md", "- `implementation`, `fix` →", "E3"),
+    ("agents/code-writer.md", "- `fe-implementation`(화면 구현) →", "E3"),
+    ("agents/code-writer.md", "- `be-implementation`(서버 구현) →", "E3"),
     ("agents/code-writer.md", "- `merge`(충돌 해결) →", "E3"),
     ("agents/code-writer.md", "- `probe`(설계가 낸 탐침) →", "E3"),
     ("agents/design-writer.md", "description: ", "E3"),
@@ -742,7 +744,7 @@ def module_problems(path):
 
 def all_module_problems(label):
     files = module_files()
-    assert len(files) == 16, [p.name for p in files]
+    assert len(files) == 18, [p.name for p in files]
     subs = [s for p in files for s in sub_files(p.name)]
     assert len(subs) >= 14, subs   # main-order 아홉, 경우 파일, run-check
     return [w for p in files for w in module_problems(p) if w.startswith(label + " ")]

@@ -1,4 +1,4 @@
-"""특성 시험 ①: kind 19 × 속성 8의 지금 값(함수 단위).
+"""특성 시험 ①: kind 21 × 속성 8의 지금 값(함수 단위).
 
 기대값은 `design/peer-alignment.md` 1.1 표에서 옮긴 데이터다(아래 `EXPECTED`). 실제 값은 스크립트의 상수와 판정 함수에서
 읽는다. 기대값을 같은 코드로 계산하지 않는다.
@@ -43,6 +43,9 @@ EXPECTED = {
     # probe의 작성자에 code-writer가 있지만 코드 폴더에 쓰지 않아 흐름 상한에 세지 않는다
     "probe":          ("설계",     "늘",        "—", STAGED,      PROBE_STAGES,  "—", "—", "—", "P"),
     "implementation": ("구현",     "조건",      "늘", DECIDE_ZERO, "—",          "예", "예", "예", ""),
+    "fe-implementation": ("구현",  "늘",        "늘", DECIDE_ZERO, "—",          "예", "예", "예", "G"),
+    # be-implementation의 읽기 판정은 implementation의 조건 셋 + 「시그니처와 결정 번호」의 [계약]
+    "be-implementation": ("구현",  "조건",      "늘", DECIDE_ZERO, "—",          "예", "예", "예", "K"),
     "fix":            ("구현",     "늘",        "늘", DECIDE_ZERO, "—",          "예", "예", "예", "F"),
     "change":         ("",         "늘",        "—", DECIDE_ZERO, "—",           "—", "—", "—", "X"),
     "flow-verify":    ("검증",     "늘",        "—", ASK_ONLY,    "—",           "—", "—", "—", "V"),
@@ -64,9 +67,9 @@ BRANCH_LINE = "- 2026-10-15 10:00:00 | 브랜치 판정 | 실행승인:1 | {} | 
 CONFLICT_EXEC = BRANCH_LINE.format("충돌")
 
 
-def test_expected_table_covers_the_nineteen_kinds():
-    # 기대 데이터가 19행이고, 스크립트가 아는 kind 집합(블록 표·글자 표)과 같다
-    assert len(EXPECTED) == 19
+def test_expected_table_covers_the_twenty_one_kinds():
+    # 기대 데이터가 21행이고, 스크립트가 아는 kind 집합(블록 표·글자 표)과 같다
+    assert len(EXPECTED) == 21
     assert set(EXPECTED) == set(kinds.KINDS)
 
 
@@ -164,6 +167,15 @@ def test_implementation_read_judge_conditions_each_add_read(cond, lib, tmp_path)
 
 def test_implementation_machine_check_other_than_3_does_not_add_read(lib, tmp_path):
     assert lib.required_judges(_task(tmp_path, "c", "implementation", machine_check="0")) == {"run"}
+
+
+def test_be_implementation_contract_token_adds_read(lib, tmp_path):
+    # 표: be-implementation의 읽기 판정은 조건. 「시그니처와 결정 번호」의 [계약]만 채워도 요구되고,
+    # 같은 절을 가진 implementation에는 요구되지 않는다
+    contract = {"시그니처와 결정 번호": "[계약] POST /api/items 응답 201"}
+    assert lib.required_judges(_task(tmp_path, "plain", "be-implementation")) == {"run"}
+    assert lib.required_judges(_task(tmp_path, "be", "be-implementation", _sections=contract)) == {"run", "read"}
+    assert lib.required_judges(_task(tmp_path, "impl", "implementation", _sections=contract)) == {"run"}
 
 
 def test_deploy_exec_read_judge_only_with_result_md(lib, tmp_path):

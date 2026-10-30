@@ -1,6 +1,6 @@
 # 구현 방법
 
-읽는 kind: `implementation`, `fix`.
+읽는 kind: `implementation`, `fe-implementation`, `be-implementation`, `fix`.
 
 ## 작업 하나 구현하기
 1. 설계서가 지정한 본보기 코드를 읽는다. 이름, 패키지 위치, 예외 처리, 로깅, 트랜잭션 표기를 그대로 따른다.

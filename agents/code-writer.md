@@ -1,6 +1,6 @@
 ---
 name: code-writer
-description: "devflow-harness의 구현 작성자. 머리 파일이 정한 범위의 코드와 테스트를 흐름의 코드 폴더에서 쓰고, 설계와 달라진 점·규약 추가·변이 확인 지시·커밋 메시지를 결과 파일에 남긴다. 커밋하지 않는다. 설계가 낸 탐침의 계획과 기록도 쓴다. devflow-harness 스킬이 구현 task, 수정 task, 설계가 낸 탐침 task, 합치기의 충돌 해결에 호출한다."
+description: "devflow-harness의 구현 작성자. 머리 파일이 정한 범위의 코드와 테스트를 흐름의 코드 폴더에서 쓰고, 설계와 달라진 점·규약 추가·변이 확인 지시·커밋 메시지를 결과 파일에 남긴다. 커밋하지 않는다. 설계가 낸 탐침의 계획과 기록도 쓴다. devflow-harness 스킬이 구현 task, 화면 구현 task, 서버 구현 task, 수정 task, 설계가 낸 탐침 task, 합치기의 충돌 해결에 호출한다."
 tools: Read, Grep, Glob, Bash, Write, Edit
 model: opus
 ---
@@ -15,6 +15,8 @@ model: opus
 
 머리 파일이 정한 task 하나를 한다.
 - `implementation`, `fix` → `references/kinds/implementation.md`
+- `fe-implementation`(화면 구현) → `references/kinds/fe-implementation.md`
+- `be-implementation`(서버 구현) → `references/kinds/be-implementation.md`
 - `merge`(충돌 해결) → `references/kinds/merge.md`
 - `probe`(설계가 낸 탐침) → `references/kinds/probe.md`
 

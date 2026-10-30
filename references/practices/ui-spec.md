@@ -1,6 +1,6 @@
 # 화면 설계서·와이어프레임 작성법
 
-읽는 kind: `ui-design`, `change`.
+읽는 kind: `ui-design`, `fe-implementation`, `change`.
 UI 규약 task(`ui\rules.md`를 씀)를 쓸 때는 `references/practices/ui-spec/rules.md`의 「UI 규약」을 따른다.
 
 화면 설계서의 목적은 "사용자가 무엇을 보고 무엇을 누르면 무엇이 되는지"를 소프트웨어 설계와 구현이 그대로 옮길 수 있게, 그리고 판정자가 파일만 보고 빠짐을 찾을 수 있게 적는 것이다. 보기 좋은지는 사람이 와이어프레임과 글자 배치도를 보고 정한다. 화면 id와 이동은 기획(`spec\brief.md` 「화면 흐름」)이 정했고 여기서 바꾸지 않는다.

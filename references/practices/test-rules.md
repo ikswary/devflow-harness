@@ -1,6 +1,6 @@
 # 시험 작성 기준
 
-읽는 kind: `question`, `root-cause`, `ui-design`, `design`, `implementation`, `fix`, `change`, `flow-verify`, `reverify`, `full-verify`.
+읽는 kind: `question`, `root-cause`, `ui-design`, `design`, `implementation`, `fe-implementation`, `be-implementation`, `fix`, `change`, `flow-verify`, `reverify`, `full-verify`.
 
 시험은 "틀린 코드에서 실패한다"를 보이려고 쓴다. 통과했다는 사실만으로는 아무것도 증명되지 않는다. 아래 일곱 가지는 이 원리를 어기는 대표적인 모양이다.
 

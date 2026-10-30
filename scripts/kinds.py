@@ -1,4 +1,4 @@
-"""등록표: kind 19·에이전트 9·값 집합·머리 파일 키·판본 칸의 유일한 원천.
+"""등록표: kind 21·에이전트 9·값 집합·머리 파일 키·판본 칸의 유일한 원천.
 
 엔진 스크립트는 이 모듈의 이름과 파생 함수만 쓴다. 이 모듈은 표준 라이브러리만 import하고 다른 스크립트를
 import하지 않는다(R2). 목차 `references/core/registry.md`와 절마다 파일 `references/registry/*.md`는 이 모듈의
@@ -75,7 +75,8 @@ KINDS = {
     "root-cause": Kind(
         "원인 분석", "root-cause.md", ("cause-writer",), "always", "always",
         "none", None, True, False, False, False, False, False, False, "C",
-        ("implementation", "flow-verify", "wrap-up", "design"), ("code_dir_writes",)),
+        ("implementation", "fe-implementation", "be-implementation", "flow-verify", "wrap-up", "design"),
+        ("code_dir_writes",)),
     "ui-design": Kind(
         "설계", "ui-design.md", ("design-writer",), "always", "never",
         "none", None, False, False, False, True, False, False, False, "U",
@@ -92,6 +93,14 @@ KINDS = {
         "구현", "implementation.md", ("code-writer",), "conditional", "always",
         "by_decide", None, True, True, True, False, True, True, False, "",
         (), _CODE_HOOKS),
+    "fe-implementation": Kind(
+        "구현", "fe-implementation.md", ("code-writer",), "always", "always",
+        "by_decide", None, True, True, True, False, True, True, False, "G",
+        (), _CODE_HOOKS + ("screen_ac_kind_check",)),
+    "be-implementation": Kind(
+        "구현", "be-implementation.md", ("code-writer",), "conditional", "always",
+        "by_decide", None, True, True, True, False, True, True, False, "K",
+        (), _CODE_HOOKS + ("contract_token",)),
     "fix": Kind(
         "구현", "implementation.md", ("code-writer",), "always", "always",
         "by_decide", None, True, True, True, False, True, True, False, "F",
@@ -268,6 +277,7 @@ def commit_kinds(rules_level):
 
 STAGE_KINDS = kinds_where(stages=lambda s: s is not None)
 AUTO_DEPEND_KINDS = kinds_where(auto_depends_in_flow=True)
+IMPLEMENT_KINDS = AUTO_DEPEND_KINDS - {"fix"}
 TOUCH_FILES_KINDS = kinds_where(needs_touch_files=True)
 READBACK_KINDS = kinds_where(readback=True)
 CODE_DIR_KINDS = kinds_where(writes_code_dir=True)
@@ -422,6 +432,7 @@ def render_sections():
 
     out += ["## 8. 파생 집합", ""]
     derived = [("STAGE_KINDS", STAGE_KINDS), ("AUTO_DEPEND_KINDS", AUTO_DEPEND_KINDS),
+               ("IMPLEMENT_KINDS", IMPLEMENT_KINDS),
                ("TOUCH_FILES_KINDS", TOUCH_FILES_KINDS), ("READBACK_KINDS", READBACK_KINDS),
                ("CODE_DIR_KINDS", CODE_DIR_KINDS), ("CANON_WRITER_KINDS", CANON_WRITER_KINDS),
                ("VERIFY_KINDS", VERIFY_KINDS), ("NOTIFY_KINDS", NOTIFY_KINDS),

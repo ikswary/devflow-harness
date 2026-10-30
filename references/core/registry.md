@@ -4,7 +4,7 @@
 
 | 절 | 파일 |
 | --- | --- |
-| 1. kind 19 | `references/registry/kinds.md` |
+| 1. kind 21 | `references/registry/kinds.md` |
 | 2. 간선 | `references/registry/edges.md` |
 | 3. 에이전트 9 | `references/registry/agents.md` |
 | 4. 값 집합 | `references/registry/values.md` |

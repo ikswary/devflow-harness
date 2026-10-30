@@ -1,4 +1,4 @@
-## 1. kind 19
+## 1. kind 21
 
 | kind | block | definition | writers | read_judge | run_judge | notify | stages | writes_code_dir | auto_depends_in_flow | needs_touch_files | writes_canon | readback | commit_required | verify_family | glyph | children | engine_hooks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -7,11 +7,13 @@
 | req-overview | 요구사항 | req-overview.md | requirements-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | Q | brief | — |
 | req-detail | 요구사항 | req-detail.md | requirements-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | Q | design | — |
 | infra-design | 설계 | infra-design.md | infra-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | I | probe, implementation | infra_premise |
-| root-cause | 원인 분석 | root-cause.md | cause-writer | always | always | 승인만 (`none`) | — | 예 | — | — | — | — | — | — | C | implementation, flow-verify, wrap-up, design | code_dir_writes |
+| root-cause | 원인 분석 | root-cause.md | cause-writer | always | always | 승인만 (`none`) | — | 예 | — | — | — | — | — | — | C | implementation, fe-implementation, be-implementation, flow-verify, wrap-up, design | code_dir_writes |
 | ui-design | 설계 | ui-design.md | design-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | U | design | — |
 | design | 설계 | design.md | design-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | S | implementation, flow-verify, full-verify, wrap-up, deploy-plan | — |
 | probe | 설계 | probe.md | infra-writer, code-writer | always | never | 단계 (`by_decide`) | 실행승인, 실행, 기록, 결과승인, 끝 | — | — | — | — | — | — | — | P | — | stage_rule, exec_points, default_cwd, notify_gate, judge_plan |
 | implementation | 구현 | implementation.md | code-writer | conditional | always | 「정해」「하실」 0, origin 사용자면 불가 (`by_decide`) | — | 예 | 예 | 예 | — | 예 | 예 | — | (빈 글자) | — | machine_check, required_judges, flow_auto_depends, touch_files, readback, from_answer, flow_md |
+| fe-implementation | 구현 | fe-implementation.md | code-writer | always | always | 「정해」「하실」 0, origin 사용자면 불가 (`by_decide`) | — | 예 | 예 | 예 | — | 예 | 예 | — | G | — | machine_check, required_judges, flow_auto_depends, touch_files, readback, from_answer, flow_md, screen_ac_kind_check |
+| be-implementation | 구현 | be-implementation.md | code-writer | conditional | always | 「정해」「하실」 0, origin 사용자면 불가 (`by_decide`) | — | 예 | 예 | 예 | — | 예 | 예 | — | K | — | machine_check, required_judges, flow_auto_depends, touch_files, readback, from_answer, flow_md, contract_token |
 | fix | 구현 | implementation.md | code-writer | always | always | 「정해」「하실」 0, origin 사용자면 불가 (`by_decide`) | — | 예 | 예 | 예 | — | 예 | 예 | — | F | — | fix_generation, machine_check, required_judges, flow_auto_depends, touch_files, readback, from_answer, flow_md |
 | change | (빈 값) | change.md | requirements-writer, design-writer | always | never | 「정해」「하실」 0, origin 사용자면 불가 (`by_decide`) | — | — | — | — | 예 | — | — | — | X | — | canon_check, replace, from_answer |
 | flow-verify | 검증 | verify.md | verify-writer | always | never | 승인만 (`none`) | — | — | — | — | — | — | — | 예 | V | fix, reverify | start_condition, child_generation_zero |

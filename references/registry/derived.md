@@ -1,18 +1,19 @@
 ## 8. 파생 집합
 
 - `STAGE_KINDS`: `probe`, `merge`, `wrap-up`, `deploy-exec`
-- `AUTO_DEPEND_KINDS`: `implementation`, `fix`
-- `TOUCH_FILES_KINDS`: `implementation`, `fix`
-- `READBACK_KINDS`: `implementation`, `fix`
-- `CODE_DIR_KINDS`: `root-cause`, `implementation`, `fix`, `merge`
+- `AUTO_DEPEND_KINDS`: `implementation`, `fe-implementation`, `be-implementation`, `fix`
+- `IMPLEMENT_KINDS`: `implementation`, `fe-implementation`, `be-implementation`
+- `TOUCH_FILES_KINDS`: `implementation`, `fe-implementation`, `be-implementation`, `fix`
+- `READBACK_KINDS`: `implementation`, `fe-implementation`, `be-implementation`, `fix`
+- `CODE_DIR_KINDS`: `root-cause`, `implementation`, `fe-implementation`, `be-implementation`, `fix`, `merge`
 - `CANON_WRITER_KINDS`: `question`, `brief`, `req-overview`, `req-detail`, `infra-design`, `ui-design`, `design`, `change`
 - `VERIFY_KINDS`: `flow-verify`, `reverify`, `full-verify`
-- `NOTIFY_KINDS`: `question`, `probe`, `implementation`, `fix`, `change`, `reverify`, `merge`
-- `NOTIFY_BY_DECIDE_KINDS`: `probe`, `implementation`, `fix`, `change`
+- `NOTIFY_KINDS`: `question`, `probe`, `implementation`, `fe-implementation`, `be-implementation`, `fix`, `change`, `reverify`, `merge`
+- `NOTIFY_BY_DECIDE_KINDS`: `probe`, `implementation`, `fe-implementation`, `be-implementation`, `fix`, `change`
 - `NEVER_NOTIFY_KINDS`: `deploy-plan`, `deploy-exec`
-- `CODE_WRITER_KINDS`: `implementation`, `fix`, `merge`
-- `commit_kinds(1)`: `implementation`, `fix`
-- `commit_kinds(2)`: `implementation`, `fix`, `merge`
+- `CODE_WRITER_KINDS`: `implementation`, `fe-implementation`, `be-implementation`, `fix`, `merge`
+- `commit_kinds(1)`: `implementation`, `fe-implementation`, `be-implementation`, `fix`
+- `commit_kinds(2)`: `implementation`, `fe-implementation`, `be-implementation`, `fix`, `merge`
 - `SCRIPT_KEYS`: `origin`, `fix_generation`, `started_version`, `rules`, `done_via`, `criteria_amended`, `exported_commit`, `created`, `started`, `approval_requested`, `approved`
 - `OPTION_KEYS`: `kind`, `status`, `retry`
 - `SELFCHECK_KEYS`: `machine_check`

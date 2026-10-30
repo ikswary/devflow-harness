@@ -230,7 +230,7 @@ def start_blocks(tasks, flows, cap, t, holds=None):
         left = [o["id"] for o in code if not devflow_lib.settled(o, tasks, holds)]
         if left:
             why.append("흐름 코드 task 남음: " + ", ".join(left))
-        held = [o["id"] for o in code if o.get("kind") == "implementation"
+        held = [o["id"] for o in code if o.get("kind") in kinds.IMPLEMENT_KINDS
                 and (o.get("status") == "보류" or o["id"] in holds)]
         if held and not left and str(t.get("partial_flow", "")).strip().lower() not in ("true", "예"):
             why.append("보류된 구현 있음: {} — 묻기: (가) 이 흐름 보류 / (나) 남은 것만 검증(--record 뒤 partial_flow=true)".format(

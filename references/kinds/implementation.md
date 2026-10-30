@@ -2,6 +2,8 @@
 
 머리 파일이 정한 범위의 코드와 테스트를 쓴다. 검증 지적을 고치는 수정 task와 사용자 답으로 코드를 고치는 수정 task(`origin: 사용자 …`)도 이 정의를 따른다. 옛 실행의 코드를 고치는 `change`도 이 정의로 한다.
 
+맡는 범위: 화면 구현(`fe-implementation`)·서버 구현(`be-implementation`)이 아닌 코드(도구·스크립트·라이브러리·설정·마이그레이션·문서)를 맡는다.
+
 ## 먼저 읽을 것
 `${CLAUDE_PLUGIN_ROOT}/references/practices/implementation-practice.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/build-and-test.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/code-task.md`(코드 task 공통), 설계 정본의 해당 절, 흐름 규약 파일(있으면). 수정 task면 경우 파일 `references/kinds/implementation/fix.md`도.
 

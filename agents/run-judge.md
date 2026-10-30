@@ -22,7 +22,7 @@ model: sonnet
 - `${CLAUDE_PLUGIN_ROOT}/references/roles/judge.md`
 - `${CLAUDE_PLUGIN_ROOT}/references/formats/judge-file.md`, `${CLAUDE_PLUGIN_ROOT}/references/formats/judge-run-file.md`, `${CLAUDE_PLUGIN_ROOT}/references/formats/return.md`
 - `${CLAUDE_PLUGIN_ROOT}/references/practices/build-and-test.md`
-- 맡은 kind의 실행 판정 파일(있으면): `implementation`·`fix` → `${CLAUDE_PLUGIN_ROOT}/references/kinds/implementation/run-check.md`, `wrap-up` → `${CLAUDE_PLUGIN_ROOT}/references/kinds/wrap-up/run-check.md`, `deploy-exec` → `${CLAUDE_PLUGIN_ROOT}/references/kinds/deploy-exec/run-check.md`
+- 맡은 kind의 실행 판정 파일(있으면): `fe-implementation`·`be-implementation`·`implementation`·`fix` → `${CLAUDE_PLUGIN_ROOT}/references/kinds/implementation/run-check.md`, `wrap-up` → `${CLAUDE_PLUGIN_ROOT}/references/kinds/wrap-up/run-check.md`, `deploy-exec` → `${CLAUDE_PLUGIN_ROOT}/references/kinds/deploy-exec/run-check.md`
 
 ## 역할 고유 규칙
 1. 프롬프트가 준 코드 폴더에서 `recon.md`의 명령을 독립 최종 검사로 실행한다. 작성자의 개발 검사로 대신하지 않는다. 범위는 `build-and-test`대로 고르고 마지막 출시 후보는 모든 검사를 실행한다.

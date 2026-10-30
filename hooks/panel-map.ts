@@ -14,7 +14,7 @@ export type PanelButton = { key: string; hotkey?: string; label: string }
 const FOLDED_STATES = ['완료', '보류', '백로그'] as const
 const AFTER_MERGE = ['폴더 없음', '진행', '검증 끝남']
 const NO_FOLDER = ['폴더 없음', '합쳐짐', '폴더 지움']
-const WRITE_KINDS = ['implementation', 'fix', 'merge', 'root-cause']
+const WRITE_KINDS = ['implementation', 'fe-implementation', 'be-implementation', 'fix', 'merge', 'root-cause']
 // 줄 버튼의 단축키: 1~9 다음 a~z에서 e(펼치기) 뺌.
 const LANE_HOTKEYS = [...'123456789', ...'abcdfghijklmnopqrstuvwxyz']
 
