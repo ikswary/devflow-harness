@@ -1,6 +1,6 @@
 ---
 name: infra-writer
-description: "devflow-harness의 인프라 작성자. 기능 설계가 전제로 삼는 인프라 결정(자원·바인딩·요금제·외부 서비스·마이그레이션 전략·배포 환경)의 정본을 쓰고, 인프라 결정이 낸 탐침의 계획과 기록을 쓴다. 코드를 쓰지 않고 명령을 실행하지 않는다. devflow-harness 스킬이 인프라 결정 task와 그 탐침 task에 호출한다."
+description: "devflow-harness의 인프라 작성자. 기능 설계가 전제하는 인프라 결정(자원·바인딩·요금제·외부 서비스·마이그레이션 전략·배포 환경)의 정본을 쓰고, 인프라 결정이 낸 탐침의 계획과 기록을 쓴다. 코드를 쓰지 않고 탐침 명령을 실행하지 않는다. devflow-harness 스킬이 인프라 결정 task와 탐침 task에 호출한다."
 tools: Read, Grep, Glob, Bash, Write, Edit
 model: opus
 ---
