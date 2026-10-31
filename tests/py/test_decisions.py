@@ -109,6 +109,17 @@ def test_da_task_id_cell_middle_dot_trailing_separator_and_stuck_ids_are_malform
     assert lines[-1] == "형식 밖 6줄: " + ", ".join("2026-10-30 14:41:%d" % n for n in range(10, 16))
 
 
+def test_da_task_id_cell_many_space_joined_ids_finish_without_backtracking_blowup():
+    ids = " ".join("T%03d" % n for n in range(1, 31))
+    wide = "  ".join("T%03d" % n for n in range(1, 31))
+    # 공백으로 이은 id 30개 뒤에 글이 붙으면 형식 밖이 아니라 결정이고, 겹치는 공백 되짚기가 있으면 끝나지 않는다
+    text = ("- 2026-10-30 14:42:00 | %s 묶음 승인 | 원문: \"가\" | -\n"
+            "- 2026-10-30 14:42:01 | %s | 원문: \"가\" | -\n") % (ids, wide)
+    lines, kept, superseded, malformed = decisions.brief_lines(text)
+    assert (kept, superseded, malformed) == (1, 0, 1)
+    assert lines == [HEAD.format(1, 0), "- 2026-10-30 14:42:00 | %s 묶음 승인" % ids, "형식 밖 1줄: 2026-10-30 14:42:01"]
+
+
 def test_da_pipe_inside_decision_cell_is_malformed_by_cell_order():
     # 결정 칸에 `|`가 들면 칸 차례가 밀려 셋째 칸이 `원문:`이 아니다(run-files.md의 칸 차례대로 형식 밖)
     text = "- 2026-10-30 14:41:00 | t | A | B | 원문: \"x\" | T1\n"

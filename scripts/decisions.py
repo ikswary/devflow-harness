@@ -28,7 +28,7 @@ import sys
 import devflow_lib
 
 SUPERSEDED = "→ 대체:"
-TASK_ID_CELL = re.compile(r"T[0-9]+(?:\s*[,·]?\s*T[0-9]+)*(?:\s*[,·])?")
+TASK_ID_CELL = re.compile(r"T[0-9]+(?:(?:\s*[,·]\s*|\s+)?T[0-9]+)*(?:\s*[,·])?")
 
 
 def first_sentence(cell):
