@@ -66,6 +66,10 @@ COMMIT_HINT = ("커밋: 변경 task로 고침·원인 분석을 고르면 지금
                "보류를 고르면 커밋하지 않은 변경을 패치로 치울지 함께 묻습니다.")
 FLOOR_ALERT = "! 재개 바닥 {}K({}K 이상): 하네스 밖 도구 정의가 큼. 이 프로젝트에 필요 없는 MCP 서버를 끄면 줄어듦"
 FLOOR_NOTED = "바닥 알림 {}K"   # floor_alert가 앞부분으로 이미 알렸는지 읽는다
+# 탐침 알림을 막는 이유 셋(probe_block). 시험이 같은 상수로 기대값을 만든다
+PROBE_PLAN_BLOCK = "탐침 계획(「탐침 기록」 절 없음)은 늘 승인"
+PROBE_NO_ROWS = "탐침 기록 표에 가정 행 없음"
+PROBE_NOT_TRUE = "탐침 가정 참 아님 {}"
 
 
 def children_lines(result_text):
@@ -386,18 +390,18 @@ def amendments(t):
 def probe_block(top):
     """탐침의 알림을 막는 이유(없으면 빈 글). 계획(「탐침 기록」 절 없음)은 늘 승인, 기록은 가정 행이 없거나 판정 칸의 첫 낱말이 `참`이 아닌 행이 있으면 승인."""
     if "탐침 기록" not in top:
-        return "탐침 계획(「탐침 기록」 절 없음)은 늘 승인"
+        return PROBE_PLAN_BLOCK
     rows = [[c.strip() for c in line.strip().strip("|").split("|")]
             for line in top["탐침 기록"].splitlines() if line.strip().startswith("|")]
     col = rows[0].index("판정") if rows and "판정" in rows[0] else 1
     rows = [r for r in rows[1:] if not all(re.fullmatch(r":?-+:?", c) for c in r)]   # 머리 아래 구분선 줄은 가정 행이 아니다
     if not rows:
-        return "탐침 기록 표에 가정 행 없음"
+        return PROBE_NO_ROWS
     def verdict(r):   # 판정 칸의 첫 낱말(굵게 `*`·백틱·괄호 앞까지). `판정불가(로그 없음)`도 `판정불가`로 읽는다
         m = re.match(r"[\s*`]*([^\s*`(（]*)", r[col] if len(r) > col else "")
         return m.group(1)
     bad = sum(1 for r in rows if verdict(r) != "참")
-    return "탐침 가정 참 아님 {}".format(bad) if bad else ""
+    return PROBE_NOT_TRUE.format(bad) if bad else ""
 
 
 def main_summary(t, judge_top):

@@ -17,6 +17,7 @@ from datetime import datetime
 import pytest
 
 import exec as execmod
+import screen
 import task_set
 from conftest import run_script, write
 
@@ -988,7 +989,7 @@ def test_probe_notify_done_follows_record_table(run_dir):
     probe_result(run_dir, cmd=None, verdicts=["참", "거짓"])
     freeze_ok(run_dir, "T001")
     why = check(run_dir, load(run_dir), "자체검증", "완료", record=REC_NOTIFY)
-    assert why == PROBE_NOTIFY_FAIL + " 탐침 가정 참 아님 1"
+    assert why == PROBE_NOTIFY_FAIL + " " + screen.PROBE_NOT_TRUE.format(1)
 
     run_dir.task("T002", "탐침", sections=approved, status="자체검증", stage="끝", **PROBE)
     run_dir.judge("T002", now_judge("T002"))
@@ -999,9 +1000,9 @@ def test_probe_notify_done_follows_record_table(run_dir):
 
 # R-COR1: 판정 칸은 첫 낱말로 읽는다(굵게·괄호 설명이 붙어도 `참`이 아니면 막고), 가정 행이 없는 표도 막는다
 @pytest.mark.parametrize("verdicts,why", [
-    (["참", "판정불가(로그 없음)"], "탐침 가정 참 아님 1"),
-    (["**참**", "**거짓**"], "탐침 가정 참 아님 1"),
-    ([], "탐침 기록 표에 가정 행 없음"),
+    (["참", "판정불가(로그 없음)"], screen.PROBE_NOT_TRUE.format(1)),
+    (["**참**", "**거짓**"], screen.PROBE_NOT_TRUE.format(1)),
+    ([], screen.PROBE_NO_ROWS),
 ])
 def test_probe_notify_reads_first_word_of_verdict_cell(run_dir, verdicts, why):
     run_dir.task("T001", "탐침", sections={"승인 기록": APPROVED}, status="자체검증", stage="끝", **PROBE)
@@ -1023,7 +1024,7 @@ def test_probe_plan_without_record_table_does_not_notify(run_dir):
     probe_result(run_dir, cmd=None)
     freeze_ok(run_dir, "T001")
     why = check(run_dir, load(run_dir), "자체검증", "완료", record=REC_NOTIFY)
-    assert why == PROBE_NOTIFY_FAIL + " 탐침 계획(「탐침 기록」 절 없음)은 늘 승인"
+    assert why == PROBE_NOTIFY_FAIL + " " + screen.PROBE_PLAN_BLOCK
 
 
 def test_probe_notify_done_needs_verify(run_dir):
