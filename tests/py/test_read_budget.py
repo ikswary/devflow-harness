@@ -29,7 +29,7 @@ PENDING_OVER: list[tuple[str, int, int, str]] = [
     ("run-judge:merge", 30136, 30448, _V104_NOTE),
     ("run-judge:wrap-up", 30822, 31134, _V104_NOTE),
     ("run-judge:deploy-exec", 31840, 32147, _V104_NOTE),
-    ("requirements-writer:question", 32165, 32245, "S2 task-file.md 탐침 단계 +86(A-H4). A·B 흐름의 실제 증가가 어림보다 커 여유 216이 4로 줄었다. 사용자 결정으로 보류(T035 답 2026-10-30 18:11:03)"),
+    ("requirements-writer:question", 32165, 32237, "S2 task-file.md 탐침 단계 +86(A-H4). A·B 흐름의 실제 증가가 어림보다 커 여유 216이 4로 줄었다. 사용자 결정으로 보류(T035 답 2026-10-30 18:11:03)"),
 ]
 
 AGENT_DIR = ROOT / "agents"
