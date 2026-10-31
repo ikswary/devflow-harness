@@ -109,15 +109,18 @@ def test_da_task_id_cell_middle_dot_trailing_separator_and_stuck_ids_are_malform
     assert lines[-1] == "형식 밖 6줄: " + ", ".join("2026-10-30 14:41:%d" % n for n in range(10, 16))
 
 
-def test_da_task_id_cell_many_space_joined_ids_finish_without_backtracking_blowup():
+def test_da_task_id_cell_many_space_joined_ids_finish_without_backtracking_blowup(tmp_path):
     ids = " ".join("T%03d" % n for n in range(1, 31))
     wide = "  ".join("T%03d" % n for n in range(1, 31))
     # 공백으로 이은 id 30개 뒤에 글이 붙으면 형식 밖이 아니라 결정이고, 겹치는 공백 되짚기가 있으면 끝나지 않는다
     text = ("- 2026-10-30 14:42:00 | %s 묶음 승인 | 원문: \"가\" | -\n"
             "- 2026-10-30 14:42:01 | %s | 원문: \"가\" | -\n") % (ids, wide)
-    lines, kept, superseded, malformed = decisions.brief_lines(text)
-    assert (kept, superseded, malformed) == (1, 0, 1)
-    assert lines == [HEAD.format(1, 0), "- 2026-10-30 14:42:00 | %s 묶음 승인" % ids, "형식 밖 1줄: 2026-10-30 14:42:01"]
+    # 되짚기가 터지면 이 호출이 run_script의 제한 시간(120초)에 TimeoutExpired로 끝나 이 시험이 실패한다
+    write(tmp_path / "decisions.md", text)
+    r = run_script("decisions", tmp_path, "--brief")
+    assert r.returncode == 0, r.output
+    assert r.stdout.splitlines() == [HEAD.format(1, 0), "- 2026-10-30 14:42:00 | %s 묶음 승인" % ids,
+                                     "형식 밖 1줄: 2026-10-30 14:42:01"]
 
 
 def test_da_pipe_inside_decision_cell_is_malformed_by_cell_order():
