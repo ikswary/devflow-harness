@@ -162,44 +162,38 @@ def _cells(line):
 
 
 WAIT_TAIL = r" \d+분 \(\d+개\) / 흐름 작성 \d+분"   # `폴더 대기: {흐름}` 뒤에 오는 조각 꼴
+NOTE_SEP = re.compile(r"((?:(?<=\s)|^)[/;]+(?=\s|$)|;(?=\s))")   # 비고 칸 글 사이 구분자(put_segment)
 
 
 def put_segment(cell, seg):
-    """`비고` 칸 글에서 seg와 같은 흐름의 폴더 대기 조각만 seg로 바꾸고(여럿이면 첫 자리에 하나만 남김),
-    없으면 맨 끝에 덧붙인다. 조각 사이 구분자는 `; `로 통일하고, 조각을 지운 자리에 빈 구분자를 남기지 않는다.
-    칸의 다른 글은 글자를 그대로 둔다(폴더 대기 조각에 붙은 구분자 ` / `·`; `와 그 둘레 공백만 `; `로 바뀐다).
-    칸 맨 앞·맨 끝이나 폴더 대기 조각에 맞닿아 글 없이 남는 구분자(`/ `, `; `, 공백 뒤 ` /`·` ;`, 구분자 하나뿐인 조각)는 떼고,
-    글에 붙은 `/`·`;`는 남긴다(그래서 조각이 없는 칸 `메모 a;`에 덧붙이면 `메모 a;; {조각}`이 된다)."""
+    """`비고` 칸 글을 조각 열로 보고 seg를 넣는다.
+    칸에서 폴더 대기 조각을 먼저 찾고, 그 사이 글은 구분자에서 나눈다. 구분자는 양옆이 공백이거나 칸 맨 앞·끝·폴더 대기 조각
+    경계인 `/`·`;` 덩어리(` / `, 홀로 남은 `/`·`;`)와 뒤에 공백이 오는 `;`(`; `)다. seg와 같은 흐름의 폴더 대기 조각은 첫 자리
+    하나만 seg로 바꾸고 나머지는 버리며, 없으면 seg를 맨 끝에 더한다. 앞뒤 공백을 뗀 뒤 비었거나 `/`·`;`만 남은 조각은 버리고,
+    나머지를 `; `로 잇는다. 다만 ` / ` 하나만 사이에 두고 이웃했던 두 글 조각은 ` / `로 잇는다(B 줄 안의 ` / `).
+    글에 붙은 `/`·`;`는 글자 그대로 남는다(`a/b`, `;메모`, `메모 a/`, 칸 끝 `메모 a;`. 그래서 `메모 a;`에 덧붙이면 `메모 a;; {seg}`)."""
     m = re.fullmatch(r"폴더 대기: (\S+)" + WAIT_TAIL, seg)
     pat = re.compile("폴더 대기: " + re.escape(m.group(1)) + WAIT_TAIL) if m else None
     wait = re.compile(r"(폴더 대기: \S+" + WAIT_TAIL + ")")
-    items, placed = [], False
-    parts = wait.split(cell)
-    for i, piece in enumerate(parts):
+    items, placed = [], False   # (조각, 앞 조각과 ` / `로 잇는가)
+    for i, piece in enumerate(wait.split(cell)):
         if i % 2 == 1:   # 폴더 대기 조각
             if pat and pat.fullmatch(piece):
-                if not placed:
-                    items.append(seg)
-                    placed = True
-            else:
-                items.append(piece)
-        else:
-            # 폴더 대기 조각에 붙은 쪽의 구분자(` / `, `; `)와 둘레 공백만 뗀다. 글 안이나 글 끝에 붙은 `/`·`;`는 남긴다
-            text = piece
-            if i > 0:
-                text = re.sub(r"^(?:\s*;\s*|\s+/\s+|\s+)", "", text)
-            if i < len(parts) - 1:
-                text = re.sub(r"(?:\s+/\s+|;\s*|\s+)$", "", text)
-            if i == 0:   # 칸 맨 앞에 글 없이 남는 구분자(`/ `, `; `)
-                text = re.sub(r"^(?:\s*;(?:\s+|$)|\s*/(?:\s+|$))+", "", text)
-            # 칸 맨 끝이거나 폴더 대기 조각에 맞닿아, 공백 뒤에 글 없이 홀로 남는 구분자(` /`, ` ;`)
-            text = re.sub(r"(?:\s+[/;])+\s*$", "", text)
-            text = text.strip()
-            if text and text not in ("/", ";"):
-                items.append(text)
+                if placed:
+                    continue
+                piece, placed = seg, True
+            items.append((piece, False))
+            continue
+        tokens = NOTE_SEP.split(piece)   # 글, 구분자, 글, … 차례
+        last = None   # 이 글 덩어리에서 마지막으로 남긴 글 조각의 자리
+        for j in range(0, len(tokens), 2):
+            if re.fullmatch(r"[\s/;]*", tokens[j]):   # 비었거나 `/`·`;`만 남은 조각
+                continue
+            items.append((tokens[j].strip(), last == j - 2 and tokens[j - 1] == "/"))
+            last = j
     if not placed:
-        items.append(seg)
-    return "; ".join(items)
+        items.append((seg, False))
+    return "".join((" / " if slash else "; ") + text if k else text for k, (text, slash) in enumerate(items))
 
 
 def write_note(measure_path, run_name, segments):

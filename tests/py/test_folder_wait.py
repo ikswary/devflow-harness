@@ -4,6 +4,8 @@
   측정 기록 `비고` 칸과 종료 3은 명령행으로만 보인다(설계 4절 10.6 행).
 - 사례 이름의 `{가~차}`가 머리 파일 판정 기준 1의 사례다. 시각은 모두 2026-10-30, 분은 손으로 센 값이다.
 """
+import itertools
+import re
 from datetime import datetime
 
 import pytest
@@ -286,3 +288,86 @@ def test_note_strips_lone_separator_before_wait_piece(workspace, cell, want):
     measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | " + cell + " |\n")
     assert collect.write_note(str(measure), "dryrun", [NEW_WAIT])
     assert measure.read_text(encoding="utf-8").splitlines()[-1] == "| dryrun | 1K | " + want + " |"
+
+
+# --- 비고 칸 조각 열 규칙 조합(T093): 조각 앞·뒤·사이 글 × 구분자 ------------------------------------------------
+# 기대값은 put_segment를 부르지 않고 규칙대로 따로 만든다: 버리지 않은 글 조각과 새 조각을 차례대로 `; `로 잇는다.
+# 단 ` / ` 하나만 사이에 두고 이웃했던 두 글 조각은 ` / `로 잇는다(B 줄 안의 ` / `, 칸 맨 앞·끝에 x를 더 둔 사례에서만 생긴다).
+
+OLD_WAIT = (C_WAIT, "폴더 대기: context 9분 (2개) / 흐름 작성 40분")   # 같은 흐름 옛 조각 둘
+PIECES = {"none": None, "space": " ", "slash": "/", "semi": ";", "a": "a", "a-slash": "a/", "semi-a": ";a",
+          "a-b": "a b"}   # 조각 앞·뒤·사이 글: 없음, 공백만, `/`, `;`, `a`, `a/`, `;a`, `a b`
+SEPS = {"sl": " / ", "sc": "; "}
+
+
+def kept(piece):
+    """버리지 않는 글 조각이면 앞뒤 공백을 뗀 글, 버리는 조각(없음·빈 조각·`/`·`;`만)이면 None."""
+    if piece is None or piece.strip() in ("", "/", ";"):
+        return None
+    return piece.strip()
+
+
+def build(pieces, sep):
+    """None이 아닌 조각만 sep로 이은 칸 글과 기대 비고(같은 흐름 옛 조각은 첫 자리만 새 조각, 둘째부터 버림)."""
+    present = [p for p in pieces if p is not None]
+    want, placed, prev_text = [], False, False   # prev_text: 바로 앞 조각이 남긴 글 조각인가
+    for p in present:
+        if p in OLD_WAIT:
+            if not placed:
+                want.append("; " + NEW_WAIT)
+                placed = True
+            prev_text = False
+        elif kept(p) is not None:
+            want.append((" / " if prev_text and sep == " / " else "; ") + kept(p))
+            prev_text = True
+        else:
+            prev_text = False
+    return sep.join(present), "".join(want)[2:]
+
+
+def dangling(note):
+    """비고에 남은 구분자 문제: `; `·` / `로 시작·끝남, 홀로 남은 `/`·`;`가 맨 앞·끝이나 구분자 바로 뒤에 있음."""
+    found = []
+    if note.startswith(("; ", " / ")) or re.match(r"[/;](?:\s|$)", note):
+        found.append("구분자로 시작")
+    if note.endswith(("; ", " / ")) or re.search(r"(?:^|\s)[/;]$", note):
+        found.append("구분자로 끝남")
+    if re.search(r"(?:; | / )[/;](?=\s|$)", note):
+        found.append("버린 조각 자리에 구분자가 이웃함")
+    return found
+
+
+def note_cases():
+    cases, names = [], list(PIECES)
+    for front, back, sep in itertools.product(names, names, SEPS):   # 조각 앞 글 × 조각 뒤 글
+        for edge in ("", "x"):   # 칸 맨 앞·끝에 글 x를 더 둔 칸(`x / {앞 글} / {조각} / {뒤 글} / x` 꼴)
+            pieces = [edge or None, PIECES[front], OLD_WAIT[0], PIECES[back], edge or None]
+            cases.append(pytest.param(*build(pieces, SEPS[sep]),
+                                      id="once-{}-{}-{}{}".format(front, back, sep, "-x" if edge else "")))
+    for front, mid, back, sep in itertools.product(names, names, names, SEPS):   # 같은 흐름 조각이 두 번 든 칸
+        pieces = [PIECES[front], OLD_WAIT[0], PIECES[mid], OLD_WAIT[1], PIECES[back]]
+        cases.append(pytest.param(*build(pieces, SEPS[sep]), id="twice-{}-{}-{}-{}".format(front, mid, back, sep)))
+    # 구분자 사이가 공백 하나인 꼴(rjudge-T092 권장의 탐침). D는 다른 흐름 조각이다
+    d_wait = "폴더 대기: review 1분 (1개) / 흐름 작성 2분"
+    for cell, want in ((C_WAIT + " / / a", NEW_WAIT + "; a"),
+                       (C_WAIT + " ; ; a", NEW_WAIT + "; a"),
+                       ("a / / " + C_WAIT + " / / b", "a; " + NEW_WAIT + "; b"),
+                       (d_wait + " / / x", d_wait + "; x; " + NEW_WAIT),
+                       ("a ;; " + C_WAIT, "a; " + NEW_WAIT)):
+        cases.append(pytest.param(cell, want, id="probe-" + str(len(cases))))
+    return cases
+
+
+@pytest.fixture(scope="module")
+def note_file(tmp_path_factory):
+    return tmp_path_factory.mktemp("note") / "measure.md"
+
+
+@pytest.mark.parametrize("cell, want", note_cases())
+def test_note_rule_over_piece_combinations(note_file, cell, want):
+    write(note_file, HEAD + "| dryrun | 1K | " + cell + " |\n")
+    assert collect.write_note(str(note_file), "dryrun", [NEW_WAIT])
+    last = note_file.read_text(encoding="utf-8").splitlines()[-1]
+    note = last[len("| dryrun | 1K | "):-len(" |")]
+    problems = ([] if last == "| dryrun | 1K | " + want + " |" else ["기대 {!r}".format(want)]) + dangling(note)
+    assert not problems, "칸 {!r} → 비고 {!r}: {}".format(cell, note, ", ".join(problems))
