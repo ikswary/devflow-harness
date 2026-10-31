@@ -82,6 +82,28 @@ def test_da_task_id_decision_cell_or_shifted_original_cell_is_malformed():
                                                 "- 2026-10-30 14:36:01 | T로 시작"]
 
 
+def test_da_task_id_cell_boundaries_unicode_digits_and_space_joined():
+    def line(n, cell):
+        return "- 2026-10-30 14:40:%02d | %s | 원문: \"가\" | -" % (n, cell)
+
+    # 전각 숫자는 task id가 아니므로 형식 안, 공백·쉼표로 이은 묶음은 task id 꼴이므로 형식 밖이다
+    inside = [line(0, "T０１５"), line(1, "T١٢"), line(2, "Test 추가"), line(3, "T자형 배치")]
+    outside = [line(10, "T015 T016"), line(11, "T015, T016"), line(12, "T015,T016"), line(13, "T015 , T016"),
+               line(14, "T015  T016 T017")]
+    lines, kept, superseded, malformed = decisions.brief_lines("\n".join(inside + outside) + "\n")
+    assert (kept, superseded, malformed) == (4, 0, 5)
+    assert lines[-1] == "형식 밖 5줄: " + ", ".join("2026-10-30 14:40:%d" % n for n in range(10, 15))
+    assert lines[1] == "- 2026-10-30 14:40:00 | T０１５"
+
+
+def test_da_pipe_inside_decision_cell_is_malformed_by_cell_order():
+    # 결정 칸에 `|`가 들면 칸 차례가 밀려 셋째 칸이 `원문:`이 아니다(run-files.md의 칸 차례대로 형식 밖)
+    text = "- 2026-10-30 14:41:00 | t | A | B | 원문: \"x\" | T1\n"
+    lines, kept, superseded, malformed = decisions.brief_lines(text)
+    assert (kept, superseded, malformed) == (0, 0, 1)
+    assert lines[-1] == "형식 밖 1줄: 2026-10-30 14:41:00"
+
+
 def test_da_superseded_line_with_shifted_cells_is_still_superseded():
     old = "- 2026-10-30 14:37:00 | T015 | 결정 | 원문: \"가\" | - → 대체: 2026-10-30 15:00:00"
     lines, kept, superseded, malformed = decisions.brief_lines(old + "\n")
