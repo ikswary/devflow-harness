@@ -269,3 +269,20 @@ def test_note_leaves_no_dangling_separator(workspace, cell, want):
     assert collect.write_note(str(measure), "dryrun", [NEW_WAIT])
     assert measure.read_text(encoding="utf-8").splitlines()[-1] == "| dryrun | 1K | " + want + " |"
 
+
+
+@pytest.mark.parametrize("cell, want", [
+    ("a / / " + C_WAIT, "a; " + NEW_WAIT),            # 조각에 맞닿아 공백 뒤에 홀로 남은 구분자를 뗀다
+    ("a ; / " + C_WAIT, "a; " + NEW_WAIT),
+    ("a ; ; " + C_WAIT, "a; " + NEW_WAIT),
+    ("a / / " + C_WAIT + " / b", "a; " + NEW_WAIT + "; b"),
+    ("a / / " + C_WAIT + " / " + C_WAIT, "a; " + NEW_WAIT),   # 같은 흐름 조각 중복
+    ("메모 a;", "메모 a;; " + NEW_WAIT),              # 조각 없는 칸: 글에 붙은 `;`·`/`는 남는다
+    ("메모 a/", "메모 a/; " + NEW_WAIT),
+    ("a / b / " + C_WAIT, "a / b; " + NEW_WAIT),      # B 줄 안 ` / `는 그대로
+    ("/ ; /", NEW_WAIT),                              # 구분자만 있는 칸
+])
+def test_note_strips_lone_separator_before_wait_piece(workspace, cell, want):
+    measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | " + cell + " |\n")
+    assert collect.write_note(str(measure), "dryrun", [NEW_WAIT])
+    assert measure.read_text(encoding="utf-8").splitlines()[-1] == "| dryrun | 1K | " + want + " |"
