@@ -1,6 +1,8 @@
 """한 승인의 결정 수 상한(B-6, 설계 B 3.7): `screen.py` 명령행의 `! 결정 수 상한` 줄(넘음·같음·값 없음·스크립트가 덧붙인 항목 제외).
 
 「이번 실행의 값」의 상한은 `run.md` 표 행으로 준다. 상한 줄은 화면에 더해지기만 하고 `counts:` 줄은 바뀌지 않는다.
+사례: 상한 넘음(1.1.0), 같음(경계), 상한 행 없음, 옛 판본(1.0.4로 시작한 task)은 상한이 있어도 줄이 없음, 같은 조건에서 1.1.0이면 줄이 있음(양성 대조),
+상한 줄이 `counts:`를 바꾸지 않음, 스크립트가 덧붙인 항목은 세지 않음, 판정자가 「알릴 것」에서 「정해 주실 것」으로 옮긴 항목은 셈.
 """
 from datetime import datetime
 
@@ -108,3 +110,17 @@ def test_script_added_item_is_not_counted_against_cap(run_dir):   # 스크립트
 
     assert cap_lines(lines) == []
     assert counts_line(lines).startswith("counts: n_decide=3 ")   # 덧붙은 항목까지 셋으로 세어졌다(양성 대조)
+
+
+def test_item_moved_by_judge_counts_against_cap(run_dir):   # 작성자의 정해 주실 것 둘 + 판정자가 알릴 것에서 옮긴 하나 = 셋 > 2 (V-04)
+    run_dir.task("T001", "설계", status="승인대기", started_version="1.1.0")
+    text = result("- 저장 방식을 정한다\n- 캐시 수명을 정한다").replace("### 알릴 것\n- 없음", "### 알릴 것\n- 오류 문구를 정한다")
+    run_dir.result("T001", text)
+    run_dir.judge("T001", judge_ok() + "\n## 칸 분류 확인\n- 알릴 것 → 정해 주실 것 | 오류 문구를 | 사용자가 골라야 하는 선택이다\n")
+    set_cap(run_dir, 2)
+    proc = run_script("screen", run_dir, "T001")
+    assert proc.returncode == 0, proc.output
+    lines = proc.stdout.splitlines()
+
+    found = cap_lines(lines)
+    assert len(found) == 1 and found[0].startswith("! 결정 수 상한: 정해 주실 것 3 > 2("), lines
