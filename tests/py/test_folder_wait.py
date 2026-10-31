@@ -342,11 +342,12 @@ def note_cases():
     for front, back, sep in itertools.product(names, names, SEPS):   # 조각 앞 글 × 조각 뒤 글
         for edge in ("", "x"):   # 칸 맨 앞·끝에 글 x를 더 둔 칸(`x / {앞 글} / {조각} / {뒤 글} / x` 꼴)
             pieces = [edge or None, PIECES[front], OLD_WAIT[0], PIECES[back], edge or None]
-            cases.append(pytest.param(*build(pieces, SEPS[sep]),
+            cases.append(pytest.param(*build(pieces, SEPS[sep]), False,
                                       id="once-{}-{}-{}{}".format(front, back, sep, "-x" if edge else "")))
     for front, mid, back, sep in itertools.product(names, names, names, SEPS):   # 같은 흐름 조각이 두 번 든 칸
         pieces = [PIECES[front], OLD_WAIT[0], PIECES[mid], OLD_WAIT[1], PIECES[back]]
-        cases.append(pytest.param(*build(pieces, SEPS[sep]), id="twice-{}-{}-{}-{}".format(front, mid, back, sep)))
+        cases.append(pytest.param(*build(pieces, SEPS[sep]), False,
+                                  id="twice-{}-{}-{}-{}".format(front, mid, back, sep)))
     # 구분자 사이가 공백 하나인 꼴(rjudge-T092 권장의 탐침). D는 다른 흐름 조각이다
     d_wait = "폴더 대기: review 1분 (1개) / 흐름 작성 2분"
     for cell, want in ((C_WAIT + " / / a", NEW_WAIT + "; a"),
@@ -354,7 +355,35 @@ def note_cases():
                        ("a / / " + C_WAIT + " / / b", "a; " + NEW_WAIT + "; b"),
                        (d_wait + " / / x", d_wait + "; x; " + NEW_WAIT),
                        ("a ;; " + C_WAIT, "a; " + NEW_WAIT)):
-        cases.append(pytest.param(cell, want, id="probe-" + str(len(cases))))
+        cases.append(pytest.param(cell, want, False, id="probe-" + str(len(cases))))
+    return cases + glued_cases()
+
+
+# 조각에 공백 없이 바로 붙은 `;`·`/` 덩어리(T094). 붙은 덩어리는 구분자라, 그것과 이어진 이웃 글 끝의 `/`·`;`까지 함께 떨어진다
+GLUES = {"gsc": ";", "gsl": "/", "gmix": ";/"}
+
+
+def glued_cases():
+    """`{앞 글}{붙은 것}{조각}{붙은 것}{뒤 글}` 칸. 기대값은 붙은 쪽 끝의 `/`·`;`를 뗀 이웃 글로 build가 만든다.
+    칸 맨 앞·끝 x는 ` / `로만 둔다(`x; ;a`처럼 글 `;a`가 `; ` 뒤에 오는 정상 사례가 생기지 않게)."""
+    cases, names = [], list(PIECES)
+    for front, back, g1, g2 in itertools.product(names, names, GLUES, GLUES):
+        before = ((PIECES[front] or "") + GLUES[g1]).rstrip("/;")
+        after = (GLUES[g2] + (PIECES[back] or "")).lstrip("/;")
+        for edge in ("", "x"):
+            cell = (edge + " / " if edge else "") + (PIECES[front] or "") + GLUES[g1] + OLD_WAIT[0] + GLUES[g2] \
+                + (PIECES[back] or "") + (" / " + edge if edge else "")
+            want = build([edge or None, before, OLD_WAIT[0], after, edge or None], " / ")[1]
+            cases.append(pytest.param(cell, want, True,
+                                      id="glued-{}-{}-{}-{}{}".format(front, g1, g2, back, "-x" if edge else "")))
+    for front, mid, back, g in itertools.product(names, names, names, GLUES):   # 같은 흐름 조각이 두 번 든 칸
+        glue = GLUES[g]
+        cell = (PIECES[front] or "") + glue + OLD_WAIT[0] + glue + (PIECES[mid] or "") + glue + OLD_WAIT[1] + glue \
+            + (PIECES[back] or "")
+        pieces = [((PIECES[front] or "") + glue).rstrip("/;"), OLD_WAIT[0], (glue + (PIECES[mid] or "") + glue).strip("/;"),
+                  OLD_WAIT[1], (glue + (PIECES[back] or "")).lstrip("/;")]
+        cases.append(pytest.param(cell, build(pieces, "; ")[1], True,
+                                  id="glued-twice-{}-{}-{}-{}".format(front, mid, back, g)))
     return cases
 
 
@@ -363,11 +392,43 @@ def note_file(tmp_path_factory):
     return tmp_path_factory.mktemp("note") / "measure.md"
 
 
-@pytest.mark.parametrize("cell, want", note_cases())
-def test_note_rule_over_piece_combinations(note_file, cell, want):
+@pytest.mark.parametrize("cell, want, glued", note_cases())
+def test_note_rule_over_piece_combinations(note_file, cell, want, glued):
     write(note_file, HEAD + "| dryrun | 1K | " + cell + " |\n")
     assert collect.write_note(str(note_file), "dryrun", [NEW_WAIT])
     last = note_file.read_text(encoding="utf-8").splitlines()[-1]
     note = last[len("| dryrun | 1K | "):-len(" |")]
     problems = ([] if last == "| dryrun | 1K | " + want + " |" else ["기대 {!r}".format(want)]) + dangling(note)
+    if glued and ("; ;" in note or "; /" in note):   # 조각에 붙었던 `;`·`/`가 이웃 글의 글자로 남음
+        problems.append("붙은 구분자가 글로 남음")
     assert not problems, "칸 {!r} → 비고 {!r}: {}".format(cell, note, ", ".join(problems))
+
+
+# --- 조각에 바로 붙은 구분자와 조각 꼴 끝 경계(T094) ---------------------------------------------------------------
+
+@pytest.mark.parametrize("cell, want", [
+    (C_WAIT + ";a", NEW_WAIT + "; a"),               # 85ada6e: `{새 조각}; ;a`
+    (C_WAIT + "/a", NEW_WAIT + "; a"),               # 85ada6e: `{새 조각}; /a`
+    ("a/" + C_WAIT, "a; " + NEW_WAIT),               # 85ada6e: `a/; {새 조각}`
+    ("a;" + C_WAIT, "a; " + NEW_WAIT),               # 85ada6e: `a;; {새 조각}`
+])
+def test_note_cuts_separator_glued_to_wait_piece(workspace, cell, want):
+    measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | " + cell + " |\n")
+    assert collect.write_note(str(measure), "dryrun", [NEW_WAIT])
+    assert measure.read_text(encoding="utf-8").splitlines()[-1] == "| dryrun | 1K | " + want + " |"
+
+
+@pytest.mark.parametrize("cell, want", [
+    (C_WAIT + "x / a", C_WAIT + "x / a; " + NEW_WAIT),   # 글자가 바로 이어진 조각 꼴은 글이다(85ada6e: `{새 조각}; x / a`)
+    (C_WAIT + "x; a", C_WAIT + "x; a; " + NEW_WAIT),
+    (C_WAIT + "0", C_WAIT + "0; " + NEW_WAIT),
+    (C_WAIT, NEW_WAIT),                                # 대조: 끝이 칸 끝·공백·`;`·`/`면 조각이다
+    (C_WAIT + " / a", NEW_WAIT + "; a"),
+    (C_WAIT + "; a", NEW_WAIT + "; a"),
+    (C_WAIT + ";a", NEW_WAIT + "; a"),
+    (C_WAIT + "/a", NEW_WAIT + "; a"),
+])
+def test_note_wait_piece_needs_end_boundary(workspace, cell, want):
+    measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | " + cell + " |\n")
+    assert collect.write_note(str(measure), "dryrun", [NEW_WAIT])
+    assert measure.read_text(encoding="utf-8").splitlines()[-1] == "| dryrun | 1K | " + want + " |"

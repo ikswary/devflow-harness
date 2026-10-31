@@ -161,22 +161,26 @@ def _cells(line):
     return re.split(r"(?<!\\)\|", line)
 
 
-WAIT_TAIL = r" \d+분 \(\d+개\) / 흐름 작성 \d+분"   # `폴더 대기: {흐름}` 뒤에 오는 조각 꼴
+# `폴더 대기: {흐름}` 뒤에 오는 조각 꼴. 끝은 칸 끝·공백·`/`·`;`다(`… 30분x`처럼 글자가 바로 이어지면 조각이 아니라 글)
+WAIT_TAIL = r" \d+분 \(\d+개\) / 흐름 작성 \d+분(?=[\s/;]|$)"
 NOTE_SEP = re.compile(r"((?:(?<=\s)|^)[/;]+(?=\s|$)|;(?=\s))")   # 비고 칸 글 사이 구분자(put_segment)
 
 
 def put_segment(cell, seg):
     """`비고` 칸 글을 조각 열로 보고 seg를 넣는다.
-    칸에서 폴더 대기 조각을 먼저 찾고, 그 사이 글은 구분자에서 나눈다. 구분자는 양옆이 공백이거나 칸 맨 앞·끝·폴더 대기 조각
-    경계인 `/`·`;` 덩어리(` / `, 홀로 남은 `/`·`;`)와 뒤에 공백이 오는 `;`(`; `)다. seg와 같은 흐름의 폴더 대기 조각은 첫 자리
-    하나만 seg로 바꾸고 나머지는 버리며, 없으면 seg를 맨 끝에 더한다. 앞뒤 공백을 뗀 뒤 비었거나 `/`·`;`만 남은 조각은 버리고,
-    나머지를 `; `로 잇는다. 다만 ` / ` 하나만 사이에 두고 이웃했던 두 글 조각은 ` / `로 잇는다(B 줄 안의 ` / `).
-    글에 붙은 `/`·`;`는 글자 그대로 남는다(`a/b`, `;메모`, `메모 a/`, 칸 끝 `메모 a;`. 그래서 `메모 a;`에 덧붙이면 `메모 a;; {seg}`)."""
+    칸에서 폴더 대기 조각(`WAIT_TAIL`의 끝 경계까지 맞는 것)을 먼저 찾고, 그 사이 글은 구분자에서 나눈다. 구분자는 폴더 대기 조각
+    바로 앞·뒤에 붙은 `/`·`;` 덩어리(`{조각};a`, `a/{조각}`. 조각은 기계가 만든 꼴이라 붙은 것도 구분자다), 양옆이 공백이거나 칸
+    맨 앞·끝·폴더 대기 조각 경계인 `/`·`;` 덩어리(` / `, 홀로 남은 `/`·`;`), 뒤에 공백이 오는 `;`(`; `)다. seg와 같은 흐름의 폴더
+    대기 조각은 첫 자리 하나만 seg로 바꾸고 나머지는 버리며, 없으면 seg를 맨 끝에 더한다. 앞뒤 공백을 뗀 뒤 비었거나 `/`·`;`만
+    남은 조각은 버리고, 나머지를 `; `로 잇는다. 다만 ` / ` 하나만 사이에 두고 이웃했던 두 글 조각은 ` / `로 잇는다(B 줄 안의 ` / `).
+    폴더 대기 조각에 닿지 않은 글에 붙은 `/`·`;`는 글자 그대로 남는다(`a/b`, `;메모`, `메모 a/`, 칸 끝 `메모 a;`. 그래서
+    `메모 a;`에 덧붙이면 `메모 a;; {seg}`). 조각 꼴 뒤에 글자가 바로 이어진 `{조각}x`는 글이다(`{조각}x / a; {seg}`)."""
     m = re.fullmatch(r"폴더 대기: (\S+)" + WAIT_TAIL, seg)
     pat = re.compile("폴더 대기: " + re.escape(m.group(1)) + WAIT_TAIL) if m else None
     wait = re.compile(r"(폴더 대기: \S+" + WAIT_TAIL + ")")
     items, placed = [], False   # (조각, 앞 조각과 ` / `로 잇는가)
-    for i, piece in enumerate(wait.split(cell)):
+    pieces = wait.split(cell)
+    for i, piece in enumerate(pieces):
         if i % 2 == 1:   # 폴더 대기 조각
             if pat and pat.fullmatch(piece):
                 if placed:
@@ -184,6 +188,10 @@ def put_segment(cell, seg):
                 piece, placed = seg, True
             items.append((piece, False))
             continue
+        if i > 0:   # 폴더 대기 조각 바로 뒤·앞에 붙은 `/`·`;`는 구분자로 뗀다
+            piece = re.sub(r"^[/;]+", "", piece)
+        if i < len(pieces) - 1:
+            piece = re.sub(r"[/;]+$", "", piece)
         tokens = NOTE_SEP.split(piece)   # 글, 구분자, 글, … 차례
         last = None   # 이 글 덩어리에서 마지막으로 남긴 글 조각의 자리
         for j in range(0, len(tokens), 2):
