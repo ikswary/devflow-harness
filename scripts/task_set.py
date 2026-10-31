@@ -688,7 +688,7 @@ def amend_check(t, path, source, tasks):
     """판정 기준 정정을 받을 수 있는지만 본다(파일을 바꾸지 않는다)."""
     mark = str(t.get("judge_started", "") or "").strip()
     if mark:
-        raise Reject(AMEND_MARKED.format(mark))   # 표지는 1.1.0 메인만 찍으므로 옛 task에 걸어도 바뀌지 않는다
+        raise Reject(AMEND_MARKED.format(mark))   # 옛 task도 표지가 찍히면 거부한다. 표지가 찍히는 자체검증에서는 옛 규칙도 거부하므로 진행 단계에서 판정자를 띄우는 task(배포 실행의 확인 등)만 달라진다
     if devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V110):
         if t.get("status") not in ("대기", "진행", "자체검증"):
             raise Reject(AMEND_STATUS_NEW)
