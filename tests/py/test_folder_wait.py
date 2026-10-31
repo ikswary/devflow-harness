@@ -6,6 +6,7 @@
 """
 from datetime import datetime
 
+import pytest
 from conftest import run_script, write
 
 import collect
@@ -239,3 +240,32 @@ def test_note_keeps_slash_and_semicolon_of_other_text(workspace):
         assert collect.write_note(str(measure), "dryrun", [new])
         last = measure.read_text(encoding="utf-8").splitlines()[-1]
         assert last == "| dryrun | 1K | " + want + " |", last
+
+
+C_WAIT = "폴더 대기: context 5분 (1개) / 흐름 작성 30분"
+NEW_WAIT = "폴더 대기: context 7분 (1개) / 흐름 작성 31분"
+
+
+@pytest.mark.parametrize("cell, want", [
+    ("/ " + C_WAIT, NEW_WAIT),                       # 칸 맨 앞 글 없는 `/`
+    ("; " + C_WAIT, NEW_WAIT),                       # 칸 맨 앞 글 없는 `;`
+    (C_WAIT + " / ", NEW_WAIT),                      # 칸 끝 글 없는 구분자
+    (C_WAIT + " ;", NEW_WAIT),
+    (C_WAIT + " /", NEW_WAIT),
+    ("/ " + C_WAIT + " / x", NEW_WAIT + "; x"),
+    ("/", NEW_WAIT),                                 # 구분자 하나뿐인 칸
+    ("메모 a /", "메모 a; " + NEW_WAIT),              # 글 뒤 글 없는 구분자
+    (C_WAIT + "/", NEW_WAIT),                        # 조각 바로 뒤 구분자 하나뿐인 글
+    ("/ 메모 / " + C_WAIT, "메모; " + NEW_WAIT),       # 칸 맨 앞 글 없는 `/` 뒤 글
+    ("; 메모", "메모; " + NEW_WAIT),
+    (";메모 / " + C_WAIT, ";메모; " + NEW_WAIT),       # 칸 맨 앞 글에 붙은 `;`·`/`는 남김
+    (";메모", ";메모; " + NEW_WAIT),
+    ("/메모 / " + C_WAIT, "/메모; " + NEW_WAIT),
+    ("-", NEW_WAIT),                                 # 빈 칸
+    ("", NEW_WAIT),
+])
+def test_note_leaves_no_dangling_separator(workspace, cell, want):
+    measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | " + cell + " |\n")
+    assert collect.write_note(str(measure), "dryrun", [NEW_WAIT])
+    assert measure.read_text(encoding="utf-8").splitlines()[-1] == "| dryrun | 1K | " + want + " |"
+

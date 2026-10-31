@@ -167,7 +167,8 @@ WAIT_TAIL = r" \d+분 \(\d+개\) / 흐름 작성 \d+분"   # `폴더 대기: {�
 def put_segment(cell, seg):
     """`비고` 칸 글에서 seg와 같은 흐름의 폴더 대기 조각만 seg로 바꾸고(여럿이면 첫 자리에 하나만 남김),
     없으면 맨 끝에 덧붙인다. 조각 사이 구분자는 `; `로 통일하고, 조각을 지운 자리에 빈 구분자를 남기지 않는다.
-    칸의 다른 글은 글자를 그대로 둔다(폴더 대기 조각에 붙은 구분자 ` / `·`; `와 그 둘레 공백만 `; `로 바뀐다)."""
+    칸의 다른 글은 글자를 그대로 둔다(폴더 대기 조각에 붙은 구분자 ` / `·`; `와 그 둘레 공백만 `; `로 바뀐다).
+    칸 맨 앞이나 맨 끝에 글 없이 남는 구분자(`/ `, `; `, ` /`, ` ;`, 구분자 하나뿐인 조각)는 떼고, 글에 붙은 `/`·`;`는 남긴다."""
     m = re.fullmatch(r"폴더 대기: (\S+)" + WAIT_TAIL, seg)
     pat = re.compile("폴더 대기: " + re.escape(m.group(1)) + WAIT_TAIL) if m else None
     wait = re.compile(r"(폴더 대기: \S+" + WAIT_TAIL + ")")
@@ -188,8 +189,12 @@ def put_segment(cell, seg):
                 text = re.sub(r"^(?:\s*;\s*|\s+/\s+|\s+)", "", text)
             if i < len(parts) - 1:
                 text = re.sub(r"(?:\s+/\s+|;\s*|\s+)$", "", text)
+            if i == 0:   # 칸 맨 앞에 글 없이 남는 구분자(`/ `, `; `)
+                text = re.sub(r"^(?:\s*;(?:\s+|$)|\s*/(?:\s+|$))+", "", text)
+            if i == len(parts) - 1:   # 칸 맨 끝에 글 없이 남는 구분자(` /`, ` ;`)
+                text = re.sub(r"(?:\s+[/;])+\s*$", "", text)
             text = text.strip()
-            if text:
+            if text and text not in ("/", ";"):
                 items.append(text)
     if not placed:
         items.append(seg)
