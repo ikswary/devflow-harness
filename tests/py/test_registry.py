@@ -486,6 +486,7 @@ KIND_EXCEPTIONS = [
     ("agents/design-writer.md", "- `design` →", "E3"),
     ("agents/design-writer.md", "- `change`(화면·설계 정본) →", "E3"),
     ("agents/infra-writer.md", "- `infra-design` →", "E3"),
+    ("agents/infra-writer.md", "- `change`(인프라 결정 정본) →", "E3"),
     ("agents/infra-writer.md", "- `probe`(인프라 결정이 낸 탐침) →", "E3"),
     ("agents/release-writer.md", "description: ", "E3"),
     ("agents/release-writer.md", "- `wrap-up`: 앞 절반", "E3"),
