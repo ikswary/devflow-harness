@@ -295,6 +295,7 @@ def test_note_strips_lone_separator_before_wait_piece(workspace, cell, want):
 # 단 ` / ` 하나만 사이에 두고 이웃했던 두 글 조각은 ` / `로 잇는다(B 줄 안의 ` / `, 칸 맨 앞·끝에 x를 더 둔 사례에서만 생긴다).
 
 OLD_WAIT = (C_WAIT, "폴더 대기: context 9분 (2개) / 흐름 작성 40분")   # 같은 흐름 옛 조각 둘
+D_WAIT = "폴더 대기: review 1분 (1개) / 흐름 작성 2분"   # 다른 흐름 조각
 PIECES = {"none": None, "space": " ", "slash": "/", "semi": ";", "a": "a", "a-slash": "a/", "semi-a": ";a",
           "a-b": "a b"}   # 조각 앞·뒤·사이 글: 없음, 공백만, `/`, `;`, `a`, `a/`, `;a`, `a b`
 SEPS = {"sl": " / ", "sc": "; "}
@@ -308,7 +309,8 @@ def kept(piece):
 
 
 def build(pieces, sep):
-    """None이 아닌 조각만 sep로 이은 칸 글과 기대 비고(같은 흐름 옛 조각은 첫 자리만 새 조각, 둘째부터 버림)."""
+    """None이 아닌 조각만 sep로 이은 칸 글과 기대 비고(같은 흐름 옛 조각은 첫 자리만 새 조각, 둘째부터 버림.
+    다른 흐름 조각 D는 그대로 두고, 같은 흐름 조각이 없으면 새 조각을 끝에 더함)."""
     present = [p for p in pieces if p is not None]
     want, placed, prev_text = [], False, False   # prev_text: 바로 앞 조각이 남긴 글 조각인가
     for p in present:
@@ -317,11 +319,16 @@ def build(pieces, sep):
                 want.append("; " + NEW_WAIT)
                 placed = True
             prev_text = False
+        elif p == D_WAIT:   # 다른 흐름 조각은 그대로 둔다
+            want.append("; " + p)
+            prev_text = False
         elif kept(p) is not None:
             want.append((" / " if prev_text and sep == " / " else "; ") + kept(p))
             prev_text = True
         else:
             prev_text = False
+    if not placed:
+        want.append("; " + NEW_WAIT)
     return sep.join(present), "".join(want)[2:]
 
 
@@ -349,7 +356,7 @@ def note_cases():
         cases.append(pytest.param(*build(pieces, SEPS[sep]), False,
                                   id="twice-{}-{}-{}-{}".format(front, mid, back, sep)))
     # 구분자 사이가 공백 하나인 꼴(rjudge-T092 권장의 탐침). D는 다른 흐름 조각이다
-    d_wait = "폴더 대기: review 1분 (1개) / 흐름 작성 2분"
+    d_wait = D_WAIT
     for cell, want in ((C_WAIT + " / / a", NEW_WAIT + "; a"),
                        (C_WAIT + " ; ; a", NEW_WAIT + "; a"),
                        ("a / / " + C_WAIT + " / / b", "a; " + NEW_WAIT + "; b"),
@@ -432,3 +439,60 @@ def test_note_wait_piece_needs_end_boundary(workspace, cell, want):
     measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | " + cell + " |\n")
     assert collect.write_note(str(measure), "dryrun", [NEW_WAIT])
     assert measure.read_text(encoding="utf-8").splitlines()[-1] == "| dryrun | 1K | " + want + " |"
+
+
+# --- 구분자 없이 붙은 조각과 멱등(T095) -----------------------------------------------------------------------------
+# 조각 꼴의 끝 경계에는 다른 조각의 머리 `폴더 대기: `도 든다. 그래서 `{조각}{다른 조각}`은 각각 조각이다.
+
+STUCK = {"C": OLD_WAIT[0], "C2": OLD_WAIT[1], "D": D_WAIT}
+
+
+def stuck_cases():
+    """`{앞 글}{구분자}{붙은 조각 둘·셋}{구분자}{뒤 글}` 칸과 기대 비고. 붙은 조각은 같은 흐름 C·C2와 다른 흐름 D에서 고른다."""
+    cases = []
+    chains = [c for n in (2, 3) for c in itertools.product(STUCK, repeat=n)]
+    for front, back, sep, chain in itertools.product(PIECES, PIECES, SEPS, chains):
+        pieces = [PIECES[front]] + [STUCK[k] for k in chain] + [PIECES[back]]
+        cell = SEPS[sep].join(p for p in [PIECES[front], "".join(STUCK[k] for k in chain), PIECES[back]] if p is not None)
+        cases.append((cell, build(pieces, SEPS[sep])[1]))
+    return cases
+
+
+@pytest.mark.parametrize("cell, want", [
+    ("/ " + OLD_WAIT[0] + OLD_WAIT[1], NEW_WAIT),          # dc9834c: `{C}; {새 조각}`(같은 흐름 조각 둘)
+    (OLD_WAIT[0] + OLD_WAIT[1], NEW_WAIT),                 # dc9834c: `{C}; {새 조각}`
+    (OLD_WAIT[1] + OLD_WAIT[0], NEW_WAIT),                 # dc9834c: `{C2}; {새 조각}`
+    ("a " + OLD_WAIT[0] + ";" + OLD_WAIT[1] + " b", "a; " + NEW_WAIT + "; b"),   # 대조: `;`로 붙은 칸(dc9834c와 같음)
+    ("/ " + OLD_WAIT[0] + D_WAIT, NEW_WAIT + "; " + D_WAIT),   # dc9834c: `{C}; {D}; {새 조각}`
+    (D_WAIT + OLD_WAIT[0], D_WAIT + "; " + NEW_WAIT),          # dc9834c는 {D}를 글로 보지만 결과 글자는 같다
+])
+def test_note_stuck_wait_pieces_are_each_a_piece(workspace, cell, want):
+    measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | " + cell + " |\n")
+    assert collect.write_note(str(measure), "dryrun", [NEW_WAIT])
+    assert measure.read_text(encoding="utf-8").splitlines()[-1] == "| dryrun | 1K | " + want + " |"
+
+
+def test_note_stuck_wait_piece_combinations():
+    """붙은 조각 칸 전체를 한 시험에서 돌려, 기대 비고와 다른 칸을 모은다(칸마다 시험을 두지 않는다)."""
+    cases = stuck_cases()
+    broken = [(cell, got, want) for cell, want in cases for got in [collect.put_segment(cell, NEW_WAIT)] if got != want]
+    assert not broken, "{}/{}칸이 기대와 다름, 앞 다섯: {!r}".format(len(broken), len(cases), broken[:5])
+
+
+SAME_FLOW = re.compile(r"폴더 대기: context \d+분 \(\d+개\) / 흐름 작성 \d+분(?=[\s/;]|폴더 대기: |$)")
+
+
+def test_put_segment_is_idempotent_with_one_same_flow_piece():
+    """T093·T094의 조합 칸과 붙은 조각 칸 전체에서 (가) 두 번 넣은 결과가 한 번 넣은 결과와 같고, (나) 결과에 같은 흐름 조각이
+    정확히 하나다. 깨진 칸은 모아서 앞 다섯을 보인다."""
+    cells = [p.values[0] for p in note_cases()] + [cell for cell, _ in stuck_cases()]
+    not_idem, not_one = [], []
+    for cell in cells:
+        once = collect.put_segment(cell, NEW_WAIT)
+        twice = collect.put_segment(once, NEW_WAIT)
+        if twice != once:
+            not_idem.append((cell, once, twice))
+        if len(SAME_FLOW.findall(once)) != 1 or NEW_WAIT not in once:
+            not_one.append((cell, once))
+    assert not not_idem and not not_one, "{}칸 중 멱등 깨짐 {}칸 {!r}, 같은 흐름 조각이 하나가 아님 {}칸 {!r}".format(
+        len(cells), len(not_idem), not_idem[:5], len(not_one), not_one[:5])
