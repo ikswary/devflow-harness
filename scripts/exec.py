@@ -7,6 +7,7 @@ r"""밖으로 나가는 명령(합치기, 개발 기준 브랜치에 넣기, pus
   python exec.py {실행 폴더} {id} --freeze --point P [--refreeze]
   python exec.py {실행 폴더} {id} --step P:n [--cwd 폴더]
   python exec.py {실행 폴더} {id} --user-result P:n "종료 코드 0, 출력 …"
+  python exec.py {실행 폴더} {id} --main-result P:n "종료 코드 0, 출력 …"
   python exec.py {실행 폴더} {id} --verify
   python exec.py {실행 폴더} {id} --show
 
@@ -24,6 +25,15 @@ r"""밖으로 나가는 명령(합치기, 개발 기준 브랜치에 넣기, pus
   [사용자 실행]  돌리지 않는다. 사용자가 실행하고 알려 준 결과를 --user-result로 적는다.
   [유지 뒤]      배포 실행의 deploy_outcome이 유지일 때만 돈다(아니면 건너뜀으로 적는다).
 
+--main-result  --step이 실패한 줄을 사람에게 묻고(승인 기록에 답) 메인이 다른 방법으로 실행한 결과. 그 줄의 마지막
+  실행이 실패이고 그 뒤 답이 있을 때만 받고, --step과 같은 꼴로 exec.md에 적는다(병합 줄이면 병합 판정과
+  commit·exported_commit을 지금 git 상태로).
+
+얼림의 넣는 끝(병합·push 줄): 마무리 실행승인은 judge-run.md 「최종 배포 후보 CI」의 검증 commit, 합치기 실행승인은
+  흐름 브랜치의 끝, 배포 실행 넣기승인은 배포 폴더 브랜치의 끝을 얼린 파일에 적고, --step은 넣는 쪽의 지금 끝이
+  다르면 거부한다. 마무리의 병합 줄은 --ff-only여야 하고, 최종 CI가 실패했으면 승인 기록의 위험 수용 답
+  (`승인|위험 수용|…`)이 있어야 돈다.
+
 --step 전에 보는 것
   - 상태: 합치기·마무리·배포 실행은 `진행`이고 stage가 묻는 단계·`끝`이 아님. 탐침은 `진행`이고 stage `실행`.
     그 밖의 kind는 승인으로 `완료`된 뒤.
@@ -35,7 +45,7 @@ r"""밖으로 나가는 명령(합치기, 개발 기준 브랜치에 넣기, pus
     흐름의 dir, 흐름 하나면 그 흐름의 dir, 그 밖 = 원래 폴더)의 `git status --porcelain`이 비어야 한다. 병합 줄은
     넣는 브랜치를 꺼낸 폴더(git worktree)도 비어야 한다(편집이 커밋되기 전에 넣지 않게).
     예외: `git add …`·`git commit …` 단독 줄(남은 변경을 커밋하는 줄), 원래 폴더의 병합 줄(병합이 바꾸는 파일과
-    커밋 안 된 변경이 겹치지 않으면 됨. references/kinds/wrap-up/main-order.md 「뒤 절반」 2)과 `update-ref`·`push` 단독 줄.
+    커밋 안 된 변경이 겹치지 않으면 됨. references/kinds/wrap-up/main-order.md 순서 5)과 `update-ref`·`push` 단독 줄.
     탐침(기본 폴더: 머리 파일 flow의 flow.md `dir`, 없으면 원래 폴더)의 병합 줄이 아닌 줄은 작업 트리를 쓰지 않는
     줄이라(계획 판정) 확인하지 않고, 커밋 안 된 변경 수를 exec.md 줄 끝에 `(탐침: …)`로 적는다.
 병합 줄(`git … merge …`)은 앞뒤 해시로 병합 부모·앞감기를 판정해 exec.md에 적고, 병합이 끝나면
@@ -66,6 +76,8 @@ SEPARATORS = re.compile(r"[;&|<>`$]|\n")
 GIT_PREFIX = r"^git\s+(?:-C\s+(?:\"[^\"]+\"|'[^']+'|\S+)\s+)?"
 CONSUME_LINE = re.compile(GIT_PREFIX + r"(add|commit)(\s|$)")
 NO_TREE_LINE = re.compile(GIT_PREFIX + r"(update-ref|push)(\s|$)")
+PUSH_LINE = re.compile(r"\bgit\b.*\spush(\s|$)")
+COMMIT_ANY = re.compile(r"(?:^|[;&|]\s*)git(?:\s+-[Cc]\s+\S+)*\s+(?:add|commit)(?:\s|$)")
 TIME_FMT = "%Y-%m-%d %H:%M:%S"
 
 
@@ -97,6 +109,66 @@ def load(run_dir, tid):
 def single(line, pattern):
     """줄이 셸 구분자 없이 그 git 명령 하나뿐인가."""
     return bool(pattern.match(line)) and not SEPARATORS.search(line)
+
+
+def insert_line(line):
+    """넣는 쪽 끝을 대조할 줄: 병합 줄과 `git … push` 줄(PR 방식의 내보내기)."""
+    cmd = line[len(AFTER_KEEP):].strip() if line.startswith(AFTER_KEEP) else line
+    return bool(MERGE_LINE.search(cmd) or PUSH_LINE.search(cmd))
+
+
+def line_problems(t, point, line, cwd):
+    """`--step`이 실행 전에 거부할 줄의 꼴 문제(pre_check와 screen.py가 함께 쓴다). 폴더 대조는 실행 전 확인이 폴더를
+    보는 줄(병합 줄, 작업 트리를 쓰는 줄)에만 건다: `update-ref`·`push`·`add`·`commit` 단독 줄, `[유지 뒤]` 줄,
+    탐침의 병합 줄이 아닌 줄은 대조하지 않는다. 마무리의 병합 줄은 `--ff-only`여야 한다(넣은 끝 = 최종 CI commit)."""
+    if line.startswith(USER):
+        return []
+    cmd = line[len(AFTER_KEEP):].strip() if line.startswith(AFTER_KEEP) else line
+    is_merge = bool(MERGE_LINE.search(cmd))
+    no_tree = single(cmd, NO_TREE_LINE) or single(cmd, CONSUME_LINE) or (t.get("kind") == "probe" and not is_merge)
+    out = devflow_lib.cmd_line_problems(line, cwd, bash=bool(shutil.which("bash")), check_dir=not no_tree,
+                                        merge=is_merge)
+    if t.get("kind") == "wrap-up" and is_merge and "--ff-only" not in cmd.split():
+        out.append("마무리의 병합 줄에 `--ff-only`가 없음: 앞감기가 아니면 넣은 끝이 최종 CI의 검증 commit이 아니다")
+    if t.get("kind") == "deploy-exec" and point == "넣기승인" and COMMIT_ANY.search(cmd):
+        # 리뷰 111b N5(나): 메인이 이미 커밋했으므로 커밋 줄은 실패하고, 넣기 안에서 커밋하면 끝이 옮겨 병합 줄이 거부된다
+        out.append("넣기 줄에 `git add`·`git commit`: 배포 기록은 메인이 넣기 승인 전에 커밋한다(넣는 명령은 병합 줄만)")
+    return out
+
+
+def recovery(tasks, t, point):
+    """줄을 고쳐야 할 때의 회복 경로(원천이 어디인가)."""
+    if t.get("kind") == "deploy-exec" and point in ("실행승인", "되돌림"):
+        return ("원천이 완료된 배포 계획({})이라 고칠 수 없다: 새 배포 계획 task로 고친 명령을 승인받는다"
+                "(references/main/new-task.md)".format(t.get("parent", "")))
+    return "원천 줄(그 task result.md 「정해 주실 것」)을 고쳐 다시 승인받고 --refreeze"
+
+
+def screen_lines(run_dir, tasks, t):
+    """승인 화면 task의 cmd 줄마다 [(줄, 문제 목록)]. 줄이 실제로 도는 task·지점·폴더는 `source`·`default_cwd`와 같다:
+    배포 계획의 「정해 주실 것」은 자식 배포 실행의 실행승인, 「되돌리기」는 되돌림, 그 밖은 지금 stage가 지점이면 그
+    지점(배포 실행의 넣기승인 등), 아니면 실행승인."""
+    if t.get("kind") == "deploy-plan":
+        child = next((o for o in tasks.values() if o.get("parent") == t.get("id") and o.get("kind") == "deploy-exec"),
+                     {"kind": "deploy-exec", "parent": t.get("id", ""), "flow": t.get("flow", "")})
+        text = devflow_lib.read_text(os.path.join(t["_dir"], "result.md")) \
+            if os.path.isfile(os.path.join(t["_dir"], "result.md")) else ""
+        groups = [(child, "실행승인", devflow_lib.cmd_lines(devflow_lib.decide_cell(t["_dir"]))),
+                  (child, "되돌림", devflow_lib.cmd_lines(heading_section(text, "되돌리기")))]
+    else:
+        stage = devflow_lib.stage_of(t)
+        point = stage if stage in kinds.EXEC_POINTS else "실행승인"
+        groups = [(t, point, devflow_lib.cmd_lines(devflow_lib.decide_cell(t["_dir"])))]
+    out = []
+    for runner, point, lines in groups:
+        if not lines:
+            continue
+        try:
+            cwd = default_cwd(run_dir, tasks, runner, point)
+        except Exception:
+            cwd = ""
+        out += [(line, line_problems(runner, point, line, cwd)) for line in lines]
+    return out
 
 
 # ---------------------------------------------------------------- 승인과 원천
@@ -164,8 +236,13 @@ def frozen_path(t, point):
     return os.path.join(t["_dir"], "approved-cmds-{}.md".format(point))
 
 
-def digest(lines):
-    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:16]
+def digest(lines, tips=None):
+    """얼린 줄(과 넣는 끝)의 해시. 넣는 끝이 없는 옛 얼린 파일은 줄만으로 같다."""
+    body = list(lines) + ["넣는 끝 {}: {}".format(n, sha) for n, sha in sorted((tips or {}).items())]
+    return hashlib.sha256("\n".join(body).encode("utf-8")).hexdigest()[:16]
+
+
+TIP_LINE = re.compile(r"^넣는 끝 (\d+): ([0-9a-fA-F]{7,40})$", flags=re.M)
 
 
 def read_frozen(t, point):
@@ -176,9 +253,48 @@ def read_frozen(t, point):
     text = devflow_lib.read_text(p)
     lines = [m.group(2) for m in re.finditer(r"^(\d+)\. (.*)$", text, flags=re.M)]
     m = re.search(r"^해시: (\w+)", text, flags=re.M)
-    if not m or m.group(1) != digest(lines):
+    if not m or m.group(1) != digest(lines, frozen_tips_raw(text)):
         raise Reject("{}의 해시가 맞지 않음(손으로 고침). 다시 승인받고 --refreeze".format(os.path.basename(p)))
     return lines
+
+
+def frozen_tips_raw(text):
+    return {int(m.group(1)): m.group(2) for m in TIP_LINE.finditer(text)}
+
+
+def frozen_tips(t, point):
+    """{줄 번호: 얼릴 때 넣는 쪽의 끝 SHA}(병합·push 줄. 해시는 read_frozen이 본다)."""
+    p = frozen_path(t, point)
+    return frozen_tips_raw(devflow_lib.read_text(p)) if os.path.isfile(p) else {}
+
+
+def insert_tip(run_dir, tasks, t, point):
+    """(넣는 쪽의 끝 SHA, 못 정한 이유). 승인한 대상과 넣는 대상을 묶는다(07 원칙: 내보내는 것은 검증한 그 commit).
+    마무리는 judge-run.md 「최종 배포 후보 CI」의 검증 commit, 합치기는 흐름 브랜치의 끝, 배포 실행의 넣기는 배포
+    폴더 브랜치의 끝(메인이 넣기승인 전에 커밋한 배포 기록). 그 밖의 지점은 ("", "")."""
+    kind = t.get("kind", "")
+    if kind == "wrap-up" and point == "실행승인":
+        sha = devflow_lib.final_ci_values(t).get("검증 commit", "")
+        if devflow_lib.uses_isolation_contract(t) and not re.fullmatch(r"[0-9a-fA-F]{7,40}", sha or ""):
+            return "", ("judge-run.md 「최종 배포 후보 CI」의 검증 commit이 없음: 문서 커밋과 최종 CI가 실행승인보다 먼저다"
+                        "(references/kinds/wrap-up/main-order.md)")
+        return sha, ""
+    if (kind, point) in (("merge", "실행승인"), ("deploy-exec", "넣기승인")):
+        src, _ = expected(run_dir, tasks, t, point)
+        cwd = default_cwd(run_dir, tasks, t, point)
+        sha = rev(cwd, src) if src and cwd and os.path.isdir(cwd) else ""
+        checked, code = devflow_lib.doc_check_result(t) if kind == "deploy-exec" else ("", None)
+        if sha and checked and not (sha.startswith(checked) or checked.startswith(sha)):
+            return "", "넣을 끝 {}이 main-run.md 「넣기 전 문서 검사」의 검증 commit {}과 다름: 그 끝에서 다시 검사한다".format(
+                sha[:12], checked)
+        if checked and code != 0:
+            # 리뷰 111b N2: 실패한(또는 종료 코드가 없는) 문서 검사는 위험 수용 답이 있을 때만 넣는다(마무리 최종 CI와 같은 꼴)
+            since = os.path.getmtime(os.path.join(t["_dir"], "main-run.md"))
+            if not devflow_lib.risk_accepted(t, since=since):
+                return "", ("main-run.md 「넣기 전 문서 검사」의 종료 코드가 {}: 고쳐 다시 커밋·검사하거나, 넣으려면 "
+                            "`--record \"승인|위험 수용|{{원문}}\"`으로 답을 적는다").format("없음" if code is None else code)
+        return sha, ""
+    return "", ""
 
 
 def frozen_time(t, point):
@@ -209,10 +325,20 @@ def freeze(run_dir, tid, point, refreeze=False):
             lines = [x for x in lines if x not in done]   # 같은 칸에 남은 실행승인 줄(이미 돈 병합)은 빼고 끝내기 명령만
         if not lines:
             return 3, "얼릴 명령 없음: {}에 ```cmd 울타리가 없다".format(where)
+        if os.path.isfile(frozen_path(t, point)) and not refreeze and read_frozen(t, point) == lines \
+                and not frozen_tips(t, point):
+            # 리뷰 111b N8: 1.1.1 전에 넣는 끝 없이 얼린 파일은 줄이 같으면 같음으로 본다(--step은 넣는 끝을 대조하지 않음)
+            return 0, "이미 얼림(같음, 넣는 끝 없는 옛 얼림): " + frozen_path(t, point)
+        tips = {}
+        if any(insert_line(x) for x in lines):
+            sha, why = insert_tip(run_dir, tasks, t, point)
+            if why:
+                return 3, "얼릴 수 없음: " + why
+            tips = {i: sha for i, x in enumerate(lines, 1) if sha and insert_line(x)}
         p = frozen_path(t, point)
         if os.path.isfile(p):
             old = read_frozen(t, point)
-            if old == lines and not refreeze:
+            if old == lines and frozen_tips(t, point) == tips and not refreeze:
                 return 0, "이미 얼림(같음): " + p
             if not refreeze:
                 return 3, "이미 얼린 명령과 다름: 다시 승인받았으면 --refreeze ({})".format(p)
@@ -226,7 +352,9 @@ def freeze(run_dir, tid, point, refreeze=False):
                 n += 1
             os.replace(p, p.replace(".md", ".r{}.md".format(n)))
         body = ["# 승인된 명령 — {} {}".format(tid, point), "원천: " + where, "승인 기록 시각: " + at.strftime(TIME_FMT),
-                "얼린 시각: " + now(), "해시: " + digest(lines), ""] + ["{}. {}".format(i, x) for i, x in enumerate(lines, 1)]
+                "얼린 시각: " + now(), "해시: " + digest(lines, tips), ""] \
+            + ["{}. {}".format(i, x) for i, x in enumerate(lines, 1)] \
+            + ([""] + ["넣는 끝 {}: {}".format(n, sha) for n, sha in sorted(tips.items())] if tips else [])
         devflow_lib.write_text(p, "\n".join(body) + "\n")
         return 0, "얼림 {}줄: {}".format(len(lines), p)
     except Reject as e:
@@ -346,16 +474,30 @@ def dirty_files(cwd):
     return [l[3:].strip().strip('"') for l in status.splitlines() if l.strip()]
 
 
-def pre_check(run_dir, tasks, t, point, cwd, line):
-    """실행 전 확인. (넣는 브랜치, 받는 브랜치, 알림 글)을 돌려주고, 거부면 Reject."""
+def pre_check(run_dir, tasks, t, point, cwd, line, raw=None, tip=""):
+    """실행 전 확인. (넣는 브랜치, 받는 브랜치, 알림 글)을 돌려주고, 거부면 Reject.
+    raw는 얼린 줄 그대로(`[유지 뒤]` 표시 포함), tip은 얼릴 때 적은 넣는 쪽의 끝(frozen_tips)."""
     if not os.path.isdir(cwd):
         raise Reject("명령을 돌릴 폴더가 없음: " + cwd)
+    bad = line_problems(t, point, raw or line, cwd)
+    if bad:
+        raise Reject("명령 줄 꼴: {} — {}".format("; ".join(bad), recovery(tasks, t, point)))
     is_merge = bool(MERGE_LINE.search(line))
     merging = bool(rev(cwd, "MERGE_HEAD"))
     src, tgt = expected(run_dir, tasks, t, point)
     if is_merge or (merging and single(line, CONSUME_LINE)):
         if tgt and head_branch(cwd) != tgt:
             raise Reject("받는 브랜치가 맞지 않음: {}는 {}를 꺼내 두었다(기대 {})".format(cwd, head_branch(cwd) or "(분리된 HEAD)", tgt))
+    if insert_line(line) and t.get("kind") == "wrap-up" and devflow_lib.uses_isolation_contract(t) \
+            and devflow_lib.final_ci_failed(t) and not devflow_lib.risk_accepted(t):
+        raise Reject("최종 CI가 실패했고 승인 기록에 위험 수용 답이 없음: 고칠지·위험을 받아들일지·보류할지 묻는다"
+                     "(references/kinds/wrap-up/main-order.md 「최종 CI가 실패하면」)")
+    if insert_line(line) and tip:
+        found = merge_source(run_dir, line) if not src else src
+        now_tip = rev(cwd, found) if found else ""
+        if not (now_tip and (now_tip.startswith(tip) or tip.startswith(now_tip))):
+            raise Reject("넣는 쪽의 끝이 승인 때와 다름: {}는 지금 {}, 얼릴 때 {} — 바뀐 끝을 다시 검증·승인받고 --refreeze".format(
+                found or "(넣는 브랜치 모름)", now_tip[:12] or "(없음)", tip[:12]))
     if is_merge:
         found = merge_source(run_dir, line)
         if src and found != src:
@@ -458,7 +600,7 @@ def step(run_dir, tid, point, n, cwd=None):
             print("건너뜀: [유지 뒤] 줄인데 deploy_outcome이 유지가 아님")
             return 0
     cwd = cwd or default_cwd(run_dir, tasks, t, point)
-    src, tgt, note = pre_check(run_dir, tasks, t, point, cwd, cmd)
+    src, tgt, note = pre_check(run_dir, tasks, t, point, cwd, cmd, raw=line, tip=frozen_tips(t, point).get(n, ""))
     if note:
         print(note)
     is_merge = bool(MERGE_LINE.search(cmd))
@@ -480,34 +622,122 @@ def step(run_dir, tid, point, n, cwd=None):
     judged = ""
     after = rev(cwd, "HEAD")
     if is_merge or (merging and CONSUME_LINE.match(cmd)):
-        parents = git(cwd, "rev-list", "--parents", "-n", "1", "HEAD")[1].split()[1:]
-        if rc != 0 and rev(cwd, "MERGE_HEAD"):
-            judged = "충돌"
-        elif rc != 0:
-            judged = "실패"
-        elif merging:
-            judged = "병합(충돌 해결)" if parents == [before, src_tip] else "불일치"
-        elif after == src_tip and after != before:
-            judged = "앞감기"
-        elif parents == [before, src_tip]:
-            judged = "병합"
-        elif after == before and src_tip and git(cwd, "merge-base", "--is-ancestor", src_tip, before)[0] == 0:
-            judged = "이미 들어 있음"
-        else:
-            judged = "불일치"
+        judged = merge_judgement(cwd, before, after, src_tip, rc=rc, merging=merging)
         append_exec(t, "- {} | 브랜치 판정 | {} | {} | 앞 {} 뒤 {} 넣은 {}@{} 받은 {}".format(
             now(), label, judged, before[:12], after[:12], src or "MERGE_HEAD", src_tip[:12], tgt or head_branch(cwd)))
-        if judged in ("병합", "앞감기", "병합(충돌 해결)", "이미 들어 있음"):
-            if t.get("kind") == "merge":
-                set_head(t, commit=after[:12])
-            elif t.get("kind") == "wrap-up":
-                set_head(t, exported_commit=after[:12])
+        record_landing(t, judged, after, src_tip)
+    elif rc == 0 and t.get("kind") == "wrap-up" and PUSH_LINE.search(cmd):
+        # PR 방식: 내보낸 것은 push한 브랜치의 끝(최종 CI의 검증 commit과 대조된다)
+        pushed = src or merge_source(run_dir, cmd)
+        tip = rev(cwd, pushed) if pushed else ""
+        if tip:
+            set_head(t, exported_commit=tip[:12])
     done = rc == 0 and n == len(lines)
     set_head(t, external_progress="" if done else "{} {}/{} 끝 종료 코드 {}".format(point, n, len(lines), rc))
     with open(log, "rb") as f:
         tail = f.read().decode("utf-8", errors="replace").splitlines()[-20:]
     print("\n".join(tail))
     print("{} 종료 코드 {}{} (로그 {})".format(label, rc, ", 브랜치 판정 " + judged if judged else "", log))
+    return 0 if rc == 0 else 3
+
+
+def merge_judgement(cwd, before, after, src_tip, rc=0, merging=False):
+    """병합 줄의 앞뒤 해시로 병합 판정 낱말."""
+    parents = git(cwd, "rev-list", "--parents", "-n", "1", "HEAD")[1].split()[1:]
+    if rc != 0 and rev(cwd, "MERGE_HEAD"):
+        return "충돌"
+    if rc != 0:
+        return "실패"
+    if merging:
+        return "병합(충돌 해결)" if parents == [before, src_tip] else "불일치"
+    if after == src_tip and after != before:
+        return "앞감기"
+    if before and parents == [before, src_tip]:
+        return "병합"
+    if src_tip and git(cwd, "merge-base", "--is-ancestor", src_tip, after)[0] == 0 and (after == before or not before):
+        return "이미 들어 있음"
+    return "불일치"
+
+
+def record_landing(t, judged, after, src_tip):
+    """병합이 끝났으면 합치기는 `commit`, 마무리는 `exported_commit`(앞감기·이미 들어 있음은 넣은 끝 = 검증한 commit)."""
+    if judged not in ("병합", "앞감기", "병합(충돌 해결)", "이미 들어 있음"):
+        return
+    if t.get("kind") == "merge":
+        set_head(t, commit=after[:12])
+    elif t.get("kind") == "wrap-up":
+        set_head(t, exported_commit=(src_tip if judged in ("앞감기", "이미 들어 있음") and src_tip else after)[:12])
+
+
+def failed_run(t, label):
+    """exec.md에서 그 줄의 마지막 실행이 돈 폴더와, 마지막 브랜치 판정의 `앞` 해시(실패 직전 받는 끝). 없으면 ""."""
+    p = os.path.join(t["_dir"], "exec.md")
+    folder = before = ""
+    for line in (devflow_lib.read_text(p).splitlines() if os.path.isfile(p) else []):
+        f = [c.strip() for c in line[2:].split("|")] if line.startswith("- ") else []
+        if len(f) >= 4 and f[1] == "브랜치 판정" and f[2] == label:
+            m = re.match(r"앞 ([0-9a-fA-F]{7,40})\b", f[4] if len(f) > 4 else "")
+            before = m.group(1) if m else ""
+        elif "지점 " + label in f:
+            folder = next((c[3:].strip() for c in f if c.startswith("폴더 ")), "")
+    return folder, before
+
+
+def main_result(run_dir, tid, point, n, text):
+    """실패한 줄을 사람 답을 받아 메인이 다른 방법으로 실행한 결과를 `--step`과 같은 꼴로 적는다(T043: 메인이 exec.md를
+    손으로 덧붙임). 그 줄의 마지막 실행이 실패했고 그 뒤 승인 기록에 사용자 답(원문, 알림·점검 확인 줄은 빼고)이 있을
+    때만 받는다. 폴더는 실패한 실행의 폴더(`--cwd`로 돌렸으면 그 폴더)다. 병합 줄이면 실패 직전 받는 끝(그 줄의 브랜치
+    판정 `앞`)을 앞 해시로 병합 판정을 내고, 얼린 넣는 끝과 대조한다. 마무리는 받는 끝 = 넣은 끝 = 얼린 끝(앞감기)일
+    때만 `exported_commit`을 적고 아니면 `불일치`다(리뷰 111b N1: 병합 커밋을 `이미 들어 있음`으로 받던 길)."""
+    tasks, t = load(run_dir, tid)
+    lines = read_frozen(t, point)
+    if lines is None or not 1 <= n <= len(lines):
+        raise Reject("얼린 줄이 없음: {}:{}".format(point, n))
+    label = "{}:{}".format(point, n)
+    kind, st, stage = t.get("kind", ""), t.get("status", ""), devflow_lib.stage_of(t)
+    if kind in kinds.STAGE_KINDS and (st != "진행" or stage in kinds.ASK_STAGES or stage == "끝"):
+        raise Reject("실행 단계가 아님(상태 {}, stage {})".format(st, stage or "-"))
+    last = [e for e in exec_lines(t) if e["label"] == label]
+    if not last or last[-1]["user"] or last[-1]["skip"] or last[-1]["rc"] in (None, "0"):
+        raise Reject("{}의 마지막 실행이 실패가 아님 — --main-result는 실패한 줄을 다른 방법으로 실행한 결과만 받는다".format(label))
+    failed_at = last[-1]["time"]
+
+    def answer(line):
+        f = devflow_lib.record_fields(line)
+        when = ptime(f[0])
+        return bool((devflow_lib.record_quote(line) or "").strip()) and f[1:2] not in (["알림"], ["점검 확인"]) \
+            and when is not None and failed_at is not None and when >= failed_at
+    if not any(answer(l) for l in devflow_lib.record_lines(t)):
+        raise Reject("{} 실패({}) 뒤 승인 기록에 사용자 답이 없음: 다른 방법으로 실행하기 전에 묻고 --record로 적는다".format(
+            label, last[-1]["time_s"]))
+    m = re.search(r"종료 코드\s*(-?\d+)", text)
+    if not m:
+        raise Reject("결과 문장에 `종료 코드 N`이 없음")
+    rc = int(m.group(1))
+    cmd = lines[n - 1][len(AFTER_KEEP):].strip() if lines[n - 1].startswith(AFTER_KEEP) else lines[n - 1]
+    folder, before = failed_run(t, label)
+    cwd = folder or default_cwd(run_dir, tasks, t, point)
+    append_exec(t, "- {} | {} | 종료 코드 {} | 메인 실행: {} | 지점 {} | 폴더 {}".format(
+        now(), cmd, rc, text.replace("|", "/"), label, cwd))
+    judged = ""
+    if MERGE_LINE.search(cmd) and os.path.isdir(cwd):
+        src, tgt = expected(run_dir, tasks, t, point)
+        src = src or merge_source(run_dir, cmd)
+        after, src_tip = rev(cwd, "HEAD"), (rev(cwd, src) if src else "")
+        before = rev(cwd, before) if before else ""   # exec.md에는 12자로 적혀 있다
+        judged = merge_judgement(cwd, before, after, src_tip, rc=rc) if src_tip else "불일치"
+        tip = frozen_tips(t, point).get(n, "")
+        if tip and src_tip and not (src_tip.startswith(tip) or tip.startswith(src_tip)):
+            judged = "불일치"   # 넣은 끝이 승인 때 얼린 끝이 아니다
+        if kind == "wrap-up" and judged != "불일치" and rc == 0 and after != src_tip:
+            judged = "불일치"   # 마무리는 앞감기만: 받는 끝이 검증한 commit이어야 한다
+        append_exec(t, "- {} | 브랜치 판정 | {} | {} | 앞 {} 뒤 {} 넣은 {}@{} 받은 {}".format(
+            now(), label, judged, before[:12] or "(모름)", after[:12], src or "(모름)", src_tip[:12],
+            tgt or head_branch(cwd)))
+        record_landing(t, judged, after, src_tip)
+    set_head(t, external_progress="" if rc == 0 and n == len(lines) else "{} {}/{} 끝 종료 코드 {}".format(
+        point, n, len(lines), rc))
+    print("{} 메인 실행 결과 적음: 종료 코드 {}{}".format(label, rc, ", 브랜치 판정 " + judged if judged else ""))
     return 0 if rc == 0 else 3
 
 
@@ -628,11 +858,17 @@ def verify(run_dir, t):
 
 
 def target_tip(run_dir, t, point="실행승인"):
-    """받는 브랜치의 지금 끝(짧은 해시). 마무리를 사용자가 직접 넣었을 때 exported_commit에 쓴다."""
+    """사용자가 직접 넣은 마무리의 exported_commit(짧은 해시): 받는 브랜치의 끝이 넣는 브랜치의 끝과 같으면(앞감기) 그 끝
+    (= 검증한 commit), 아니면 ""."""
     tasks = devflow_lib.load_tasks(run_dir)
     cwd = default_cwd(run_dir, tasks, t, point)
-    _, tgt = expected(run_dir, tasks, t, point)
-    return rev(cwd, tgt)[:12] if (cwd and tgt and os.path.isdir(cwd)) else ""
+    src, tgt = expected(run_dir, tasks, t, point)
+    if not (cwd and src and tgt and os.path.isdir(cwd)):
+        return ""
+    s, g = rev(cwd, src), rev(cwd, tgt)
+    # 리뷰 111b N6: 실행 경로의 `--ff-only`와 같이, 받는 끝이 넣는 끝 그대로(앞감기)일 때만. 병합 커밋으로 넣었거나
+    # 그 뒤 받는 쪽이 움직였으면 비워 두어 완료 관문이 거부하고 메인이 묻는다
+    return s[:12] if s and g and s == g else ""
 
 
 # ---------------------------------------------------------------- 명령 줄
@@ -660,6 +896,12 @@ def main(argv):
         if "--step" in args:
             p, n = label(opt("--step"))
             return step(run_dir, tid, p, n, opt("--cwd"))
+        if "--main-result" in args:
+            p, n = label(opt("--main-result"))
+            text = args[args.index("--main-result") + 2] if len(args) > args.index("--main-result") + 2 else ""
+            if not text:
+                raise Reject("결과 문장이 없음")
+            return main_result(run_dir, tid, p, n, text)
         if "--user-result" in args:
             p, n = label(opt("--user-result"))
             text = args[args.index("--user-result") + 2] if len(args) > args.index("--user-result") + 2 else ""

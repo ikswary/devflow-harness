@@ -164,6 +164,14 @@ BUSY_STATUSES = ("진행", "자체검증")
 STATUS_GLYPH = {"완료": "v", "진행": ">", "자체검증": "~", "승인대기": "?", "대기": " ", "보류": "-", "백로그": "b"}
 ASK_STAGES = frozenset({"실행승인", "결과승인", "넣기승인", "직전확인"})
 EXEC_POINTS = ("실행승인", "결과승인", "넣기승인", "되돌림")
+# (STAGE kind, 묻는 stage) → 그 승인대기 앞에 늘 있어야 하는 판정. kind 단위 read_judge·run_judge의 always 대신 쓰고,
+# 조건부 요구(합치기 충돌, 배포 실행 result.md, 넣기 전 문서 검사)는 devflow_lib.required_judges가 더한다.
+# 탐침은 계획·기록 판정을 judge.plan.md로 가르므로 넣지 않는다. 1.1.1부터 시작한 task에만 건다.
+STAGE_JUDGES = {
+    ("merge", "실행승인"): (), ("merge", "결과승인"): (),
+    ("wrap-up", "실행승인"): ("read", "run"), ("wrap-up", "결과승인"): ("read", "run"),
+    ("deploy-exec", "직전확인"): (), ("deploy-exec", "결과승인"): (), ("deploy-exec", "넣기승인"): ("read",),
+}
 JUDGE_FILES = {"read": "judge.md", "run": "judge-run.md"}
 CELLS = ("정해 주실 것", "하실 일·허용 요청", "알릴 것", "답하신 것의 반영", "확인 안 된 것", "건수만")
 COUNT_CELLS = {"정해 주실 것": "n_decide", "하실 일·허용 요청": "n_todo", "알릴 것": "n_notify",
@@ -174,7 +182,7 @@ CANON_DIRS = ("spec", "ui", "design")
 
 # 판본 칸
 RULES = 2
-DEF_VERSION_MIN = "2026-10-30-v110"   # 판정자 정의의 판 표지 `def-version:`의 최소값
+DEF_VERSION_MIN = "2026-10-31-v111"   # 판정자 정의의 판 표지 `def-version:`의 최소값
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -409,6 +417,8 @@ def render_sections():
             "- `STATUS_GLYPH`: " + ", ".join("`[{}]{}`".format(g, s) for s, g in STATUS_GLYPH.items()),
             "- `ASK_STAGES`: " + _join(sorted(ASK_STAGES, key=(MERGE_STAGES + DEPLOY_STAGES).index)),
             "- `EXEC_POINTS`: " + _join(EXEC_POINTS),
+            "- `STAGE_JUDGES`: " + ", ".join("`{}` {} = {}".format(k, s, "+".join(v) or "없음")
+                                             for (k, s), v in STAGE_JUDGES.items()),
             "- `JUDGE_FILES`: " + ", ".join("`{}` = `{}`".format(r, f) for r, f in JUDGE_FILES.items()),
             "- `CELLS`: " + _join(CELLS),
             "- `COUNT_CELLS`: " + ", ".join("`{}` = `{}`".format(c, n) for c, n in COUNT_CELLS.items()),

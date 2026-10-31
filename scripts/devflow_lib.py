@@ -437,6 +437,7 @@ JUDGE_LINE = re.compile(r"^판정자:\s*(\S+)\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d
 MTIME_SLACK = 60    # 초. 판정자가 첫 줄 시각을 쓴 뒤 파일을 닫기까지의 틈(판정 102초 뒤의 메인 Edit를 잡는 폭)
 ISOLATION_CONTRACT_VERSION = "1.0.1"
 RULES_V110 = "1.1.0"   # 1.1.0 판본 문턱. 이 판본부터 시작한 task에만 영역·판정 표지·재사용 거부 규칙을 적용한다
+RULES_V111 = "1.1.1"   # 이 판본부터 시작한 STAGE kind task에만 묻는 stage별 판정 요구(kinds.STAGE_JUDGES)를 건다
 
 
 def is_new_task(t):
@@ -493,17 +494,58 @@ def contract_token(t):
     return "[계약]" in t.get("_sections", {}).get("시그니처와 결정 번호", "")
 
 
-def required_judges(t):
+def doc_check_command(run_dir):
+    """recon.md 「문서를 읽는 검사」의 글(없거나 `없음`이면 "")."""
+    p = os.path.join(run_dir or "", "recon.md")
+    if not run_dir or not os.path.isfile(p):
+        return ""
+    text = sections(read_text(p), level=2).get("문서를 읽는 검사", "").strip()
+    return "" if not text or re.match(r"^[-\s]*없음", text) else text
+
+
+def doc_check_result(t):
+    """배포 실행 main-run.md 「넣기 전 문서 검사」의 (`- 검증 commit:` SHA, `- 종료 코드:` 정수 또는 None). 없으면 ("", None).
+    배포 기록 커밋은 CI를 거치지 않아 시험이 문서를 읽는 저장소에서는 넣기 전에 그 커밋에서 문서 검사를 돌린다.
+    judge-run.md는 배포 뒤 확인과 배포 대상 동일성(완료 관문이 읽음)을 이미 담고 있어, 두 번째 실행 판정자가 덮어쓰지
+    않게 메인 실행으로 적는다."""
+    path = os.path.join(t["_dir"], "main-run.md")
+    text = sections(read_text(path), level=2).get("넣기 전 문서 검사", "") if os.path.isfile(path) else ""
+    m = re.search(r"^-\s*검증 commit\s*:\s*([0-9a-fA-F]{7,40})\s*$", text, flags=re.M)
+    rc = re.search(r"^-\s*종료 코드\s*:\s*(-?\d+)", text, flags=re.M)
+    return (m.group(1) if m else ""), (int(rc.group(1)) if rc else None)
+
+
+def doc_check_commit(t):
+    return doc_check_result(t)[0]
+
+
+def run_dir_of(t):
+    return os.path.dirname(os.path.dirname(t["_dir"])) if t.get("_dir") else None   # tasks\T…의 두 단계 위
+
+
+def stage_judges(t, stage):
+    """묻는 stage 앞의 판정 요구표를 쓰는가: 1.1.1부터 시작한 task이고 (kind, stage)가 kinds.STAGE_JUDGES에 있으면 그 칸."""
+    if not stage or not version_at_least(t.get("started_version", ""), RULES_V111):
+        return None
+    return kinds.STAGE_JUDGES.get((t.get("kind", ""), stage))
+
+
+def required_judges(t, stage=None):
     """이 task가 `완료`·`승인대기`로 가기 전에 있어야 하는 판정({"read", "run"}). 각 정의의 「자체 검증」에서 뽑았다.
+    stage(묻는 단계)를 주면 STAGE kind는 kind 단위 always 대신 kinds.STAGE_JUDGES의 칸을 쓴다(stage_judges).
     구현의 실행 판정은 늘 둔다(문서만 바꾸는 구현은 관련 테스트가 recon 「문서를 읽는 검사」).
     합치기는 exec.md 브랜치 판정에 `충돌`이 하나라도 있으면(충돌을 고친 합치기) 읽기 판정을 요구한다.
-    테스트 실패로 코드를 고친 합치기는 exec.md에 흔적이 없어 여기서 가리지 못한다."""
+    테스트 실패로 코드를 고친 합치기는 exec.md에 흔적이 없어 여기서 가리지 못한다.
+    배포 실행 넣기승인 앞의 문서 검사(recon.md 「문서를 읽는 검사」)는 판정 파일이 아니라 main-run.md로 본다(judges_present)."""
     kind = t.get("kind", "")
     need = set()
     k = kinds.KINDS.get(kind)
-    if k is not None and k.run_judge == "always":
+    gate = stage_judges(t, stage)
+    if gate is not None:
+        need |= set(gate)
+    if gate is None and k is not None and k.run_judge == "always":
         need.add("run")
-    if k is not None and k.read_judge == "always":
+    if gate is None and k is not None and k.read_judge == "always":
         need.add("read")
     if kind in kinds.IMPLEMENT_KINDS and k.read_judge == "conditional":
         cells = result_cells(t) or {}
@@ -554,16 +596,17 @@ def _judge_header_loose(line):
     return None, None
 
 
-def judges_present(t):
+def judges_present(t, stage=None):
     """(있음 여부, 이유). 새 task는 필요한 판정 파일이 모두 있고 첫 줄 판정자가 그 역할이어야 한다.
-    옛 task는 판정 파일이 하나라도 있으면 된다."""
+    옛 task는 판정 파일이 하나라도 있으면 된다. stage는 STAGE kind가 묻는 단계(required_judges)."""
     d = t["_dir"]
     if not is_new_task(t):
         if any(os.path.isfile(os.path.join(d, f)) for f in kinds.JUDGE_FILES.values()):
             return True, ""
         return False, "판정 파일(judge.md·judge-run.md)이 없음"
     missing = []
-    need_names = {kinds.JUDGE_FILES[n] for n in required_judges(t)}
+    need = required_judges(t, stage)
+    need_names = {kinds.JUDGE_FILES[n] for n in need}
     for name in sorted(set(kinds.JUDGE_FILES.values())):
         path = os.path.join(d, name)
         if not os.path.isfile(path):
@@ -574,9 +617,73 @@ def judges_present(t):
         who, _ = judge_header(path)
         if not who or not who.startswith(JUDGE_PREFIX[name]):
             missing.append("{} 첫 줄 판정자가 {}…가 아님({})".format(name, JUDGE_PREFIX[name], who or "판정자 줄 없음"))
+    if not missing and (t.get("kind"), stage) == ("deploy-exec", "넣기승인") and stage_judges(t, stage) is not None \
+            and doc_check_command(run_dir_of(t)) and (not doc_check_result(t)[0] or doc_check_result(t)[1] is None):
+        missing.append("main-run.md 「넣기 전 문서 검사」의 검증 commit·종료 코드 없음(recon.md 「문서를 읽는 검사」를 배포 기록 "
+                       "커밋에서 돌림. 실패한 결과는 화면 맨 위에 올리고 묻는다)")
     if not missing:
         missing.extend(judge_run_contract_problems(t))
     return (not missing), "; ".join(missing)
+
+
+FINAL_CI_KEYS = ("범위", "검증 commit", "검증 artifact")
+
+
+def final_ci_values(t):
+    """judge-run.md 「최종 배포 후보 CI」의 {범위, 검증 commit, 검증 artifact}. 마무리의 완료 관문, 얼림의 넣는 끝
+    (exec.py), 배포의 권위 있는 최종 CI(task_set.canonical_final_ci)가 함께 읽는 하나의 원천."""
+    path = os.path.join(t["_dir"], kinds.JUDGE_FILES["run"])
+    text = sections(read_text(path), level=2).get("최종 배포 후보 CI", "") if os.path.isfile(path) else ""
+    values = {}
+    for line in text.splitlines():
+        m = re.match(r"^-\s*({})\s*:\s*(.+?)\s*$".format("|".join(FINAL_CI_KEYS)), line.strip())
+        if m:
+            values[m.group(1)] = m.group(2)
+    return values
+
+
+def final_ci_cause(t):
+    """마무리 judge-run.md 「최종 CI 실패 원인」의 `- 원인: 문서|코드`(없으면 ""). 실행 판정자가 문서 커밋 전 끝에서
+    같은 실패를 다시 돌려 가른다(references/kinds/wrap-up/run-check.md)."""
+    path = os.path.join(t["_dir"], kinds.JUDGE_FILES["run"])
+    text = sections(read_text(path), level=2).get("최종 CI 실패 원인", "") if os.path.isfile(path) else ""
+    m = re.search(r"^-\s*원인\s*:\s*\**\s*(문서|코드)", text, flags=re.M)
+    return m.group(1) if m else ""
+
+
+def final_ci_failed(t):
+    """마무리의 최종 CI(실행 판정)에 통과 못 한 기준이 있는가(judge-run.md 「통과 못 한 기준」 항목 수)."""
+    path = os.path.join(t["_dir"], kinds.JUDGE_FILES["run"])
+    if not os.path.isfile(path):
+        return 0
+    return item_count(sections(read_text(path), level=2).get("통과 못 한 기준", ""))
+
+
+RISK_REFUSED = re.compile(r"안\s*함|않|아니|거부")
+
+
+def risk_accepted(t, since=None):
+    """실패를 사람이 받아들였는가: 기준 시각(since, 없으면 실행 판정 파일의 판정 시각) 뒤의 승인 줄 가운데 결정 칸이
+    `위험 수용`으로 시작하고 부정어(`안 함`·`않`·`아니`·`거부`)가 없는 것(`--record "승인|위험 수용|{원문}"`,
+    selfcheck.md 「실패 처리」의 위험을 받아들임 = 승인). 리뷰 111b N4: `위험 수용 안 함`을 승인으로 세던 판별."""
+    from datetime import datetime
+    judged = since if since is not None else judge_header(os.path.join(t["_dir"], kinds.JUDGE_FILES["run"]))[1]
+    for line in record_lines(t):
+        f = record_fields(line)
+        decision = f[2].strip() if len(f) >= 3 else ""
+        if not decision.startswith("위험 수용") or RISK_REFUSED.search(decision) or not approval_line(line) \
+                or reused_answer(line):
+            continue
+        for fmt, n in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16)):
+            try:
+                when = datetime.strptime(f[0][:n], fmt).timestamp()
+                break
+            except ValueError:
+                when = None
+        # 판정 시각에 초가 없으면 judge_header가 그 분의 끝(59초)으로 읽으므로 1분 폭을 둔다
+        if when is not None and (judged is None or when >= judged - 59):
+            return True
+    return False
 
 
 def judge_run_contract_problems(t):
@@ -986,6 +1093,69 @@ def cmd_lines(text):
             continue
         if inside and s:
             out.append(s)
+    return out
+
+
+_SHELL_WORD = r"(?:\"[^\"]+\"|'[^']+'|\S+)"
+# `git [-c k=v …] -C {경로}`의 경로, 병합 줄의 앞붙이 `cd {경로} &&`(또는 `;`)의 경로
+GIT_C_PATH = re.compile(r"^git(?:\s+-c\s+" + _SHELL_WORD + r")*\s+-C\s+(?P<path>" + _SHELL_WORD + ")")
+CD_PREFIX = re.compile(r"^cd\s+(?P<path>" + _SHELL_WORD + r")\s*(?:&&|;)")
+DQ_ESCAPES = "\"\\$`"   # bash 큰따옴표 안에서 백슬래시가 이스케이프하는 글자
+
+
+def shell_dir(path, cwd):
+    """명령 줄의 폴더 경로를 실행 폴더 기준으로 푼 비교용 꼴. Git Bash 꼴 `/d/…`는 `D:/…`로 읽는다.
+    `$`가 든 경로(변수)는 풀 수 없어 None."""
+    p = path.strip("\"'")
+    if "$" in p:
+        return None
+    m = re.match(r"^/([A-Za-z])(/.*)?$", p)
+    if m:
+        p = m.group(1).upper() + ":" + (m.group(2) or "/")
+    return os.path.normcase(os.path.normpath(os.path.join(cwd, p.replace("\\", "/"))))
+
+
+def cmd_line_problems(line, cwd="", bash=True, check_dir=True, merge=False):
+    """exec.py가 bash -c로 돌릴 줄의 꼴 문제 목록. 따옴표 밖 백슬래시는 bash가 지우고(2026-10-31 T043:
+    `git -C D:\\workspace\\…`가 `D:workspace…`로 바뀌어 128), 실행 전 확인(받는 브랜치, 작업 트리)이 실행 폴더를 보는
+    줄이 `git -C`로 다른 폴더를 가리키면 확인과 실행의 폴더가 갈린다.
+    - bash가 없으면(cmd.exe로 돎) 백슬래시는 보지 않는다. 큰따옴표 안의 `\\"`·`\\\\`·`\\$`·``\\` ``는 이스케이프다.
+    - check_dir: 폴더를 대조한다(실행 전 확인이 폴더를 보지 않는 줄은 exec.py가 끈다). cwd를 모르면 대조하지 않는다.
+      경로는 cwd 기준으로 풀고 `$`가 든 경로는 대조하지 않는다. merge(병합 줄)면 앞붙이 `cd X &&`도 본다.
+    - `[사용자 실행]` 줄은 exec.py가 돌리지 않고, `[유지 뒤]` 줄(운영 브랜치 옮기기, `git -C {원래 폴더}`)은 폴더를 대조하지 않는다."""
+    s = line.strip()
+    if s.startswith("[사용자 실행]"):
+        return []
+    if s.startswith("[유지 뒤]"):
+        s, check_dir = s[len("[유지 뒤]"):].strip(), False
+    out, quote, i = [], "", 0
+    while bash and i < len(s):
+        ch = s[i]
+        if quote == '"' and ch == "\\" and i + 1 < len(s) and s[i + 1] in DQ_ESCAPES:
+            i += 2
+            continue
+        if quote:
+            quote = "" if ch == quote else quote
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "\\":
+            out.append("따옴표 밖 백슬래시(bash가 지운다): 경로는 `/`로 쓴다")
+            break
+        i += 1
+    if not (check_dir and cwd):
+        return out
+    here = shell_dir(cwd, "")
+    m = CD_PREFIX.match(s) if merge else None
+    if m:
+        where = shell_dir(m.group("path"), cwd)
+        if where is not None and where != here:
+            out.append("병합 줄의 `cd {}`가 실행 폴더 {}와 다름: 병합 줄은 실행 폴더에서 돈다".format(m.group("path"), cwd))
+        s = s[m.end():].strip()
+    m = GIT_C_PATH.match(s)
+    if m:
+        where = shell_dir(m.group("path"), cwd)
+        if where is not None and where != here:
+            out.append("`git -C {}`가 실행 폴더 {}와 다름: 실행 전 확인이 실행 폴더를 본다".format(m.group("path").strip("\"'"), cwd))
     return out
 
 

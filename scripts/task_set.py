@@ -162,9 +162,16 @@ def check_transition(run_dir, t, old, new, ctx):
     rec, point = ctx["record"] is not None, (ctx["record"] or ("", "", ""))[0]
     reason = ctx["reason"]
 
-    def judges():
-        ok, why = devflow_lib.judges_present(t)
+    def judges(stage=None):
+        ok, why = devflow_lib.judges_present(t, stage)
         return None if ok else "필요한 판정이 없음: " + why
+
+    def ask_judges():
+        """승인대기로 갈 때: 1.1.1부터 시작한 STAGE kind는 묻는 stage 앞의 판정(kinds.STAGE_JUDGES)."""
+        stage = devflow_lib.stage_of(t)
+        why = judges(stage)
+        return why + " (stage={} 앞, kinds.STAGE_JUDGES)".format(stage) \
+            if why and devflow_lib.stage_judges(t, stage) is not None else why
 
     def stage_end():
         if kind == "deploy-exec" and devflow_lib.stage_of(t) != "끝":
@@ -197,7 +204,7 @@ def check_transition(run_dir, t, old, new, ctx):
     if pair == ("자체검증", "진행"):
         return None if ctx["archived"] else "자체검증→진행(재시도)은 --archive-judge와 함께"
     if pair == ("자체검증", "승인대기"):
-        return judges()
+        return ask_judges()
     if pair == ("자체검증", "완료"):
         if not rec or point not in ("알림", "승인"):
             return "자체검증→완료는 --record \"알림|…\"(또는 승인)와 함께"
@@ -221,7 +228,10 @@ def check_transition(run_dir, t, old, new, ctx):
     if pair == ("승인대기", "진행"):
         return None if (rec or ctx["snapshot"]) else "승인대기→진행은 --record(사람 답) 또는 --screen-snapshot과 함께"
     if pair == ("진행", "승인대기"):
-        return None if kind in kinds.STAGE_KINDS else "진행→승인대기는 합치기·마무리·배포 실행만(그 밖은 자체검증을 거침)"
+        if kind not in kinds.STAGE_KINDS:
+            return "진행→승인대기는 합치기·마무리·배포 실행만(그 밖은 자체검증을 거침)"
+        # 1.1.1부터: 자체검증을 건너뛰어 판정 없이 묻는 길을 막는다(옛 task는 그대로)
+        return ask_judges() if devflow_lib.stage_judges(t, devflow_lib.stage_of(t)) is not None else None
     if pair == ("진행", "완료"):
         if kind not in kinds.STAGE_KINDS:
             return "진행→완료는 합치기·마무리·배포 실행만"
@@ -272,6 +282,10 @@ def stage_rule(run_dir, t, old, new, ctx):
         proof = final_candidate_ci_problem(run_dir, t, always=True, expected_commit=t.get("exported_commit", ""))
         if proof:
             return proof
+        if devflow_lib.uses_isolation_contract(t) and devflow_lib.final_ci_failed(t) and not devflow_lib.risk_accepted(t):
+            # 사용자 결정 U1(2026-10-31): 실패한 최종 CI는 위험 수용 답이 있을 때만 내보낸 채 완료
+            return ("최종 CI에 통과 못 한 기준 {}개이고 승인 기록에 위험 수용 답이 없음 — "
+                    "`--record \"승인|위험 수용|{{원문}}\"`(받아들인 위험은 백로그 한 줄)").format(devflow_lib.final_ci_failed(t))
     if kind == "probe" and not ok and not answered:
         return "exec.py --verify 실패({}) — stage=결과승인으로 승인을 받는다".format("; ".join(lines))
     if kind == "deploy-exec" and str(t.get("deploy_outcome", "")).strip() == "유지" and not ok \
@@ -314,14 +328,9 @@ def final_candidate_ci_problem(run_dir, t, always=False, expected_commit=None):
         return None
     path = os.path.join(t["_dir"], "judge-run.md")
     sec = devflow_lib.sections(devflow_lib.read_text(path), level=2) if os.path.isfile(path) else {}
-    text = sec.get("최종 배포 후보 CI")
-    if text is None:
+    if sec.get("최종 배포 후보 CI") is None:
         return "최종 배포 후보 CI 근거 없음: judge-run.md 「최종 배포 후보 CI」"
-    values = {}
-    for line in text.splitlines():
-        m = re.match(r"^-\s*(범위|검증 commit|검증 artifact)\s*:\s*(.+?)\s*$", line.strip())
-        if m:
-            values[m.group(1)] = m.group(2)
+    values = devflow_lib.final_ci_values(t)
     missing = [k for k in ("범위", "검증 commit", "검증 artifact") if not values.get(k) or values.get(k) in ("없음", "(없음)")]
     if missing:
         return "최종 배포 후보 CI 필수 값 없음: {}".format(", ".join(missing))
@@ -339,15 +348,7 @@ def final_candidate_ci_problem(run_dir, t, always=False, expected_commit=None):
 
 
 def ci_proof_values(t):
-    path = os.path.join(t["_dir"], "judge-run.md")
-    sec = devflow_lib.sections(devflow_lib.read_text(path), level=2) if os.path.isfile(path) else {}
-    text = sec.get("최종 배포 후보 CI", "")
-    values = {}
-    for line in text.splitlines():
-        m = re.match(r"^-\s*(범위|검증 commit|검증 artifact)\s*:\s*(.+?)\s*$", line.strip())
-        if m:
-            values[m.group(1)] = m.group(2)
-    return values
+    return devflow_lib.final_ci_values(t)
 
 
 def canonical_final_ci(run_dir):
@@ -535,6 +536,10 @@ def archive_check(run_dir, t, undecided=False):
         progress = devflow_lib.judge_run_contract_problems(t)
         if progress:
             raise Reject("판정 미완료라 재시도를 보관하지 않음: " + "; ".join(progress))
+        if t.get("kind") == "wrap-up" and devflow_lib.final_ci_cause(t) == "코드":
+            # 사용자 결정 U1·U2(2026-10-31): 코드 때문에 실패한 최종 CI는 문서 작성자에게 보내지 않는다
+            raise Reject("최종 CI 실패 원인이 코드(judge-run.md 「최종 CI 실패 원인」): 작성자 재시도로 세지 않고 통과 못 한 채 "
+                         "승인대기 stage=실행승인으로 묻는다(위험 수용 / 고침 / 보류, references/kinds/wrap-up/main-order.md)")
     present = [n for n in ("judge.md", "judge-run.md") if os.path.isfile(os.path.join(d, n))]
     if not present:
         raise Reject("보관할 판정 파일(judge.md·judge-run.md)이 없음")
@@ -1006,6 +1011,14 @@ def main(argv):
             raise Reject("--undecided는 --archive-judge와 함께")
         if opts.get("--archive-judge") and ("--judge-start" in opts or "--judge-clear" in opts):
             raise Reject("--archive-judge는 표지를 비운다. --judge-start·--judge-clear는 따로 부른다")
+        filled_tip = ""
+        if t.get("kind") == "wrap-up" and new == kinds.DONE and not str(t.get("exported_commit", "") or "").strip():
+            # 사용자가 직접 넣은 마무리: 넣는 브랜치의 끝이 개발 기준 브랜치에 들어 있으면 그 끝(배포 계획이 읽는다).
+            # 완료 관문(최종 CI 대조)이 이 값을 보므로 관문 앞에서 채운다. 쓰기는 검사를 모두 마친 뒤
+            import exec as execmod
+            filled_tip = execmod.target_tip(run_dir, t)
+            if filled_tip:
+                t["exported_commit"] = filled_tip
         # 검사를 모두 마친 뒤에 파일을 바꾼다(거부되면 아무것도 바꾸지 않는다)
         why = check_transition(run_dir, t, old, new, dict(ctx, archived=bool(opts.get("--archive-judge"))))
         if why and not (opts.get("--unlisted") and isinstance(why, Unlisted)):
@@ -1101,6 +1114,9 @@ def main(argv):
                 journal(run_dir, "표 밖 전이", tid, "{}→{}: {} (거부 이유: {})".format(old, new, opts["--unlisted"], why))
         for k, v in kv:
             doc.set(k, v)
+        if filled_tip:
+            doc.set("exported_commit", filled_tip)
+            print("exported_commit={}(넣는 브랜치의 끝, 개발 기준 브랜치에 들어 있음)".format(filled_tip))
         for k in [x.strip() for x in str(opts.get("--now", "")).split(",") if x.strip()]:
             doc.set(k, stamp)
         if rec:
@@ -1127,14 +1143,6 @@ def main(argv):
             except Exception as e:
                 # shadow 관측은 기존 gate보다 권위가 낮다. 기록 실패는 비교 제외 경고일 뿐 전이를 되돌리지 않는다.
                 print("! shadow 관측 기록 실패(기존 전이는 유지): {}".format(e))
-            if t.get("kind") == "wrap-up" and new == kinds.DONE and not str(t.get("exported_commit", "") or "").strip():
-                import exec as execmod
-                tip = execmod.target_tip(run_dir, t)
-                if tip:   # 사용자가 직접 내보낸 마무리: 받는 브랜치의 끝을 적는다(배포 계획이 읽는다)
-                    d2 = devflow_lib.Doc(t["_path"])
-                    d2.set("exported_commit", tip)
-                    d2.save()
-                    print("exported_commit={}(개발 기준 브랜치의 지금 끝)".format(tip))
     except Reject as e:
         print("거부: {} — {} (머리 파일은 그대로)".format(tid, e))
         return 3

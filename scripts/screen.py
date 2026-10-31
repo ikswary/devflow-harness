@@ -171,6 +171,13 @@ def count_claims(screen_cells, criterion, facts):
     return out
 
 
+def cmd_line_warnings(run_dir, tasks, t):
+    """cmd 줄(「정해 주실 것」, 배포 계획은 「되돌리기」도) 가운데 exec.py 실행 전 확인(exec.line_problems)에 걸릴 줄.
+    줄이 도는 task·지점·폴더는 exec.screen_lines가 exec.py와 같은 함수로 정한다."""
+    import exec as execmod
+    return ["- {} — {}".format(line, "; ".join(bad)) for line, bad in execmod.screen_lines(run_dir, tasks, t) if bad]
+
+
 def claim_lines(claims, facts):
     """`counts:` 줄 앞에 낼 경고 줄(같은 제목 행, 수치 대조)."""
     lines = ["! 같은 제목 자식 행 {} {}".format(title, n) for title, n in (facts or {}).get("same_titles", [])]
@@ -479,7 +486,8 @@ def build(run_dir, tid, tasks=None):
     run_failed = ""
     if os.path.isfile(run_md):
         run_failed = devflow_lib.sections(devflow_lib.read_text(run_md), level=2).get("통과 못 한 기준", "")
-    judges_ok, judges_why = devflow_lib.judges_present(t)
+    # 묻는 단계(1.1.1부터: 합치기 실행승인 등)는 그 stage 앞에 필요한 판정만 본다(task_set.py 관문과 같은 함수)
+    judges_ok, judges_why = devflow_lib.judges_present(t, devflow_lib.stage_of(t))
     resource_wait = str(t.get("external_progress", "")).strip() if str(t.get("external_progress", "")).startswith("자원 대기:") else ""
     unparsed = [cell for cell in kinds.COUNT_CELLS if devflow_lib.unparsed_cell(screen.get(cell, ""))]
 
@@ -668,6 +676,11 @@ def main(argv):
     if b["missing"]:
         print()
         print("! 「승인 화면」 절에 빠진 칸: {} (작성자에게 채우게 한다)".format(", ".join(b["missing"])))
+    bad_cmds = cmd_line_warnings(run_dir, b["tasks"], t)
+    if bad_cmds:
+        print()
+        print("! 명령 줄 꼴(exec.py가 실행 전에 거부함. 묻기 전에 작성자에게 고치게 한다):")
+        print("\n".join(bad_cmds))
     if b["moved"]:
         print()
         print("판정자 칸 분류대로 옮긴 항목: {}".format(b["moved"]))
