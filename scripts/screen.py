@@ -56,7 +56,7 @@ MAIN_SIGNAL_WORDS = ("권한 거부", "자원 대기", "PID", "잠금")
 SUMMARY_CHARS = 100
 # 메인이 승인 대기 task에 적는 전제 변경 줄의 표지(references/kinds/change/main-order.md). 사용자가 승인 전에 볼 줄이라 자르지 않는다
 PREMISE_MARK = "[전제 바뀜]"
-STARTED_PREFIX = "(작성 시작 뒤) "   # 메인이 승인 전 시작한 task의 표지 앞에 붙이는 접두(change/main-order.md)
+STARTED_PREFIX = "(작성 시작 뒤) "   # 메인이 승인 전 시작한 task의 표지 앞에 붙이는 접두(references/main/selfcheck.md)
 FLOOR_RE = re.compile(r"^재개 바닥 (\d+)K")
 # 화면 줄과 journal 메모. 메인용 요약 두 줄(main_summary), 통과 못 한 기준의 머리와 커밋 안내, 재개 바닥 알림
 SIGNALS_HEAD = "■ 이상 신호 {}건 · 메인이 처리할 것 {}건 → {}"
