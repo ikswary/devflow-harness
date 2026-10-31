@@ -397,7 +397,7 @@ def probe_block(top):
         m = re.match(r"[\s*`]*([^\s*`(（]*)", r[col] if len(r) > col else "")
         return m.group(1)
     bad = sum(1 for r in rows if verdict(r) != "참")
-    return "탐침 가정 거짓·판정불가 {}".format(bad) if bad else ""
+    return "탐침 가정 참 아님 {}".format(bad) if bad else ""
 
 
 def main_summary(t, judge_top):

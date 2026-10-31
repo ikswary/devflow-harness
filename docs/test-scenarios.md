@@ -166,7 +166,7 @@ F1: 손으로 만든 같은 실행 폴더 두 벌. 의존이 풀린 `대기` `de
 | A1 | `spec\example.md` 「인프라 전제」에 `- [Q1] D1 재생성`, `spec\core.md`는 `- 없음`, 세 번째 상세에는 절 없음 → `board.py {폴더} --infra-premise` | `example.md: - [Q1] D1 재생성` 한 줄, `! {세 번째}.md: 「인프라 전제」 절 없음`, 끝 줄 `인프라 결정 task: 없음`. `infra-design` task를 만든 뒤 끝 줄이 `인프라 결정 task: {id} (대기)` |
 | A2 | 인프라 결정 결과의 「확인 안 된 것」에 `[탐침]` 가정 하나와 자식 `kind: probe` 행 → `spawn_children.py` | 탐침 머리 파일 하나. `screen.py`로 인프라 결정 task를 보면 알림 불가 |
 | A3 | 탐침 task: `진행`에서 `--status 승인대기` / `result.md`에 「탐침 기록」 없이 `screen.py` / `stage=기록`을 두 번 | 첫째 거부 `탐침은 읽기 판정을 거친다(자체검증)`. 둘째 `탐침 계획(「탐침 기록」 절 없음)은 늘 승인`. 셋째 `judge.md`가 `judge.plan.md`로 옮겨지고, 두 번째는 `judge.plan.md가 이미 있음` 거부 |
-| A4 | 기록 단계 `result.md`의 `## 탐침 기록` 표(칸 `가정`·`판정`·`관찰`·`근거 로그`)의 판정 칸에 `참` 하나 / `거짓` 하나 → `screen.py` | 앞은 탐침 때문에 막히지 않음. 뒤는 `탐침 가정 거짓·판정불가 1`로 알림 불가(결과승인 단계로 감) |
+| A4 | 기록 단계 `result.md`의 `## 탐침 기록` 표(칸 `가정`·`판정`·`관찰`·`근거 로그`)의 판정 칸에 `참` 하나 / `거짓` 하나 → `screen.py` | 앞은 탐침 때문에 막히지 않음. 뒤는 `탐침 가정 참 아님 1`로 알림 불가(결과승인 단계로 감) |
 | A5 | `spec\example.md`의 `AC-1 … [화면: example-form]`을 `closes_ac`에 둔 `kind: implementation` 행 → `spawn_children.py` / 같은 행을 `fe-implementation`으로 | 앞은 종료 코드 3과 `화면 id가 붙은 인수 기준 AC-1(example-form)을 닫는 행은 fe-implementation: {제목}`, 머리 파일 없음. 뒤는 생김 |
 | A6 | 같은 흐름에 구현 행, 「건드릴 파일」이 `docs/a.md`·`README.md`뿐인 행, 구현 행 → `spawn_children.py --dry-run` | 둘째 행 `의존=-`와 ` 문서 행(자동 의존 없음)`, 셋째 행은 첫째 행에 의존 |
 | A7 | 「건드릴 파일」에 `wrangler.jsonc`가 있는 구현 task(네 칸 0, 판정 통과) → `screen.py` | `알림 조건: 미충족(인프라 경로: wrangler.jsonc)`. 승인 요청·승인이 없는 첫 화면이면 「알릴 것」 뒤에 `- [경로 목록] 화면: client/** / 인프라: … / 문서: … — 틀렸으면 이 답에서 고쳐 주세요`(칸 수에 안 셈) |

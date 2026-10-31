@@ -980,7 +980,7 @@ def test_record_stage_of_other_stage_kind_keeps_judge_cli(run_dir):
     assert not (run_dir.task_dir("T001") / "judge.plan.md").exists()
 
 
-# (마) 자체검증 → 완료(알림)는 승인 기록이 있어도 「탐침 기록」 표의 거짓·판정불가로 막히고, 모두 참이면 받는다
+# (마) 자체검증 → 완료(알림)는 승인 기록이 있어도 「탐침 기록」 표의 참이 아닌 행으로 막히고, 모두 참이면 받는다
 def test_probe_notify_done_follows_record_table(run_dir):
     approved = {"승인 기록": APPROVED}   # 실행승인 답이 이미 있다
     run_dir.task("T001", "탐침", sections=approved, status="자체검증", stage="끝", **PROBE)
@@ -988,7 +988,7 @@ def test_probe_notify_done_follows_record_table(run_dir):
     probe_result(run_dir, cmd=None, verdicts=["참", "거짓"])
     freeze_ok(run_dir, "T001")
     why = check(run_dir, load(run_dir), "자체검증", "완료", record=REC_NOTIFY)
-    assert why == PROBE_NOTIFY_FAIL + " 탐침 가정 거짓·판정불가 1"
+    assert why == PROBE_NOTIFY_FAIL + " 탐침 가정 참 아님 1"
 
     run_dir.task("T002", "탐침", sections=approved, status="자체검증", stage="끝", **PROBE)
     run_dir.judge("T002", now_judge("T002"))
@@ -999,8 +999,8 @@ def test_probe_notify_done_follows_record_table(run_dir):
 
 # R-COR1: 판정 칸은 첫 낱말로 읽는다(굵게·괄호 설명이 붙어도 `참`이 아니면 막고), 가정 행이 없는 표도 막는다
 @pytest.mark.parametrize("verdicts,why", [
-    (["참", "판정불가(로그 없음)"], "탐침 가정 거짓·판정불가 1"),
-    (["**참**", "**거짓**"], "탐침 가정 거짓·판정불가 1"),
+    (["참", "판정불가(로그 없음)"], "탐침 가정 참 아님 1"),
+    (["**참**", "**거짓**"], "탐침 가정 참 아님 1"),
     ([], "탐침 기록 표에 가정 행 없음"),
 ])
 def test_probe_notify_reads_first_word_of_verdict_cell(run_dir, verdicts, why):
