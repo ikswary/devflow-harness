@@ -63,6 +63,32 @@ def test_da_non_bullet_or_pipeless_line_shows_first_30_chars():
     assert lines[-1] == "형식 밖 2줄: {}, - 파이프 없는 결정 줄".format("x" * 30)
 
 
+def test_da_task_id_decision_cell_or_shifted_original_cell_is_malformed():
+    shifted = [
+        "- 2026-10-30 14:35:18 | T015 | 결정 문장 | 원문: \"가\" | T015",
+        "- 2026-10-30 14:35:19 | T015 | 원문: \"가\" | T015",
+        "- 2026-10-30 14:35:20 | T15 | 원문: \"가\" | T015",
+        "- 2026-10-30 14:35:21 | T015,T016 | 원문: \"가\" | T015",
+        "- 2026-10-30 14:35:22 | 결정 문장 | 관련 | 원문: \"가\"",
+        "- 2026-10-30 14:35:23 | 원문: \"가\" | 결정 문장",
+    ]
+    lines, kept, superseded, malformed = decisions.brief_lines("\n".join(shifted) + "\n" + KEEP_1 + "\n")
+    assert (kept, superseded, malformed) == (1, 0, 6)
+    assert lines == [HEAD.format(1, 0), "- 2026-10-30 02:40:51 | 설계를 A·B·C로 나눔",
+                     "형식 밖 6줄: " + ", ".join("2026-10-30 14:35:%d" % n for n in range(18, 24))]
+    # 대조: `T`로 시작하는 일반 낱말과 셋째 칸이 `원문:`인 세 칸 줄은 형식 안이다
+    inside = "- 2026-10-30 14:36:00 | Test 추가 | 원문: \"가\" | T001\n- 2026-10-30 14:36:01 | T로 시작 | 원문: \"나\"\n"
+    assert decisions.brief_lines(inside)[0] == [HEAD.format(2, 0), "- 2026-10-30 14:36:00 | Test 추가",
+                                                "- 2026-10-30 14:36:01 | T로 시작"]
+
+
+def test_da_superseded_line_with_shifted_cells_is_still_superseded():
+    old = "- 2026-10-30 14:37:00 | T015 | 결정 | 원문: \"가\" | - → 대체: 2026-10-30 15:00:00"
+    lines, kept, superseded, malformed = decisions.brief_lines(old + "\n")
+    assert (kept, superseded, malformed) == (0, 1, 0)
+    assert lines == [HEAD.format(0, 1)]
+
+
 # --- (라) 명령행: --brief가 없거나 다르면 사용법과 종료 2 -------------------------------------------------------
 
 def test_ra_cli_without_brief_prints_usage_and_exits_2(tmp_path):

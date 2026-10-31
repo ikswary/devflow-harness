@@ -8,7 +8,8 @@ r"""결정 요약: 실행의 `decisions.md`에서 대체되지 않은 결정을 
     첫 줄  `결정 {n}개 (대체 {m}개 뺌). 전문은 decisions.md에서 시각으로 찾는다`
     결정마다 `- {시각} | {결정 칸의 첫 문장}`(대체된 결정은 뺀다)
     끝 줄  `형식 밖 {k}줄: {시각, …}`(형식에 맞지 않는 비지 않은 줄이 있을 때만)
-  결정 줄은 `- `로 시작하고 `|`가 둘 이상이며 `원문:`으로 시작하는 칸(앞뒤 공백을 뗀 칸)이 있는 줄,
+  결정 줄은 `- `로 시작하고 `|`가 둘 이상이며 셋째 칸(앞뒤 공백을 뗀 칸)이 `원문:`으로 시작하고 둘째 칸(결정 칸)이
+  task id 꼴(`T` 뒤 숫자, 쉼표로 이은 것 포함)이 아닌 줄,
   대체된 결정은 `→ 대체:`가 든 결정 줄이다(대체 판별이 `원문:` 칸 판별보다 앞선다).
   형식 밖 줄의 시각은 `- ` 뒤 첫 `|` 앞 글(앞뒤 공백을 뗌)이고, `- `로 시작하지 않거나 `|`가 없는 줄은 줄 앞 30자다.
   결정 칸은 첫 `|`와 둘째 `|` 사이, 첫 문장은 그 칸에서 첫 `. ` 앞까지(마침표는 남김, 없으면 칸 전체).
@@ -16,11 +17,13 @@ r"""결정 요약: 실행의 `decisions.md`에서 대체되지 않은 결정을 
   종료 코드: 0 정상, 2 사용법 오류
 """
 import os
+import re
 import sys
 
 import devflow_lib
 
 SUPERSEDED = "→ 대체:"
+TASK_ID_CELL = re.compile(r"T\d+(\s*,\s*T\d+)*")
 
 
 def first_sentence(cell):
@@ -49,7 +52,7 @@ def brief_lines(text):
             superseded += 1
             continue
         cells = line[2:].split("|")
-        if not any(c.strip().startswith("원문:") for c in cells):
+        if len(cells) < 3 or not cells[2].strip().startswith("원문:") or TASK_ID_CELL.fullmatch(cells[1].strip()):
             malformed.append(malformed_label(line))
             continue
         kept.append("- {} | {}".format(cells[0].strip(), first_sentence(cells[1].strip())))
