@@ -89,6 +89,17 @@ def test_earliest_line_among_other_tasks_is_reported(run_dir):   # (타) 같은 
     assert "T003" not in proc.output
 
 
+def test_earliest_line_is_chosen_by_time_not_by_scan_order(run_dir):   # (타)의 짝: 가장 이른 줄이 가운데 task에 있음
+    path = setup(run_dir, a_time="2026-10-30 09:30:00")   # T001: 먼저 순회, 09:30
+    earliest = "2026-10-30 08:00:00"
+    run_dir.task("T003", "가장 이른 줄", {"승인 기록": approved_line(earliest, ELEVEN)}, status="완료", **NEW)
+    run_dir.task("T004", "나중에 순회", {"승인 기록": approved_line("2026-10-30 09:00:00", ELEVEN)}, status="완료", **NEW)
+    before = path.read_bytes()
+    proc = record(run_dir, ELEVEN)
+    assert_rejected_unchanged(proc, path, before)
+    assert "같은 원문 재사용: T003 {}".format(earliest) in proc.output
+
+
 def test_reuse_answer_without_same_line_records_plain_line(run_dir):   # (파) 재사용이 아니면 --reuse-answer는 흔적을 남기지 않음
     path = setup(run_dir, a_text="전혀 다른 앞 답입니다 길게")
     proc = record(run_dir, ELEVEN, "--reuse-answer", "같은 답을 다시 씀")
