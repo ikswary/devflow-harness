@@ -96,6 +96,19 @@ def test_da_task_id_cell_boundaries_unicode_digits_and_space_joined():
     assert lines[1] == "- 2026-10-30 14:40:00 | T０１５"
 
 
+def test_da_task_id_cell_middle_dot_trailing_separator_and_stuck_ids_are_malformed():
+    def line(n, cell):
+        return "- 2026-10-30 14:41:%02d | %s | 원문: \"가\" | -" % (n, cell)
+
+    # 소문자 t015는 하네스 task id 표기가 아니고 전각 숫자·일반 낱말은 task id가 아니므로 형식 안이다
+    inside = [line(0, "t015"), line(1, "T０１５"), line(2, "Test 추가"), line(3, "T자형 배치")]
+    outside = [line(10, "T040·T041·T042"), line(11, "T040 · T041"), line(12, "T015,"), line(13, "T015T016"),
+               line(14, "T015·"), line(15, "T015, T016,")]
+    lines, kept, superseded, malformed = decisions.brief_lines("\n".join(inside + outside) + "\n")
+    assert (kept, superseded, malformed) == (4, 0, 6)
+    assert lines[-1] == "형식 밖 6줄: " + ", ".join("2026-10-30 14:41:%d" % n for n in range(10, 16))
+
+
 def test_da_pipe_inside_decision_cell_is_malformed_by_cell_order():
     # 결정 칸에 `|`가 들면 칸 차례가 밀려 셋째 칸이 `원문:`이 아니다(run-files.md의 칸 차례대로 형식 밖)
     text = "- 2026-10-30 14:41:00 | t | A | B | 원문: \"x\" | T1\n"
