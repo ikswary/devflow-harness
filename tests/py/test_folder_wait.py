@@ -224,3 +224,18 @@ def test_spawn_children_stamps_created_without_now(run_dir):
     r = run_script("spawn_children", run_dir, "T003", "--now", "2026-10-30 10:00:00")
     assert r.returncode == 0, r.output
     assert run_dir.tasks()["T004"]["created"] == "2026-10-30 10:00:00"
+
+
+def test_note_keeps_slash_and_semicolon_of_other_text(workspace):
+    c = "폴더 대기: context 5분 (1개) / 흐름 작성 30분"
+    new = "폴더 대기: context 7분 (1개) / 흐름 작성 31분"
+    cases = (("메모 a/ / " + c, "메모 a/; " + new),          # 글 끝 `/`는 남고 구분자 ` / `만 바뀐다
+             ("메모 a;; " + c, "메모 a;; " + new),           # 글 끝 `;`는 남는다
+             ("메모 a;; " + c + " / 메모 b;", "메모 a;; " + new + "; 메모 b;"),
+             ("a/b 3/4 " + c, "a/b 3/4; " + new),             # 글 안 ` / `가 없는 `/`
+             (c + " / /x", new + "; /x"))
+    for cell, want in cases:
+        measure = write(workspace / "measure.md", HEAD + "| dryrun | 1K | " + cell + " |\n")
+        assert collect.write_note(str(measure), "dryrun", [new])
+        last = measure.read_text(encoding="utf-8").splitlines()[-1]
+        assert last == "| dryrun | 1K | " + want + " |", last
