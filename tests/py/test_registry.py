@@ -7,7 +7,7 @@
 - 시험 1(c): 엔진(`scripts/*.py`, `kinds.py` 제외)의 kind 이름만으로 된 집합·목록·튜플 리터럴(2개 이상)과 kind 키만의
   사전 리터럴은 (파일 이름, 원소)가 허용 목록 `HOOK_LITERALS`에 있고, 허용 목록의 kind는 모두 훅이 있다
 - 시험 1(d): 엔진의 kind 리터럴(docstring·주석 제외)마다 그 kind의 `engine_hooks`가 비어 있지 않다
-- 시험 2(다): `references/formats/task-file.md` 표 첫 칸의 키 = `TASK_KEYS`의 이름(V-09. 생성 대신 대조)
+- 시험 2(다): `references/formats/task-file.md` 표 첫 칸의 키 = `TASK_KEYS`에서 engine 칸을 뺀 이름(V-09. 생성 대신 대조)
 - 시험 2: `writers`의 에이전트 이름 ⊆ `AGENTS`, `AGENTS` = `agents/*.md`(양방향), 이름마다 frontmatter `name`·`model`·`tools`가 같음
 - 시험 2(나): 에이전트 정의 9의 틀 — frontmatter 다음 빈 줄 아닌 줄이 루트 줄 `플러그인 폴더:`, 판정자 둘은
   그다음 판 표지 `판 표지:`, 그다음 H1 `# devflow-harness:{이름} — {역할}`, `##` 차례가 「역할」·「읽을 것」·「역할 고유 규칙」·
@@ -103,8 +103,8 @@ def test_2c_task_file_keys_are_task_keys():
     text = TASK_FILE.read_text(encoding="utf-8")
     keys = [k for line in text.splitlines() if line.startswith("| `")
             for k in re.findall(r"`([^`]+)`", line.split("|")[1])]
-    names = [k for k, _, _ in kinds.TASK_KEYS]
-    assert len(names) == 46
+    names = [k for k, _, _ in kinds.TASK_KEYS if k not in kinds.ENGINE_KEYS]
+    assert len(names) == 47
     assert sorted(keys) == sorted(names), "task-file.md 키 칸과 TASK_KEYS가 다름: {}".format(
         sorted(set(keys) ^ set(names)))
 
@@ -456,6 +456,7 @@ KIND_EXCEPTIONS = [
     ("references/main/new-task.md", "| 변경 | 계기", "E1"),
     ("references/main/new-task.md", "| 합치기 | 그 흐름 브랜치의 커밋 전부", "E1"),
     ("references/main/new-task.md", "| 원인 분석(실행 도중 원인 모르는 실패)", "E1"),
+    ("references/main/new-task.md", "| 넘긴 「하실 일」(`probe`)", "E1"),
     ("references/main/new-task.md", "| 받아오기 충돌·실패의 수정(`fix`)", "E1"),
     ("references/main/new-task.md", "| 「묻는다」 지적의 수정(답을 받은 뒤)과 그 재검증", "E1"),
     ("references/main/new-task.md", "| 배포 다시 계획(`deploy-plan`, 환경마다 하나)", "E1"),
@@ -846,7 +847,7 @@ def reader_line(path):
 def test_practice_reader_lines_match_kind_modules():
     readers = practice_readers()
     files = sorted(PRACTICE_DIR.glob("*.md"))
-    assert len(files) == 12 and set(readers) <= {p.stem for p in files}, (sorted(readers), [p.name for p in files])
+    assert len(files) == 14 and set(readers) <= {p.stem for p in files}, (sorted(readers), [p.name for p in files])
     for path in files:
         line = reader_line(path)
         expected = readers.get(path.stem, set())

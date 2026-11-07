@@ -471,7 +471,7 @@ def main(argv):
             #. 그 밖의 의존은 행과 같은 흐름 차례가 정한다(되살리면 고리가 생긴다)
             for dep in pairs[c["title"]].get("depends_on", []):
                 if dep not in depends and dep in tasks and tasks[dep].get("kind") == "change" \
-                        and tasks[dep].get("status") != kinds.DONE and dep != parent_id:
+                        and not devflow_lib.dependency_done(tasks[dep]) and dep != parent_id:
                     depends.append(dep)
         status = "대기"
         if c["title"].lstrip().startswith("[백로그]") or c["title"] in shelved:

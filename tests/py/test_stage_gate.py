@@ -73,7 +73,7 @@ def set_meta(run_dir, **kv):
 def test_stage_judges_table_covers_ask_stages_of_stage_kinds_except_probe():
     for (kind, stage), need in kinds.STAGE_JUDGES.items():
         assert kind in kinds.STAGE_KINDS and kind != "probe", kind
-        assert stage in kinds.ASK_STAGES and stage in kinds.stages_of(kind), (kind, stage)
+        assert stage in kinds.ASK_STAGES and (stage in kinds.stages_of(kind) or stage in kinds.OLD_STAGES[kind]), (kind, stage)
         assert set(need) <= {"read", "run"}
     assert kinds.STAGE_JUDGES[("wrap-up", "실행승인")] == ("read", "run")
     assert kinds.STAGE_JUDGES[("merge", "실행승인")] == ()
@@ -389,6 +389,37 @@ def test_doc_check_needs_exit_code_and_failed_check_needs_risk_acceptance(run_di
     rc, msg = execmod.freeze(str(run_dir), "T001", "넣기승인")
     assert rc == 0, msg
     assert execmod.frozen_tips(run_dir.tasks()["T001"], "넣기승인") == {1: tip}
+
+
+@pytest.mark.parametrize("reason", ["빌드 식별자", "작업 트리", "빌드 식별자 작업 트리"])
+def test_failed_final_ci_is_not_closed_by_answer_for_another_risk(run_dir, reason):
+    # 배포 대상 동일성의 이유가 붙은 답은 사람이 동의한 위험이 다르므로 최종 CI 실패를 닫지 않는다
+    run_dir.flow("only", status="검증 끝남", role="feature", round="1")
+    make(run_dir, kind="wrap-up", block="마무리", flow="only", status="승인대기", stage="끝", exported_commit="abc1234",
+         judge=READ_JUDGE, judge_run=run_judge(failed="- 기준 5: 시험 2개 실패", final_ci=final_ci()),
+         started_version="1.0.1", rules="2")
+    d = run_dir.task_dir("T001")
+    write(d / "approved-cmds-실행승인.md", "해시: {}\n얼린 시각: 2026-10-15 10:00:00\n\n1. echo ok\n".format(execmod.digest(["echo ok"])))
+    write(d / "exec.md", "- 2026-10-15 10:01:00 | echo ok | 종료 코드 0 | 지점 실행승인:1\n")
+    add_record(run_dir, "- 2099-01-01 00:00:00 | 승인 | 위험 수용 {} | 원문: \"그 위험만 받는다\"".format(reason))
+    t = run_dir.tasks()["T001"]
+    assert devflow_lib.risk_accepted(t) is False
+    why = task_set.stage_rule(str(run_dir), t, "승인대기", "완료", ctx(record=REC_OK, old_stage="결과승인"))
+    assert why.startswith("최종 CI에 통과 못 한 기준 1개이고 승인 기록에 위험 수용 답이 없음"), why
+    add_record(run_dir, "- 2099-01-01 00:00:01 | 승인 | 위험 수용 | 원문: \"알고 넣습니다\"")
+    assert devflow_lib.risk_accepted(run_dir.tasks()["T001"]) is True    # 옛 꼴 답은 그대로 닫는다
+
+
+@pytest.mark.parametrize("reason", ["빌드 식별자", "작업 트리"])
+def test_failed_doc_check_is_not_closed_by_answer_for_another_risk(run_dir, repo_run, reason):
+    git(repo_run, "worktree", "add", "-q", str(repo_run.parent / "integ-wt"), "integ")
+    deploy_put(run_dir, repo_run, code="1")
+    add_record(run_dir, "- 2099-01-01 00:00:00 | 승인 | 위험 수용 {} | 원문: \"그 위험만 받는다\"".format(reason))
+    rc, msg = execmod.freeze(str(run_dir), "T001", "넣기승인")
+    assert rc == 3 and "종료 코드가 1" in msg, msg
+    add_record(run_dir, "- 2099-01-01 00:00:01 | 승인 | 위험 수용 | 원문: \"알고 넣습니다\"")
+    rc, msg = execmod.freeze(str(run_dir), "T001", "넣기승인")
+    assert rc == 0, msg
 
 
 def test_put_lines_with_commit_are_a_problem():

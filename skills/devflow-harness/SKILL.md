@@ -19,7 +19,7 @@ description: "개발 작업을 task 단위로 흐르게 하는 새 개발 하네
 ## 구성
 - 에이전트 9의 모델은 `references/registry/agents.md`, 맡는 kind는 `references/registry/kinds.md`의 `writers`에 있고, 부르는 이름은 `devflow-harness:{에이전트}`다. code-writer는 충돌 해결도, release-writer는 배포의 기록을 쓰는 뒤 절반도 맡는다. read-judge는 읽고 대조하는 판정, run-judge는 빌드·테스트·변이 확인의 독립 실행과 배포 뒤 확인을 한다.
 - 띄울 때 모델을 바꾸는 경우: code-writer는 난이도 `단순`이면 `model: "sonnet"`. `fable`은 사용자가 「이번 실행의 값」 `fable로 띄울 역할`에 적은 역할에만 쓴다(비용이 커서 기본으로 쓰지 않는다).
-- **실행 모드**: 서브에이전트 위임. task마다 수명이 짧은 에이전트를 백그라운드로 띄운다(`Agent(subagent_type, name: "{역할 줄임}-{task id}", prompt)`). 에이전트는 task 하나만 맡고 끝난다. 실행 중인 에이전트에 정정 메시지를 보내지 않는다(에이전트의 반환은 `SendMessage`가 아니라 마지막 출력이다. `references/formats/return.md`). task 파일을 고친 뒤 새로 띄우거나, 끝난 뒤 그 산출물을 고치는 task(코드면 코드를 고치는 task)로 만든다.
+- **실행 모드**: 서브에이전트 위임. task마다 수명이 짧은 에이전트를 백그라운드로 띄운다(`Agent(subagent_type, name: "{역할 줄임}-{task id}", prompt)`). 에이전트는 task 하나만 맡고 끝난다. 실행 중인 에이전트에 정정 메시지를 보내지 않는다(반환은 마지막 출력이다). task 파일을 고친 뒤 새로 띄우거나, 끝난 뒤 그 산출물을 고치는 task(코드면 코드를 고치는 task)로 만든다.
 - 다른 에이전트는 메인만 띄운다. 사용자에게 묻는 것도 메인만 한다(`AskUserQuestion`).
 
 ## 단계 파일
@@ -27,20 +27,23 @@ description: "개발 작업을 task 단위로 흐르게 하는 새 개발 하네
 | 절 | 파일 | 읽는 때 |
 |---|---|---|
 | 스크립트 | `references/main/scripts.md` | 스크립트를 돌릴 때 |
-| 0. 시작과 재개(1~3·6·7) | `references/main/start.md` | 새 요청, 새 실행, 세션을 끝낼 때 |
+| 0. 시작과 재개(1~3·6·7) | `references/main/start.md` | 새 요청, 새 실행, 세션 끝 |
 | 0. 시작과 재개(4·5) | `references/main/resume.md` | 재개, 다시 열기 |
 | 1. 루프 | `references/main/loop.md` | 늘 |
-| 2. 자체 검증 | `references/main/selfcheck.md` | 작성자의 반환을 받은 뒤 판정할 때 |
-| 3. 승인과 알림 | `references/main/approval.md` | 알리거나 승인을 물을 때, 답을 받은 턴 |
-| 3. 승인과 알림 — 사용자 할 일 대기 | `references/main/waiting-user.md` | 「하실 일」로 넘길 때, 사용자가 했다고 답할 때 |
+| 2. 자체 검증 | `references/main/selfcheck.md` | 작성자 반환 뒤 판정할 때 |
+| 3. 승인과 알림 | `references/main/approval.md`, `references/main/sheet-upload.md` | 알리거나 승인을 물을 때, 답을 받은 턴 |
+| 3. 승인 — 위임과 답의 표지 | `references/main/delegation.md` | 위임 원문, `위임` 행 |
+| 3. 승인 — 사용자 할 일 대기 | `references/main/waiting-user.md` | 「하실 일」을 넘길 때, 했다는 답 |
 | 4. 자식 만들기 | `references/main/children.md` | 자식을 만들 때 |
 | 5. 메인이 만드는 task | `references/main/new-task.md` | 메인이 task를 만들 때 |
 | 6. 코드 폴더 | `references/main/code-folder.md` | 코드 폴더·브랜치, 기준선, 커밋, 받아오기 |
+| 6. 코드 폴더 — 치워 두기 | `references/main/parking.md` | 코드 task의 보류, 재현 시험 통과, 붙이다 막힐 때 |
+| 6. 코드 폴더 — 작업 칸 | `references/main/slots.md` | 칸 2 이상 |
 | 7. 메인이 실행하는 명령 | `references/main/commands.md` | 밖으로 나가는 명령, 오래 도는 명령, 권한 거부 |
 | 8. 메인의 컨텍스트 | `references/main/context.md` | 늘 |
 | 9. 실행의 끝 | `references/main/run-end.md` | 실행을 끝낼 때 |
-| 오류 처리 | `references/main/errors.md` | 에이전트 실패·한도, 옛 task를 손볼 때 |
-| 하네스를 고칠 때 | `references/main/maintain.md` | 하네스를 고칠 때 |
+| 오류 처리 | `references/main/errors.md` | 에이전트 실패·한도, 옛 task 손보기 |
+| 하네스 수정 | `references/main/maintain.md` | 고칠 때 |
 - 늘 읽는 것: 공통 계약 `references/core/contract.md`.
 - 그 일을 할 때 읽는 것: 이름과 파일 형식 `references/core/formats.md`(목차)·`references/formats/`, 등록표 `references/core/registry.md`(목차)·`references/registry/`, task 종류별 정의 `references/kinds/{정의}.md`, 작성자 공통 규칙 `references/roles/writer.md`, 스크립트 `scripts/`, 새 실행의 정찰 `references/practices/project-recon.md`.
 - 다루는 task의 kind에 `references/kinds/{정의}/main-order.md`가 있으면 읽는다.

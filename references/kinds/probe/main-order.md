@@ -2,7 +2,8 @@
 
 읽는 때: 메인이 탐침 task(`probe`)를 다룰 때.
 
-- **작성자 고르기**: 부모 kind로 고른다. 부모가 인프라 결정(`infra-design`)이면 `devflow-harness:infra-writer`(인스턴스 `infra-{id}`), 그 밖(`design`)이면 `devflow-harness:code-writer`(인스턴스 `code-{id}`). 머리 파일 키로 고르지 않는다.
+- **넘긴 「하실 일」**: 사람이 「하실 일」을 Claude에게 넘기면 답을 받는 턴에 `--record "하실 일 넘김|[하실 일 넘김 T0xx] {항목}|{원문}"`으로 적고(마무리 시작 조건이 이 표지의 탐침을 대조한다. 그만두면 `decisions.md`에 `→ 대체:`) 이 kind로 task를 만든다(`--origin "하실 일 넘김 {낸 task}"`, 「범위」에 넘긴 일 원문과 `남는 것: 자원`). 작성자는 늘 `infra-writer`다. 명령마다 묻는다. 넘긴 일이 승인을 기다리는 명령 단계 안의 `[사용자 실행]` 줄이면 새 task를 만들지 않고 그 줄의 표시를 지운 고친 판을 같은 task에서 다시 받는다.
+- **작성자 고르기**: 그 밖에는 부모 kind로 고른다. 부모가 인프라 결정(`infra-design`)이면 `devflow-harness:infra-writer`(인스턴스 `infra-{id}`), 그 밖(`design`)이면 `devflow-harness:code-writer`(인스턴스 `code-{id}`). 머리 파일 키로 고르지 않는다.
 - **명령 폴더**: 머리 파일 `flow`의 `flow.md` `dir`이 있으면 그 폴더, 없으면 원래 폴더.
 
 순서(전이는 `task_set.py {실행 폴더} {id} …`):

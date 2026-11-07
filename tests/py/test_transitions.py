@@ -17,6 +17,7 @@ from datetime import datetime
 import pytest
 
 import exec as execmod
+import kinds
 import screen
 import task_set
 from conftest import run_script, write
@@ -419,6 +420,21 @@ def test_r22_16_pairs_outside_table_rejected(run_dir, old, new):
     assert why == "{} {}→{}(--unlisted \"이유\"로만)".format(NOT_TABLE, old, new)
 
 
+@pytest.mark.parametrize("key", sorted(kinds.ENGINE_KEYS))
+def test_v120_engine_keys_are_not_settable_by_hand(run_dir, key):
+    make(run_dir, status="진행", judge=READ_JUDGE)
+    p = run_script("task_set", str(run_dir.path), "T001", "{}=x".format(key))
+    assert p.returncode == 3, p.output
+    assert task_set.SCRIPT_OWNED.format(key) in p.stdout
+
+
+def test_v120_running_to_waiting_keeps_the_unlisted_path(run_dir):
+    run_dir.task("T001", "전이 시험", status="진행")
+    p = run_script("task_set", run_dir, "T001", "--status", "대기", "--unlisted", "띄우기 전에 되돌림")
+    assert p.returncode == 0, p.output
+    assert "표 밖 전이" in (run_dir.task_dir("T001") / "task.md").read_text(encoding="utf-8")
+
+
 # ================================================================ 17·18행, 없앤 값 멈춤 (명령행)
 
 # 17 --unlisted: 전이표에 없는 짝만 실행하고 「표 밖 전이」 절과 journal.md에 남긴다. U가 없으면 거부.
@@ -653,7 +669,7 @@ def test_r23_2_waiting_approval_to_run_needs_next_run_stage(run_dir):
     for tid, st in (("T001", "결과승인"), ("T002", "끝")):
         t = make(run_dir, tid, kind="merge", status="승인대기", stage=st, **NEW)
         assert rule(run_dir, t, "승인대기", "진행", record=REC_OK) \
-            == "승인대기→진행은 다음 실행 단계와 함께(stage=실행승인/실행/결과승인/끝 가운데 묻는 단계가 아닌 것)"
+            == "승인대기→진행은 다음 실행 단계와 함께(stage=실행/결과승인/끝 가운데 묻는 단계가 아닌 것)"
         assert rule(run_dir, t, "승인대기", "진행", snapshot=True) is None
     t3 = make(run_dir, "T003", kind="merge", status="승인대기", stage="실행", **NEW)
     assert rule(run_dir, t3, "승인대기", "진행", record=REC_OK) is None

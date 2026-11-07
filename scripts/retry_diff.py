@@ -19,6 +19,8 @@
 
 엔진 층 2(검사·계산). import는 devflow_lib·kinds와 표준 라이브러리만. 사본에 넣을 파일을 고르는 함수(snapshot_sources)와
 임시 색인으로 git을 돌리는 TempGit은 사본을 뜨는 task_set.py도 쓴다(같은 집합·같은 방법).
+「치워 두기」 절(설계 8.2절)도 같은 방법으로 뜬다. 코드 폴더를 바꾸는 함수는 그 절의 revert_parked·cancel_parked·apply_parked뿐이고
+`task_set.py --park`·`--unpark`·`--park-cancel`만 부른다(이 명령행 도구는 부르지 않는다).
 """
 import difflib
 import glob
@@ -160,7 +162,8 @@ class TempGit:
         return False
 
     def _run(self, args, env, binary=False):
-        cmd = ["git", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-C", self.dir] + list(args)
+        cmd = ["git", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "core.longpaths=true",
+               "-C", self.dir] + list(args)
         try:
             out = subprocess.run(cmd, capture_output=True, env=env)
         except OSError as e:
@@ -195,7 +198,8 @@ class TempGit:
         """지금 작업 트리(추적 안 된 새 파일 포함, .gitignore 제외)의 트리. 임시 색인에 `git add -A`."""
         path = os.path.join(self.tmp, index)
         if os.path.isfile(self.real_index):
-            shutil.copyfile(self.real_index, path)
+            # 시각까지 복사한다. 색인이 새것처럼 보이면 git의 같은 초 재확인이 꺼져 같은 크기로 고친 파일을 놓친다
+            shutil.copy2(self.real_index, path)
         self.git(index, "add", "-A")
         return self.git(index, "write-tree").strip()
 
@@ -217,8 +221,293 @@ class TempGit:
             self.git(index, "apply", "--cached", "--whitespace=nowarn", patch_path)
         return self.git(index, "write-tree").strip()
 
+    def capture(self):
+        """(HEAD, 지금 트리, HEAD 대비 patch 바이트, 바뀐 파일 수). 재시도 사본과 치워 두기가 같은 꼴로 뜬다."""
+        head = self.head()
+        tree = self.now_tree()
+        data, changed = self.patch(head)
+        return head, tree, data, changed
+
     def status(self):
         return [line for line in self.plain("status", "--porcelain", "-uall").splitlines() if line.strip()]
+
+
+# ---------------------------------------------------------------- 치워 두기(설계 8.2절)
+
+# 표지(`parked`, `parked_pending`, `repro_patch`)의 값: `{패치 경로} {뜰 때의 HEAD} {파일 목록 해시}`. 패치 경로는 실행 폴더 기준이다
+PARK_NO_HEAD = "-"     # 커밋이 없는 저장소
+PARK_BEFORE = "붙기 전"
+PARK_AFTER = "붙은 뒤"
+PARK_CONFLICT = "충돌"
+PARK_MISMATCH = "어긋남"
+PARK_PARTIAL = "일부만 있음"   # 폴더의 변경이 패치 파일의 일부뿐(붙이다 끊겼거나 다른 변경)
+# 표지 `park_applying`의 값. 뜰 때의 목록과 달라져도 붙은 뒤를 알아보는 근거다
+APPLYING = "붙이는 중"
+APPLY_CONFLICT = "충돌"
+PATH_CHUNK = 100       # 한 번에 넘기는 경로 수(명령 줄 길이 상한)
+SHOWN_PATHS = 20       # 거부 줄에 싣는 경로 수
+CONFLICT_MARK = re.compile(rb"^<{7} .*?^>{7} ", re.M | re.S)
+
+
+def real_git(folder, *args, env=None, stdin=None):
+    """코드 폴더의 진짜 색인으로 돈다. 실패하면 GitError."""
+    cmd = ["git", "--literal-pathspecs", "-c", "core.longpaths=true", "-C", folder] + list(args)
+    try:
+        out = subprocess.run(cmd, capture_output=True, env=env, input=stdin)
+    except OSError as e:
+        raise GitError("git을 돌리지 못함: {}".format(e))
+    if out.returncode != 0:
+        raise GitError("git {} 종료 {}: {}".format(args[0], out.returncode, error_line(out.stderr)))
+    return out.stdout
+
+
+def error_line(stderr):
+    """git 오류 출력에서 이유가 적힌 줄. `error:` 줄을 먼저 고른다(`Applied patch … cleanly.`가 앞에 올 수 있다)."""
+    lines = stderr.decode("utf-8", "replace").strip().splitlines()
+    return next((x for x in lines if x.startswith("error:")), lines[0] if lines else "")
+
+
+def status_entries(folder):
+    """[(XY, 경로)]. `-z`라 한글 경로가 이스케이프되지 않는다. `GIT_OPTIONAL_LOCKS=0`이라 색인을 다시 쓰지 않는다."""
+    raw = real_git(folder, "status", "--porcelain", "-z", "-uall", "--no-renames",
+                   env=dict(os.environ, GIT_OPTIONAL_LOCKS="0"))
+    return [(x[:2].decode("ascii"), os.fsdecode(x[3:])) for x in raw.split(b"\0") if x]
+
+
+def unmerged(entries):
+    return [p for xy, p in entries if "U" in xy or xy in ("AA", "DD")]
+
+
+def list_digest(names):
+    return sha16(b"\0".join(sorted(os.fsencode(n) for n in names)))
+
+
+def park_mark(patch_rel, head, names):
+    return "{} {} {}".format(patch_rel, head or PARK_NO_HEAD, list_digest(names))
+
+
+def parse_mark(value):
+    """표지 값을 (패치 경로, HEAD 또는 None, 파일 목록 해시)로."""
+    patch, head, digest = str(value).split()
+    return patch, None if head == PARK_NO_HEAD else head, digest
+
+
+def _os_path(folder, name):
+    """파일 함수에 넘길 경로. Windows는 260자 제한을 넘는 경로도 다루게 접두어를 붙인다."""
+    path = os.path.abspath(os.path.join(folder, name))
+    return "\\\\?\\" + path if os.name == "nt" and not path.startswith("\\\\") else path
+
+
+def _require_top(folder):
+    """코드 폴더가 저장소 맨 위인지. 하위 폴더면 `git apply`가 밖 경로를 말없이 건너뛰고 성공한다."""
+    if real_git(folder, "rev-parse", "--show-prefix").strip():
+        raise GitError("코드 폴더가 저장소 맨 위가 아님: {}".format(folder))
+
+
+def _tree_names(g, index, a, b):
+    raw = g.git(index, "diff", "--name-only", "-z", "--no-renames", a, b, binary=True)
+    return {os.fsdecode(x) for x in raw.split(b"\0") if x}
+
+
+def _parents(name):
+    """`a/b/c`의 `a/b`, `a`."""
+    out = []
+    while "/" in name:
+        name = name.rsplit("/", 1)[0]
+        out.append(name)
+    return out
+
+
+def _not_restorable(folder, touched, in_patch):
+    """touched를 되돌리면 사라지는데 패치로 돌아오지 않는 경로. 되돌리는 명령이 돌기 전에 묻는 하나뿐인 검사다. status와 패치가 보지 못하는
+    것은 무시되는 파일과 안쪽 저장소·서브모듈이다. 복원 명령은 그 경로 자리, 그 아래, 부모 자리의 파일을 치우거나 덮어쓰므로
+    무시되는 파일이 touched와 같거나 그 아래이거나 그 부모이면 복원되지 않는다."""
+    lost = set(touched) - in_patch
+    lost.update(n for n in touched if os.path.lexists(_os_path(folder, posixpath.join(n, ".git"))))
+    paths = {n.rstrip("/") for n in touched}
+    parents = {p for n in paths for p in _parents(n)}
+    raw = real_git(folder, "ls-files", "-o", "-i", "--exclude-standard", "-z")
+    for name in (os.fsdecode(x) for x in raw.split(b"\0") if x):
+        if name in paths or name in parents or paths.intersection(_parents(name)):
+            lost.add(name)
+    return sorted(lost)
+
+
+def _require_restorable(folder, touched, in_patch):
+    lost = _not_restorable(folder, touched, in_patch)
+    if lost:
+        raise GitError("{}: 패치로 복원되지 않는 경로(무시되는 파일, 안쪽 저장소, 서브모듈, 패치 밖 변경)가 있어 되돌리지 않음: {}{}".format(
+            PARK_MISMATCH, ", ".join(lost[:SHOWN_PATHS]), " 외 {}개".format(len(lost) - SHOWN_PATHS) if len(lost) > SHOWN_PATHS else ""))
+
+
+def park_capture(folder):
+    """(HEAD, patch 바이트, 파일 목록). 코드 폴더를 바꾸지 않는다. patch를 HEAD에 얹은 트리가 지금 트리와 같고 status의 변경이
+    모두 patch에 있을 때만 돌려준다. 충돌 중인 파일, 패치로 복원되지 않는 경로(_not_restorable), 되돌리면 무시 규칙이 바뀌는
+    `.gitignore`(가려졌던 파일이 드러나 되돌리기가 끝나지 않는다)가 있으면 GitError다."""
+    _require_top(folder)
+    entries = status_entries(folder)
+    names = [p for _, p in entries]
+    if unmerged(entries):
+        raise GitError("충돌 중인 파일이 있어 치우지 않음: {}".format(", ".join(unmerged(entries))))
+    _require_restorable(folder, names, set(names))   # 안쪽 저장소는 임시 색인에도 올라가지 않으므로 뜨기 전에 본다
+    ignores = [p for p in names if posixpath.basename(p) == ".gitignore"]
+    if ignores:
+        raise GitError("`.gitignore`를 바꾼 task는 치우지 않음: {}".format(", ".join(ignores)))
+    with TempGit(folder) as g:
+        head, tree, data, _ = g.capture()
+        if data:
+            check = os.path.join(g.tmp, "check.patch")
+            with open(check, "wb") as f:
+                f.write(data)
+            if g.tree_from_patch(head, check) != tree:
+                raise GitError("뜬 패치로 지금 트리를 다시 세우지 못함")
+        base = head or g.git("now.index", "hash-object", "-t", "tree", os.devnull).strip()
+        in_patch = _tree_names(g, "now.index", base, tree)
+    if data:
+        _require_restorable(folder, names, in_patch)
+    return head, data, names
+
+
+def _delete_new(folder, names):
+    """HEAD에 없는 파일: 색인에서 빼고 지운다. 뜬 파일 목록의 파일만 지우고, 그래서 빈 부모 폴더만 치운다
+    (추적 파일이 있던 자리면 복원이 막힌다). 색인 삭제는 경로 규칙이 없는 `update-index`다(같은 이름의 추적 폴더를 건드리지 않는다)."""
+    if names:
+        real_git(folder, "update-index", "--force-remove", "-z", "--stdin",
+                 stdin=b"".join(os.fsencode(n) + b"\0" for n in names))
+    for name in names:
+        path = _os_path(folder, name)
+        try:
+            if os.path.lexists(path):
+                os.remove(path)
+            parent = os.path.dirname(name)
+            while parent:
+                os.rmdir(_os_path(folder, parent))
+                parent = os.path.dirname(parent)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            if os.path.lexists(path):
+                raise GitError("{}을 지우지 못함: {}".format(name, e))   # 빈 폴더가 아니어서 못 지운 부모는 그대로 둔다
+
+
+def _restore_tracked(folder, names):
+    """HEAD에 있는 파일: 색인과 작업 트리를 HEAD로."""
+    for i in range(0, len(names), PATH_CHUNK):
+        real_git(folder, "restore", "--source=HEAD", "--staged", "--worktree", "--", *names[i:i + PATH_CHUNK])
+
+
+def _compare(folder, mark, patch_path):
+    """(패치의 파일, 패치 결과와 다른 파일). 남은 변경이 모두 패치에 든 내용일 때만 돌려주고, 패치에 없는 내용(뜬 뒤 고친 파일,
+    다른 새 파일)이 있거나 HEAD가 달라졌으면 GitError다. 코드 폴더를 바꾸지 않는다."""
+    _, head, _ = parse_mark(mark)
+    with TempGit(folder) as g:
+        if g.head() != head:
+            raise GitError("{}: 뜬 뒤 HEAD가 바뀜({})".format(PARK_MISMATCH, g.head() or "커밋 없음"))
+        now = g.now_tree()
+        base = head or g.git("now.index", "hash-object", "-t", "tree", os.devnull).strip()
+        want = g.tree_from_patch(head, patch_path)
+        differs = _tree_names(g, "now.index", now, want)
+        extra = _tree_names(g, "now.index", base, now) & differs
+        in_patch = _tree_names(g, "now.index", base, want)
+    if extra:
+        raise GitError("{}: 패치에 없는 내용이 있어 건드리지 않음: {}".format(PARK_MISMATCH, ", ".join(sorted(extra))))
+    return in_patch, sorted(differs)
+
+
+def _revert(folder, head, names):
+    tracked = set()
+    if head:
+        raw = real_git(folder, "ls-tree", "-r", "-z", "--name-only", head)
+        tracked = {os.fsdecode(x) for x in raw.split(b"\0") if x}
+    # 새 파일을 먼저 지운다. 추적 파일이 있던 자리에 새 파일·폴더가 있으면 복원이 막힌다
+    _delete_new(folder, [n for n in names if n not in tracked])
+    _restore_tracked(folder, [n for n in names if n in tracked])
+    left = status_entries(folder)
+    if left:
+        raise GitError("되돌린 뒤에도 변경이 남음: {}".format(", ".join(p for _, p in left)))
+
+
+def revert_parked(folder, mark, patch_path):
+    """패치에 담긴 변경만 작업 트리에서 되돌린다. 끊겼다 다시 불러도 된다."""
+    in_patch, _ = _compare(folder, mark, patch_path)
+    names = [p for _, p in status_entries(folder)]
+    _require_restorable(folder, names, in_patch)   # 임시 색인이 놓쳐도 status가 본 변경은 되돌리지 않는다
+    _revert(folder, parse_mark(mark)[1], names)
+
+
+def cancel_parked(folder, mark, patch_path):
+    """끊긴 되돌리기를 취소한다: 남은 변경이 패치 안의 것뿐이면 아무것도 되돌리지 않고, 패치 파일 가운데 이미 HEAD로 돌아간 것만 붙인다
+    (이미 패치 결과인 파일은 건드리지 않으므로 지우지 못하는 파일에 막히지 않는다). 끊겼다 다시 불러도 된다."""
+    _, todo = _compare(folder, mark, patch_path)
+    for i in range(0, len(todo), PATH_CHUNK):
+        ok, err = apply_parked(folder, parse_mark(mark)[1], patch_path, only=todo[i:i + PATH_CHUNK])
+        if not ok:
+            raise GitError("패치를 다시 붙이지 못함: {}".format(err))
+    left = _compare(folder, mark, patch_path)[1]
+    if left:
+        raise GitError("패치를 다시 붙였는데 다른 파일이 남음: {}".format(", ".join(left)))
+
+
+def apply_parked(folder, head, patch_path, only=None):
+    """(붙었는가, 오류 줄). HEAD가 뜰 때와 같으면 `git apply`, 다르면 `git apply --3way`. 충돌이면 표지를 남기고 False다.
+    only가 있으면 그 경로만 붙인다(`--include`는 글롭 패턴이라 특수 글자를 막는다)."""
+    _require_top(folder)
+    now = real_git(folder, "rev-parse", "--verify", "-q", "HEAD^{commit}").decode("ascii").strip() if head else None
+    args = ["git", "-c", "core.longpaths=true", "-C", folder, "apply", "--whitespace=nowarn"] \
+        + ([] if now == head else ["--3way"]) \
+        + ["--include=" + re.sub(r"([*?\[\\])", r"\\\1", p) for p in only or []] + [patch_path]
+    try:
+        out = subprocess.run(args, capture_output=True)
+    except OSError as e:
+        raise GitError("git을 돌리지 못함: {}".format(e))
+    return out.returncode == 0, error_line(out.stderr)
+
+
+def markers_left(folder, names):
+    """충돌했던 파일 가운데 충돌 표시가 남은 것."""
+    left = []
+    for name in names:
+        path = _os_path(folder, name)
+        if os.path.isfile(path):
+            with open(path, "rb") as f:
+                if CONFLICT_MARK.search(f.read()):
+                    left.append(name)
+    return left
+
+
+def missing_new_files(folder, mark, patch_path):
+    """패치가 더한 새 파일 가운데 폴더에 없는 것(충돌을 풀다 함께 사라졌는지 보려고)."""
+    head = parse_mark(mark)[1]
+    with TempGit(folder) as g:
+        base = head or g.git("before.index", "hash-object", "-t", "tree", os.devnull).strip()
+        want = g.tree_from_patch(head, patch_path)
+        raw = g.git("before.index", "diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", base, want, binary=True)
+    return sorted(n for n in (os.fsdecode(x) for x in raw.split(b"\0") if x) if not os.path.lexists(_os_path(folder, n)))
+
+
+def park_state(folder, mark, patch_path, applying=""):
+    """(붙기 전 / 붙은 뒤 / 충돌 / 일부만 있음 / 어긋남, 경로 목록). 아무것도 바꾸지 않는다. applying은 표지 `park_applying`의 값이다.
+    충돌을 푼 뒤(APPLY_CONFLICT, 미해결 파일 없음)는 목록과 상관없이 붙은 뒤다. 폴더에 변경이 없으면 붙기 전이다. 파일 목록 해시가 같을 때
+    HEAD가 뜰 때와 같으면 내용까지 패치와 견주고, 다르면(3way가 내용을 바꿀 수 있다) 붙이는 중 표지가 있어야 붙은 뒤다."""
+    _, head, digest = parse_mark(mark)
+    entries = status_entries(folder)
+    names = [p for _, p in entries]
+    if unmerged(entries):
+        return PARK_CONFLICT, unmerged(entries)
+    if applying == APPLY_CONFLICT:
+        return PARK_AFTER, names
+    if not names:
+        return PARK_BEFORE, []
+    with TempGit(folder) as g:
+        same_head = g.head() == head
+        base = head or g.git("now.index", "hash-object", "-t", "tree", os.devnull).strip()
+        want = g.tree_from_patch(head, patch_path)
+        in_patch = _tree_names(g, "now.index", base, want)
+        if list_digest(names) == digest:
+            if same_head:
+                return (PARK_AFTER if g.now_tree() == want else PARK_MISMATCH), names
+            return (PARK_AFTER if applying == APPLYING else PARK_MISMATCH), names
+    return (PARK_PARTIAL if set(names) < in_patch else PARK_MISMATCH), names
 
 
 # ---------------------------------------------------------------- 사본 읽기

@@ -7,7 +7,7 @@ model: opus
 
 플러그인 폴더: `${CLAUDE_PLUGIN_ROOT}`. 이 문서와 이 문서가 가리키는 문서에 적힌 `references/…`·`scripts/…`·`agents/…`·`skills/…`·`docs/…` 경로는 이 폴더 기준이다.
 
-판 표지: `def-version: 2026-10-31-v111`
+판 표지: `def-version: 2026-11-07-a15`
 
 # devflow-harness:read-judge — 읽기 판정자
 

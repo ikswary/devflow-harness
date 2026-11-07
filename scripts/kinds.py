@@ -21,7 +21,7 @@ class Kind(NamedTuple):
     writers: tuple              # 작성자 에이전트 이름(또는 "main")
     read_judge: str             # always / conditional / never
     run_judge: str              # always / never
-    notify: str                 # none / all_cells / by_decide / never
+    notify: str                 # none / all_cells / by_decide / findings(1.2.0부터 지적 0) / never
     stages: object              # 단계 튜플 또는 None
     writes_code_dir: bool       # 코드 폴더에 쓴다(흐름 상한·폴더 사용 중을 센다)
     auto_depends_in_flow: bool  # 같은 흐름의 앞 task에 자동 의존, flow.md 필요, machine_check
@@ -33,6 +33,7 @@ class Kind(NamedTuple):
     glyph: str                  # 아스키 보드의 종류 글자
     children: tuple             # 허용 자식 kind
     engine_hooks: tuple         # 엔진 코드에 이 kind만의 분기가 있는 자리의 이름
+    review: str = ""            # 리뷰 계약(설계 4.3절). 빈 값은 고치는 정본에 따른다
 
 
 class Agent(NamedTuple):
@@ -45,7 +46,9 @@ class Agent(NamedTuple):
     has_def_version: bool       # 정의 본문에 판 표지 `def-version:`이 있어야 한다
 
 
-MERGE_STAGES = ("실행승인", "실행", "결과승인", "끝")
+MERGE_STAGES = ("실행", "결과승인", "끝")   # 합치기는 하네스 소유 명령이라 실행 승인이 없다(설계 5.3절 6)
+WRAP_STAGES = ("실행승인", "실행", "결과승인", "끝")
+OLD_STAGES = {"merge": ("실행승인",)}   # 1.2.0 앞에 시작한 task만 받는 단계
 DEPLOY_STAGES = ("사전조건", "직전확인", "명령", "확인", "결과승인", "브랜치", "기록", "넣기승인", "넣기", "끝")
 PROBE_STAGES = ("실행승인", "실행", "기록", "결과승인", "끝")
 _CODE_HOOKS = ("machine_check", "required_judges", "flow_auto_depends", "touch_files", "readback", "from_answer",
@@ -67,7 +70,7 @@ KINDS = {
     "req-detail": Kind(
         "요구사항", "req-detail.md", ("requirements-writer",), "always", "never",
         "none", None, False, False, False, True, False, False, False, "Q",
-        ("design",), ()),
+        ("design",), ("block_summary",)),
     "infra-design": Kind(
         "설계", "infra-design.md", ("infra-writer",), "always", "never",
         "none", None, False, False, False, True, False, False, False, "I",
@@ -76,7 +79,7 @@ KINDS = {
         "원인 분석", "root-cause.md", ("cause-writer",), "always", "always",
         "none", None, True, False, False, False, False, False, False, "C",
         ("implementation", "fe-implementation", "be-implementation", "flow-verify", "wrap-up", "design"),
-        ("code_dir_writes",)),
+        ("code_dir_writes", "repro_patch")),
     "ui-design": Kind(
         "설계", "ui-design.md", ("design-writer",), "always", "never",
         "none", None, False, False, False, True, False, False, False, "U",
@@ -85,7 +88,7 @@ KINDS = {
         "설계", "design.md", ("design-writer",), "always", "never",
         "none", None, False, False, False, True, False, False, False, "S",
         ("implementation", "fe-implementation", "be-implementation", "probe", "flow-verify", "full-verify",
-         "wrap-up", "deploy-plan"), ()),
+         "wrap-up", "deploy-plan"), ("run_wide_wait", "summary_wait", "screen_order")),
     "probe": Kind(
         "설계", "probe.md", ("infra-writer", "code-writer"), "always", "never",
         "by_decide", PROBE_STAGES, False, False, False, False, False, False, False, "P",
@@ -111,7 +114,7 @@ KINDS = {
         "by_decide", None, False, False, False, True, False, False, False, "X",
         (), ("canon_check", "replace", "from_answer")),
     "flow-verify": Kind(
-        "검증", "verify.md", ("verify-writer",), "always", "never",
+        "검증", "verify.md", ("verify-writer",), "always", "always",
         "none", None, False, False, False, False, False, False, True, "V",
         ("fix", "reverify"), ("start_condition", "child_generation_zero")),
     "reverify": Kind(
@@ -124,11 +127,11 @@ KINDS = {
         (), ("stage_rule", "exec_points", "merge_condition", "required_judges")),
     "full-verify": Kind(
         "검증", "verify.md", ("verify-writer",), "always", "never",
-        "none", None, False, False, False, False, False, False, True, "V",
+        "findings", None, False, False, False, False, False, False, True, "V",
         ("fix", "reverify"), ("start_condition", "generation_zero")),
     "wrap-up": Kind(
         "마무리", "wrap-up.md", ("release-writer", "main"), "always", "always",
-        "none", MERGE_STAGES, False, False, False, False, False, False, False, "W",
+        "none", WRAP_STAGES, False, False, False, False, False, False, False, "W",
         (), ("stage_rule", "exec_points", "exported_commit", "start_condition", "collect_input")),
     "deploy-plan": Kind(
         "배포", "deploy-plan.md", ("release-writer",), "always", "never",
@@ -139,6 +142,58 @@ KINDS = {
         "never", DEPLOY_STAGES, False, False, False, False, False, False, False, "E",
         (), ("stage_rule", "exec_parent_plan", "deploy_outcome")),
 }
+
+_REVIEW = {"question": "scope", "brief": "scope", "req-overview": "scope", "req-detail": "scope",
+           "infra-design": "approach", "root-cause": "approach", "ui-design": "approach", "design": "approach",
+           "probe": "command", "implementation": "behavior", "fe-implementation": "behavior", "be-implementation": "behavior",
+           "fix": "behavior", "flow-verify": "behavior+risk", "reverify": "risk", "merge": "command", "full-verify": "risk",
+           "wrap-up": "command+run", "deploy-plan": "command", "deploy-exec": "command"}
+KINDS = {name: k._replace(review=_REVIEW.get(name, "")) for name, k in KINDS.items()}
+
+# 사람이 정하는 것(설계 7.6절). 화면 머리 `정하는 것:` 줄이다
+DECIDES = {"question": "이 선택지 가운데 무엇인가", "req-overview": "이 범위와 묶음 나눔이 원하는 일의 경계인가",
+           "brief": "사람이 겪는 순서와 규칙이 원하는 제품인가", "req-detail": "이 문장대로 만들고 시험해도 되는가, 담당 값을 받아들이는가",
+           "ui-design": "이 모양과 조작으로 쓰게 해도 되는가, 어느 시안인가", "design": "이 접근으로 구현을 시작해도 되는가",
+           "infra-design": "이 자원 결정으로 가도 되는가", "root-cause": "이 원인과 수정안으로 고쳐도 되는가",
+           "implementation": "이 구조 판단의 코드를 받아들이는가",
+           "be-implementation": "이 구조 판단의 코드를 받아들이는가", "fe-implementation": "이 구조 판단의 코드를 받아들이는가, 화면이 맞는가",
+           "fix": "지적대로 고쳤는가", "flow-verify": "의도대로 동작하는가, 남은 위험을 받아들이는가",
+           "reverify": "고친 것을 받아들이는가", "full-verify": "남은 위험을 받아들이는가",
+           "deploy-plan": "이 배포를 해도 되는가"}
+RUN_WIDE_DECIDES = "흐름 나눔과 겹침, 전·후 명령을 받아들이는가"   # 머리 키 `run_wide`인 설계와 그 고친 판
+# 변경 task는 고치는 정본으로 가른다(앞선 접두어가 먼저). 빈 접두어가 기본이다
+CHANGE_DECIDES = (("spec/", "이 변경이 내 답을 맞게 옮겼는가"), ("ui/", DECIDES["ui-design"]),
+                  ("design/infra", DECIDES["infra-design"]), ("", DECIDES["design"]))
+# 단계 kind의 묻는 단계: (정하는 것, 승인하면). 승인하면이 빈 값이면 task가 닫히는 단계다
+STAGE_HEAD = {("probe", "실행승인"): ("이 명령을 실행해도 되는가, 결과가 무엇을 가르는가", "승인한 명령을 실행합니다"),
+              ("probe", "결과승인"): ("이 결과로 결정을 가르는 것을 받아들이는가", ""),
+              ("merge", "실행승인"): ("이 명령으로 합쳐도 되는가", "승인한 합치기 명령을 실행합니다"),
+              ("merge", "결과승인"): ("충돌을 맞게 풀었는가", "병합 커밋을 끝냅니다"),
+              ("wrap-up", "실행승인"): ("이 상태로 넣어도 되는가", "내보내기 명령을 실행합니다"),
+              ("wrap-up", "결과승인"): ("넣은 결과를 받아들이는가", ""),
+              ("deploy-exec", "직전확인"): ("되돌릴 수 없는 단계까지 이 배포를 시작해도 되는가", "배포 명령을 실행합니다"),
+              ("deploy-exec", "결과승인"): ("실패면 어떻게 하는가, 결과를 유지하는가", "답대로 유지하거나 되돌립니다"),
+              ("deploy-exec", "넣기승인"): ("배포 기록 문서를 넣어도 되는가", "문서 넣기 명령을 실행합니다")}
+
+# 화면 머리 `볼 곳:`의 셈(설계 7.6절): (보이는 말, screen.see_values의 키). 표에 없는 kind는 SEE_DEFAULT다
+SEE_DEFAULT = (("정해 주실 것", "decide"), ("하실 일", "todo"), ("성질 붙은 항목", "marked"))
+_SEE_DESIGN = (("정해 주실 것", "decide"), ("하실 일", "todo"), ("확인 안 된 것", "unverified"), ("알릴 결정", "notify"),
+               ("성질 붙은 항목", "marked"), ("자식 행", "children"))
+_SEE_INFRA = (("정해 주실 것", "decide"), ("하실 일", "todo"), ("확인 안 된 것", "unverified"))
+_SEE_SCOPE = (("정해 주실 것", "decide"), ("담당 값", "filled"), ("성질 붙은 항목", "marked"))
+_SEE_CODE = (("정해 주실 것", "decide"), ("하실 일", "todo"), ("구조 판단", "judgments"))
+SEE_COUNTS = {"question": (("정해 주실 것", "decide"),), "req-overview": _SEE_SCOPE, "brief": _SEE_SCOPE,
+              "req-detail": (("기존 동작을 바꾸는 요구", "changed"), ("담당 값", "filled"), ("새 동작", "new"), ("정해 주실 것", "decide")),
+              "ui-design": (("시안 질문", "decide"), ("확인 안 된 것", "unverified")), "design": _SEE_DESIGN, "infra-design": _SEE_INFRA,
+              "root-cause": (("수정안", "options"), ("정해 주실 것", "decide"), ("확인 안 된 것", "unverified")),
+              "implementation": _SEE_CODE, "be-implementation": _SEE_CODE, "fe-implementation": _SEE_CODE}
+SEE_RUN_WIDE = (("겹침 질문", "decide"), ("전체 검증 관점", "viewpoints"), ("하실 일", "todo"))
+SEE_SPEC_CHANGE = (("정해 주실 것", "decide"), ("옮긴 답", "answered"), ("영향 줄", "notify"))   # 다른 정본을 고치면 그 정본 kind의 셈을 따른다
+# 정본을 쓰는 kind가 결과 「본문」에 적는 자기 정본의 앞머리(실행 폴더 기준, `/` 구분). 다른 정본의 인용을 가른다
+WRITTEN_CANON = {"req-overview": "spec/overview", "brief": "spec/brief", "req-detail": "spec/", "ui-design": "ui/",
+                 "infra-design": "design/infra", "design": "design/"}
+# 설계 승인 화면의 칸 차례(설계 7.2절). 번호는 이 차례로 매긴다
+DESIGN_SCREEN_CELLS = ("확인 안 된 것", "정해 주실 것", "하실 일·허용 요청", "알릴 것", "답하신 것의 반영", "건수만")
 
 _WRITER_TOOLS = ("Read", "Grep", "Glob", "Bash", "Write", "Edit")
 AGENTS = {
@@ -164,6 +219,8 @@ BUSY_STATUSES = ("진행", "자체검증")
 STATUS_GLYPH = {"완료": "v", "진행": ">", "자체검증": "~", "승인대기": "?", "대기": " ", "보류": "-", "백로그": "b"}
 ASK_STAGES = frozenset({"실행승인", "결과승인", "넣기승인", "직전확인"})
 EXEC_POINTS = ("실행승인", "결과승인", "넣기승인", "되돌림")
+OWNED_POINT = "실행"   # 사람 답 없이 얼리는 지점. 합치기의 고정 꼴에만 연다(설계 5.3절 6)
+FROZEN_POINTS = EXEC_POINTS + (OWNED_POINT,)
 # (STAGE kind, 묻는 stage) → 그 승인대기 앞에 늘 있어야 하는 판정. kind 단위 read_judge·run_judge의 always 대신 쓰고,
 # 조건부 요구(합치기 충돌, 배포 실행 result.md, 넣기 전 문서 검사)는 devflow_lib.required_judges가 더한다.
 # 탐침은 계획·기록 판정을 judge.plan.md로 가르므로 넣지 않는다. 1.1.1부터 시작한 task에만 건다.
@@ -174,15 +231,17 @@ STAGE_JUDGES = {
 }
 JUDGE_FILES = {"read": "judge.md", "run": "judge-run.md"}
 CELLS = ("정해 주실 것", "하실 일·허용 요청", "알릴 것", "답하신 것의 반영", "확인 안 된 것", "건수만")
+FLOW_BEHAVIOR_CELL = "구현이 정한 동작"   # 흐름 리뷰의 번호 붙은 동작 문장(설계 7.1절). 작성자가 쓰지 않고 스크립트가 낸다
 COUNT_CELLS = {"정해 주실 것": "n_decide", "하실 일·허용 요청": "n_todo", "알릴 것": "n_notify",
                "확인 안 된 것": "n_unverified"}
 UNDECIDED_TAGS = ("환경", "지시", "대상")
 FLOW_ROLES = ("feature", "fixes", "integration", "deploy")
 CANON_DIRS = ("spec", "ui", "design")
+JUDGMENT_KINDS = ("구조", "데이터", "트랜잭션", "오류", "외부호출", "보안", "동작", "시험")   # 코드 task 「판단」의 종류(설계 6.12절)
 
 # 판본 칸
 RULES = 2
-DEF_VERSION_MIN = "2026-10-31-v111"   # 판정자 정의의 판 표지 `def-version:`의 최소값
+DEF_VERSION_MIN = "2026-11-07-a15"   # 판정자 정의의 판 표지 `def-version:`의 최소값
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -202,6 +261,9 @@ def plugin_version(root=None):
 _SCRIPT = ("started_version", "rules", "started", "approval_requested", "approved", "created", "done_via",
            "criteria_amended", "exported_commit", "origin", "fix_generation", "judge_started")
 _OPTION = ("status", "retry", "kind")
+# 1.2.0: 스크립트만 쓰고 작성자·판정자가 읽지 않는 키. references/formats/task-file.md 표에 싣지 않는다.
+_ENGINE = ("waiting_policy", "parked", "parked_pending", "repro_patch", "park_applying", "holds_nothing", "insert_pending", "insert_failed", "commit_via", "slot", "slot_base", "returned_empty",
+           "asked_at", "card_open", "chosen_scope", "start_commit", "reviewed_tip")
 _SELFCHECK = ("machine_check",)
 _LISTS = ("depends_on", "closes_ac", "partial_ac")
 _KEY_ORDER = ("id", "title", "kind", "block", "status", "parent", "depends_on", "flow", "difficulty", "closes_ac",
@@ -209,11 +271,13 @@ _KEY_ORDER = ("id", "title", "kind", "block", "status", "parent", "depends_on", 
               "running_agent", "judge_started", "waiting_user", "retry", "started_version", "rules", "machine_check",
               "done_via", "criteria_amended", "judge_method", "approval_mode", "n_decide", "n_todo", "n_notify",
               "n_unverified", "n_children", "split_criterion", "shrunk_reason", "awaiting_answer_apply",
-              "external_progress", "stage", "exported_commit", "partial_flow", "deploy_outcome", "deployed_commit",
-              "created", "started", "approval_requested", "approved")
+              "external_progress", "stage", "exported_commit", "partial_flow", "run_wide", "deploy_outcome", "deployed_commit",
+              "created", "started", "approval_requested", "approved") + _ENGINE
 
 
 def _fill_of(key):
+    if key in _ENGINE:
+        return "engine"
     if key in _SCRIPT:
         return "script"
     if key in _OPTION:
@@ -242,11 +306,13 @@ TASK_SECTIONS = (
 
 # run.md 머리 키(formats.md 6절)와 「이번 실행의 값」 시작값
 RUN_KEYS = ("kind", "status", "project", "base_branch", "round", "integration_branch", "integration_dir",
-            "harness_version", "start_task", "previous_run", "session_id")
+            "harness_version", "start_task", "previous_run", "session_id", "policy_base", "docs_base_commit")
 RUN_DEFAULTS = {"동시에 도는 흐름": 2, "수정 세대 상한": 2, "자체 검증 재시도": 2, "판정불가 다시 돌림": 2,
                 "메인 컨텍스트 권함(K)": 300, "메인 컨텍스트 멈춤(K)": 500,
                 "한 승인의 결정 수 상한": 0, "보는 자료 줄 수": 40,
-                "fable로 띄울 역할": "없음"}   # 마지막 값은 숫자가 아니다: 역할 이름(예: design-writer)을 쉼표로
+                "fable로 띄울 역할": "없음",   # 숫자가 아니다: 역할 이름(예: design-writer)을 쉼표로
+                "작업 칸 수": 1,
+                "한 장 올리기": "없음"}   # 숫자가 아니다: `허용` / `없음`(references/main/sheet-upload.md)
 
 # ---------------------------------------------------------------------------
 # 파생 함수와 이름(엔진이 상수 대신 부른다)
@@ -295,11 +361,13 @@ CODE_DIR_KINDS = kinds_where(writes_code_dir=True)
 CANON_WRITER_KINDS = kinds_where(writes_canon=True)
 VERIFY_KINDS = kinds_where(verify_family=True)
 NOTIFY_BY_DECIDE_KINDS = kinds_where(notify="by_decide")
-NOTIFY_KINDS = NOTIFY_BY_DECIDE_KINDS | kinds_where(notify="all_cells")
+NOTIFY_KINDS = NOTIFY_BY_DECIDE_KINDS | kinds_where(notify="all_cells") | kinds_where(notify="findings")
 NEVER_NOTIFY_KINDS = kinds_where(notify="never")
 CODE_WRITER_KINDS = kinds_where(writers=lambda w: "code-writer" in w, writes_code_dir=True)
+REPRO_PATCH_KINDS = kinds_where(engine_hooks=lambda h: "repro_patch" in h)
 
-SCRIPT_KEYS = frozenset(k for k, fill, _ in TASK_KEYS if fill == "script")
+SCRIPT_KEYS = frozenset(k for k, fill, _ in TASK_KEYS if fill in ("script", "engine"))
+ENGINE_KEYS = frozenset(_ENGINE)
 OPTION_KEYS = frozenset(k for k, fill, _ in TASK_KEYS if fill == "option")
 SELFCHECK_KEYS = frozenset(k for k, fill, _ in TASK_KEYS if fill == "selfcheck")
 LIST_KEYS = frozenset(k for k, _, is_list in TASK_KEYS if is_list)
@@ -341,9 +409,9 @@ MD_SECTION_FILES = ("kinds", "edges", "agents", "values", "task-keys", "run-keys
 MD_TITLE = "# 등록표 (생성: python3 scripts/kinds.py --md-write. 손으로 고치지 않는다)"
 MD_LEAD = ("등록표 `scripts/kinds.py`를 절마다 한 파일로 낸 것의 목차다. 절 번호는 아래 표의 차례이고, "
            "\"registry.md n절\"은 이 표의 n번 파일이다.")
-_NOTIFY_WORD = {"none": "승인만", "all_cells": "네 칸 모두 0", "by_decide": "「정해」「하실」 0, origin 사용자면 불가",
-                "never": "불가"}
-_EMPTY_WORD = {"block": "(빈 값)", "glyph": "(빈 글자)"}
+_NOTIFY_WORD = {"none": "승인만", "all_cells": "네 칸 모두 0", "by_decide": "「정해」「하실」 0, origin 사용자면 불가(1.2.0 코드 task는 판정으로)",
+                "findings": "1.2.0부터 지적 0", "never": "불가"}
+_EMPTY_WORD = {"block": "(빈 값)", "glyph": "(빈 글자)", "review": "(고치는 정본에 따름)"}
 
 
 def _order(items):
@@ -415,8 +483,10 @@ def render_sections():
             "- `DONE`: " + _join([DONE]),
             "- `BUSY_STATUSES`: " + _join(BUSY_STATUSES),
             "- `STATUS_GLYPH`: " + ", ".join("`[{}]{}`".format(g, s) for s, g in STATUS_GLYPH.items()),
-            "- `ASK_STAGES`: " + _join(sorted(ASK_STAGES, key=(MERGE_STAGES + DEPLOY_STAGES).index)),
+            "- `ASK_STAGES`: " + _join(sorted(ASK_STAGES, key=(WRAP_STAGES + DEPLOY_STAGES).index)),
             "- `EXEC_POINTS`: " + _join(EXEC_POINTS),
+            "- `OWNED_POINT`: " + _join([OWNED_POINT]),
+            "- `OLD_STAGES`: " + ", ".join("`{}` {}".format(k, _join(v)) for k, v in OLD_STAGES.items()),
             "- `STAGE_JUDGES`: " + ", ".join("`{}` {} = {}".format(k, s, "+".join(v) or "없음")
                                              for (k, s), v in STAGE_JUDGES.items()),
             "- `JUDGE_FILES`: " + ", ".join("`{}` = `{}`".format(r, f) for r, f in JUDGE_FILES.items()),
@@ -424,7 +494,8 @@ def render_sections():
             "- `COUNT_CELLS`: " + ", ".join("`{}` = `{}`".format(c, n) for c, n in COUNT_CELLS.items()),
             "- `UNDECIDED_TAGS`: " + _join(UNDECIDED_TAGS),
             "- `FLOW_ROLES`: " + _join(FLOW_ROLES),
-            "- `CANON_DIRS`: " + _join(CANON_DIRS), ""]
+            "- `CANON_DIRS`: " + _join(CANON_DIRS),
+            "- `JUDGMENT_KINDS`: " + _join(JUDGMENT_KINDS), ""]
 
     out += ["## 5. 머리 파일 키와 본문 절", ""]
     out += _table(["키", "채우는 길", "목록"], [[k, fill, "예" if is_list else "—"] for k, fill, is_list in TASK_KEYS])
@@ -450,7 +521,7 @@ def render_sections():
                ("CODE_DIR_KINDS", CODE_DIR_KINDS), ("CANON_WRITER_KINDS", CANON_WRITER_KINDS),
                ("VERIFY_KINDS", VERIFY_KINDS), ("NOTIFY_KINDS", NOTIFY_KINDS),
                ("NOTIFY_BY_DECIDE_KINDS", NOTIFY_BY_DECIDE_KINDS), ("NEVER_NOTIFY_KINDS", NEVER_NOTIFY_KINDS),
-               ("CODE_WRITER_KINDS", CODE_WRITER_KINDS), ("commit_kinds(1)", commit_kinds(1)),
+               ("CODE_WRITER_KINDS", CODE_WRITER_KINDS), ("REPRO_PATCH_KINDS", REPRO_PATCH_KINDS), ("commit_kinds(1)", commit_kinds(1)),
                ("commit_kinds(2)", commit_kinds(2)), ("SCRIPT_KEYS", _ordered_keys(SCRIPT_KEYS)),
                ("OPTION_KEYS", _ordered_keys(OPTION_KEYS)),
                ("SELFCHECK_KEYS", _ordered_keys(SELFCHECK_KEYS)), ("LIST_KEYS", _ordered_keys(LIST_KEYS)),

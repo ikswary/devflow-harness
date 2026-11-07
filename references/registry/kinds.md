@@ -1,28 +1,28 @@
 ## 1. kind 21
 
-| kind | block | definition | writers | read_judge | run_judge | notify | stages | writes_code_dir | auto_depends_in_flow | needs_touch_files | writes_canon | readback | commit_required | verify_family | glyph | children | engine_hooks |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| question | 질문 | question.md | requirements-writer, cause-writer, design-writer | always | never | 네 칸 모두 0 (`all_cells`) | — | — | — | — | 예 | — | — | — | Q | req-overview, root-cause, design | — |
-| brief | 기획 | brief.md | requirements-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | B | req-detail, ui-design, design | — |
-| req-overview | 요구사항 | req-overview.md | requirements-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | Q | brief | — |
-| req-detail | 요구사항 | req-detail.md | requirements-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | Q | design | — |
-| infra-design | 설계 | infra-design.md | infra-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | I | probe, implementation | infra_premise |
-| root-cause | 원인 분석 | root-cause.md | cause-writer | always | always | 승인만 (`none`) | — | 예 | — | — | — | — | — | — | C | implementation, fe-implementation, be-implementation, flow-verify, wrap-up, design | code_dir_writes |
-| ui-design | 설계 | ui-design.md | design-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | U | design | — |
-| design | 설계 | design.md | design-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | S | implementation, fe-implementation, be-implementation, probe, flow-verify, full-verify, wrap-up, deploy-plan | — |
-| probe | 설계 | probe.md | infra-writer, code-writer | always | never | 단계 (`by_decide`) | 실행승인, 실행, 기록, 결과승인, 끝 | — | — | — | — | — | — | — | P | — | stage_rule, exec_points, default_cwd, notify_gate, judge_plan |
-| implementation | 구현 | implementation.md | code-writer | conditional | always | 「정해」「하실」 0, origin 사용자면 불가 (`by_decide`) | — | 예 | 예 | 예 | — | 예 | 예 | — | (빈 글자) | — | machine_check, required_judges, flow_auto_depends, touch_files, readback, from_answer, flow_md |
-| fe-implementation | 구현 | fe-implementation.md | code-writer | always | always | 「정해」「하실」 0, origin 사용자면 불가 (`by_decide`) | — | 예 | 예 | 예 | — | 예 | 예 | — | G | — | machine_check, required_judges, flow_auto_depends, touch_files, readback, from_answer, flow_md, screen_ac_kind_check |
-| be-implementation | 구현 | be-implementation.md | code-writer | conditional | always | 「정해」「하실」 0, origin 사용자면 불가 (`by_decide`) | — | 예 | 예 | 예 | — | 예 | 예 | — | K | — | machine_check, required_judges, flow_auto_depends, touch_files, readback, from_answer, flow_md, contract_token |
-| fix | 구현 | implementation.md | code-writer | always | always | 「정해」「하실」 0, origin 사용자면 불가 (`by_decide`) | — | 예 | 예 | 예 | — | 예 | 예 | — | F | — | fix_generation, machine_check, required_judges, flow_auto_depends, touch_files, readback, from_answer, flow_md |
-| change | (빈 값) | change.md | requirements-writer, design-writer, infra-writer | always | never | 「정해」「하실」 0, origin 사용자면 불가 (`by_decide`) | — | — | — | — | 예 | — | — | — | X | — | canon_check, replace, from_answer |
-| flow-verify | 검증 | verify.md | verify-writer | always | never | 승인만 (`none`) | — | — | — | — | — | — | — | 예 | V | fix, reverify | start_condition, child_generation_zero |
-| reverify | 검증 | verify.md | verify-writer | always | never | 네 칸 모두 0 (`all_cells`) | — | — | — | — | — | — | — | 예 | R | fix, reverify | start_condition, generation_plus_one, over_cap_backlog |
-| merge | 구현 | merge.md | main, code-writer | conditional | always | 단계 (`all_cells`) | 실행승인, 실행, 결과승인, 끝 | 예 | — | — | — | — | rules2 | — | M | — | stage_rule, exec_points, merge_condition, required_judges |
-| full-verify | 검증 | verify.md | verify-writer | always | never | 승인만 (`none`) | — | — | — | — | — | — | — | 예 | V | fix, reverify | start_condition, generation_zero |
-| wrap-up | 마무리 | wrap-up.md | release-writer, main | always | always | 단계 (`none`) | 실행승인, 실행, 결과승인, 끝 | — | — | — | — | — | — | — | W | — | stage_rule, exec_points, exported_commit, start_condition, collect_input |
-| deploy-plan | 배포 | deploy-plan.md | release-writer | always | never | 불가 (`never`) | — | — | — | — | — | — | — | — | D | deploy-exec | exec_reads_plan_cmd |
-| deploy-exec | 배포 | deploy-exec.md | main, run-judge, release-writer | conditional | always | 단계 (`never`) | 사전조건, 직전확인, 명령, 확인, 결과승인, 브랜치, 기록, 넣기승인, 넣기, 끝 | — | — | — | — | — | — | — | E | — | stage_rule, exec_parent_plan, deploy_outcome |
+| kind | block | definition | writers | read_judge | run_judge | notify | stages | writes_code_dir | auto_depends_in_flow | needs_touch_files | writes_canon | readback | commit_required | verify_family | glyph | children | engine_hooks | review |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| question | 질문 | question.md | requirements-writer, cause-writer, design-writer | always | never | 네 칸 모두 0 (`all_cells`) | — | — | — | — | 예 | — | — | — | Q | req-overview, root-cause, design | — | scope |
+| brief | 기획 | brief.md | requirements-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | B | req-detail, ui-design, design | — | scope |
+| req-overview | 요구사항 | req-overview.md | requirements-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | Q | brief | — | scope |
+| req-detail | 요구사항 | req-detail.md | requirements-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | Q | design | block_summary | scope |
+| infra-design | 설계 | infra-design.md | infra-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | I | probe, implementation | infra_premise | approach |
+| root-cause | 원인 분석 | root-cause.md | cause-writer | always | always | 승인만 (`none`) | — | 예 | — | — | — | — | — | — | C | implementation, fe-implementation, be-implementation, flow-verify, wrap-up, design | code_dir_writes, repro_patch | approach |
+| ui-design | 설계 | ui-design.md | design-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | U | design | — | approach |
+| design | 설계 | design.md | design-writer | always | never | 승인만 (`none`) | — | — | — | — | 예 | — | — | — | S | implementation, fe-implementation, be-implementation, probe, flow-verify, full-verify, wrap-up, deploy-plan | run_wide_wait, summary_wait, screen_order | approach |
+| probe | 설계 | probe.md | infra-writer, code-writer | always | never | 단계 (`by_decide`) | 실행승인, 실행, 기록, 결과승인, 끝 | — | — | — | — | — | — | — | P | — | stage_rule, exec_points, default_cwd, notify_gate, judge_plan | command |
+| implementation | 구현 | implementation.md | code-writer | conditional | always | 「정해」「하실」 0, origin 사용자면 불가(1.2.0 코드 task는 판정으로) (`by_decide`) | — | 예 | 예 | 예 | — | 예 | 예 | — | (빈 글자) | — | machine_check, required_judges, flow_auto_depends, touch_files, readback, from_answer, flow_md | behavior |
+| fe-implementation | 구현 | fe-implementation.md | code-writer | always | always | 「정해」「하실」 0, origin 사용자면 불가(1.2.0 코드 task는 판정으로) (`by_decide`) | — | 예 | 예 | 예 | — | 예 | 예 | — | G | — | machine_check, required_judges, flow_auto_depends, touch_files, readback, from_answer, flow_md, screen_ac_kind_check | behavior |
+| be-implementation | 구현 | be-implementation.md | code-writer | conditional | always | 「정해」「하실」 0, origin 사용자면 불가(1.2.0 코드 task는 판정으로) (`by_decide`) | — | 예 | 예 | 예 | — | 예 | 예 | — | K | — | machine_check, required_judges, flow_auto_depends, touch_files, readback, from_answer, flow_md, contract_token | behavior |
+| fix | 구현 | implementation.md | code-writer | always | always | 「정해」「하실」 0, origin 사용자면 불가(1.2.0 코드 task는 판정으로) (`by_decide`) | — | 예 | 예 | 예 | — | 예 | 예 | — | F | — | fix_generation, machine_check, required_judges, flow_auto_depends, touch_files, readback, from_answer, flow_md | behavior |
+| change | (빈 값) | change.md | requirements-writer, design-writer, infra-writer | always | never | 「정해」「하실」 0, origin 사용자면 불가(1.2.0 코드 task는 판정으로) (`by_decide`) | — | — | — | — | 예 | — | — | — | X | — | canon_check, replace, from_answer | (고치는 정본에 따름) |
+| flow-verify | 검증 | verify.md | verify-writer | always | always | 승인만 (`none`) | — | — | — | — | — | — | — | 예 | V | fix, reverify | start_condition, child_generation_zero | behavior+risk |
+| reverify | 검증 | verify.md | verify-writer | always | never | 네 칸 모두 0 (`all_cells`) | — | — | — | — | — | — | — | 예 | R | fix, reverify | start_condition, generation_plus_one, over_cap_backlog | risk |
+| merge | 구현 | merge.md | main, code-writer | conditional | always | 단계 (`all_cells`) | 실행, 결과승인, 끝 | 예 | — | — | — | — | rules2 | — | M | — | stage_rule, exec_points, merge_condition, required_judges | command |
+| full-verify | 검증 | verify.md | verify-writer | always | never | 1.2.0부터 지적 0 (`findings`) | — | — | — | — | — | — | — | 예 | V | fix, reverify | start_condition, generation_zero | risk |
+| wrap-up | 마무리 | wrap-up.md | release-writer, main | always | always | 단계 (`none`) | 실행승인, 실행, 결과승인, 끝 | — | — | — | — | — | — | — | W | — | stage_rule, exec_points, exported_commit, start_condition, collect_input | command+run |
+| deploy-plan | 배포 | deploy-plan.md | release-writer | always | never | 불가 (`never`) | — | — | — | — | — | — | — | — | D | deploy-exec | exec_reads_plan_cmd | command |
+| deploy-exec | 배포 | deploy-exec.md | main, run-judge, release-writer | conditional | always | 단계 (`never`) | 사전조건, 직전확인, 명령, 확인, 결과승인, 브랜치, 기록, 넣기승인, 넣기, 끝 | — | — | — | — | — | — | — | E | — | stage_rule, exec_parent_plan, deploy_outcome | command |
 
 알림 칸: 낱말은 `stages`가 있으면 단계, 없으면 `notify` 값의 낱말(괄호 안이 `notify` 값).
 

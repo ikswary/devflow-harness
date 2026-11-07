@@ -20,16 +20,71 @@ from conftest import ROOT
 # (행위자, 상한, 그때 값, 사유). 평소 빈 목록
 _V104_NOTE = "1.0.4 판정자 규칙(묶기 J2·TR-B3, 절 이름 TR-R3, 반환 20줄 P-09)을 정의 본문에, 확인할 수 없는 기준의 꼴(N2)을 contract.md에 둠. 2026-10-30 사용자 결정: 상한 때문에 규칙을 지우거나 옮기지 않음. 설계 이유 괄호는 지운 상태"
 _V110_NOTE = "1.1.0 설계 정의의 자식 kind·행 규칙 경우 파일·겹침 규칙과 머리 파일의 탐침 단계·변경 대상. 설계 문서 5.10: 줄일 곳을 찾지 못해 사용자 결정(T006)으로 보류. 줄일 후보: 판정자가 함께 읽는 공통 문서(contract.md·writer.md·task-file.md)의 겹치는 문장"
+_A2_NOTE = "1.2.0 A2 리뷰 자료와 효과 비교의 작성 안내를 writer.md 4절과 result-file.md에 둠. 2026-11-05 리뷰 권고대로 사유를 나눠 적고 사용자에게 알림"
+_A3_NOTE = "1.2.0 A3 코드 판단 기록(practices/code-judgment.md)과 결과·판정 파일의 칸. 2026-11-05 사용자 \"이대로 둬\"의 연장으로 넘는 것을 기록하고 알림"
+_V120_NOTE = "1.2.0 결정 종류, 묻는 기준, 성질을 writer.md 2절로 모음(설계 5.4절). 사용자 결정 2026-11-05: 상한에 맞춰 줄이면 kind마다 기준이 갈리므로 넘는 것을 기록함. 줄일 후보: writer.md 4절과 formats의 겹치는 문장"
 PENDING_OVER: list[tuple[str, int, int, str]] = [
-    ("read-judge:design", 51164, 52756, _V110_NOTE),
-    ("read-judge:change:design", 50347, 52602, _V110_NOTE),
-    ("run-judge:implementation", 31302, 31614, _V104_NOTE),
-    ("run-judge:fix", 31302, 31614, _V104_NOTE),
-    ("run-judge:root-cause", 30136, 30448, _V104_NOTE),
-    ("run-judge:merge", 30136, 30448, _V104_NOTE),
-    ("run-judge:wrap-up", 30822, 31134, _V104_NOTE),
-    ("run-judge:deploy-exec", 31840, 32147, _V104_NOTE),
-    ("requirements-writer:question", 32165, 32237, "S2 task-file.md 탐침 단계 +86(A-H4). A·B 흐름의 실제 증가가 어림보다 커 여유 216이 4로 줄었다. 사용자 결정으로 보류(T035 답 2026-10-30 18:11:03)"),
+    ("read-judge:design", 51164, 64574, _V110_NOTE),
+    ("read-judge:change:design", 50347, 62522, _V110_NOTE),
+    ("run-judge:implementation", 31302, 35638, _V104_NOTE),
+    ("run-judge:fix", 31302, 35638, _V104_NOTE),
+    ("run-judge:root-cause", 30136, 34472, _V104_NOTE),
+    ("run-judge:merge", 30136, 34472, _V104_NOTE),
+    ("run-judge:wrap-up", 30822, 35416, _V104_NOTE),
+    ("run-judge:deploy-exec", 31840, 36249, _V104_NOTE),
+    ("requirements-writer:question", 32165, 36556, "S2 task-file.md 탐침 단계 +86(A-H4). A·B 흐름의 실제 증가가 어림보다 커 여유 216이 4로 줄었다. 사용자 결정으로 보류(T035 답 2026-10-30 18:11:03). " + _V120_NOTE),
+    ("requirements-writer:req-overview", 37209, 40542, _V120_NOTE),
+    ("requirements-writer:req-detail", 37507, 42044, _V120_NOTE),
+    ("requirements-writer:change:req-overview", 39251, 43338, _V120_NOTE),
+    ("requirements-writer:change:req-detail", 39549, 44840, _V120_NOTE),
+    ("requirements-writer:change:brief", 43557, 47263, _V120_NOTE),
+    ("design-writer:design", 55214, 65742, _V120_NOTE),
+    ("design-writer:change:design", 59694, 70826, _V120_NOTE),
+    ("code-writer:fe-implementation", 58737, 70667, _V120_NOTE),
+    ("code-writer:be-implementation", 50187, 61212, _V120_NOTE),
+    ("code-writer:probe", 38176, 43849, _V120_NOTE),
+    ("release-writer:deploy-plan", 50122, 61374, _V120_NOTE),
+    ("infra-writer:infra-design", 39126, 42200, _V120_NOTE),
+    ("infra-writer:probe", 35814, 41485, _V120_NOTE),
+    ("infra-writer:change:infra-design", 40651, 43921, _V120_NOTE),
+    ("read-judge:question", 33056, 37161, _V120_NOTE),
+    ("read-judge:req-overview", 35055, 38859, _V120_NOTE),
+    ("read-judge:req-detail", 35353, 40361, _V120_NOTE),
+    ("read-judge:brief", 39361, 42784, _V120_NOTE),
+    ("read-judge:ui-design", 40296, 45323, _V120_NOTE),
+    ("read-judge:change:req-overview", 39535, 43943, _V120_NOTE),
+    ("read-judge:change:req-detail", 39833, 45445, _V120_NOTE),
+    ("read-judge:change:brief", 43841, 47868, _V120_NOTE),
+    ("read-judge:change:ui-design", 44776, 50407, _V120_NOTE),
+    ("read-judge:implementation", 45220, 55648, _V120_NOTE),
+    ("read-judge:fix", 45220, 55648, _V120_NOTE),
+    ("read-judge:root-cause", 40492, 45888, _V120_NOTE),
+    ("read-judge:deploy-plan", 46348, 58310, _V120_NOTE),
+    ("read-judge:infra-design", 35580, 39525, _V120_NOTE),
+    ("read-judge:change:infra-design", 39179, 43320, _V120_NOTE),
+    ("read-judge:probe", 32270, 38810, _V120_NOTE),
+    ("read-judge:fe-implementation", 43797, 55937, _V120_NOTE),
+    ("read-judge:be-implementation", 43107, 54999, _V120_NOTE),
+    ("design-writer:change:ui-design", 60413, 65939, _V120_NOTE),
+    ("read-judge:flow-verify", 47504, 56907, _V120_NOTE),
+    ("read-judge:full-verify", 47504, 53768, _V120_NOTE),
+    ("read-judge:reverify", 47504, 53768, _V120_NOTE),
+    ("design-writer:ui-design", 55933, 60855, _A2_NOTE),
+    ("verify-writer:flow-verify", 47398, 55540, _A2_NOTE),
+    ("verify-writer:full-verify", 47398, 52401, _A2_NOTE),
+    ("verify-writer:reverify", 47398, 52401, _A2_NOTE),
+    ("read-judge:wrap-up", 37212, 41107, _A2_NOTE),
+    ("requirements-writer:brief", 43580, 44950, _V120_NOTE),
+    ("cause-writer:question", 46754, 49960, _V120_NOTE),
+    ("code-writer:implementation", 54645, 61861, _A3_NOTE),
+    ("code-writer:fix", 54645, 61861, _A3_NOTE),
+    ("release-writer:wrap-up", 41637, 44171, _A3_NOTE),
+    ("run-judge:fe-implementation", 31616, 35638, _A3_NOTE),
+    ("run-judge:be-implementation", 31616, 35638, _A3_NOTE),
+    ("cause-writer:root-cause", 48494, 51551, _A3_NOTE),
+    ("design-writer:question", 42802, 45465, _V120_NOTE),
+    ("read-judge:merge", 37916, 38739, _V120_NOTE),
+    ("run-judge:flow-verify", 37647, 38605, _V120_NOTE),
 ]
 
 AGENT_DIR = ROOT / "agents"
@@ -62,7 +117,7 @@ def test_pending_over_rows_are_baseline_rows_over_their_baseline():
 
 
 def test_read_budget():
-    assert len(reading.BASELINE) == 62
+    assert len(reading.BASELINE) == 63
     assert over_budget() == []
 
 
@@ -163,7 +218,7 @@ def expected(actor):
 
 def test_declared_reads_match_new_reads():
     actors = [a for a in reading.NEW_READS if a != "main"]
-    assert len(actors) == 62
+    assert len(actors) == 63
     problems = {a: (sorted(declared(a) - expected(a)), sorted(expected(a) - declared(a)))
                 for a in actors if declared(a) != expected(a)}
     assert problems == {}

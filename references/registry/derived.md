@@ -8,13 +8,14 @@
 - `CODE_DIR_KINDS`: `root-cause`, `implementation`, `fe-implementation`, `be-implementation`, `fix`, `merge`
 - `CANON_WRITER_KINDS`: `question`, `brief`, `req-overview`, `req-detail`, `infra-design`, `ui-design`, `design`, `change`
 - `VERIFY_KINDS`: `flow-verify`, `reverify`, `full-verify`
-- `NOTIFY_KINDS`: `question`, `probe`, `implementation`, `fe-implementation`, `be-implementation`, `fix`, `change`, `reverify`, `merge`
+- `NOTIFY_KINDS`: `question`, `probe`, `implementation`, `fe-implementation`, `be-implementation`, `fix`, `change`, `reverify`, `merge`, `full-verify`
 - `NOTIFY_BY_DECIDE_KINDS`: `probe`, `implementation`, `fe-implementation`, `be-implementation`, `fix`, `change`
 - `NEVER_NOTIFY_KINDS`: `deploy-plan`, `deploy-exec`
 - `CODE_WRITER_KINDS`: `implementation`, `fe-implementation`, `be-implementation`, `fix`, `merge`
+- `REPRO_PATCH_KINDS`: `root-cause`
 - `commit_kinds(1)`: `implementation`, `fe-implementation`, `be-implementation`, `fix`
 - `commit_kinds(2)`: `implementation`, `fe-implementation`, `be-implementation`, `fix`, `merge`
-- `SCRIPT_KEYS`: `origin`, `fix_generation`, `judge_started`, `started_version`, `rules`, `done_via`, `criteria_amended`, `exported_commit`, `created`, `started`, `approval_requested`, `approved`
+- `SCRIPT_KEYS`: `origin`, `fix_generation`, `judge_started`, `started_version`, `rules`, `done_via`, `criteria_amended`, `exported_commit`, `created`, `started`, `approval_requested`, `approved`, `waiting_policy`, `parked`, `parked_pending`, `repro_patch`, `park_applying`, `holds_nothing`, `insert_pending`, `insert_failed`, `commit_via`, `slot`, `slot_base`, `returned_empty`, `asked_at`, `card_open`, `chosen_scope`, `start_commit`, `reviewed_tip`
 - `OPTION_KEYS`: `kind`, `status`, `retry`
 - `SELFCHECK_KEYS`: `machine_check`
 - `LIST_KEYS`: `depends_on`, `closes_ac`, `partial_ac`

@@ -21,11 +21,12 @@ from conftest import write
 
 # 표의 칸 글자 그대로. "—"는 빈 칸, 알림 칸의 낱말은 표 아래 「알림」 칸의 뜻 문단의 다섯 이름.
 ASK_ONLY = "승인만"
+FINDINGS = "1.2.0부터 지적 0"
 FOUR_ZERO = "네 칸 모두 0"
-DECIDE_ZERO = "「정해」「하실」 0, origin 사용자면 불가"
+DECIDE_ZERO = "「정해」「하실」 0, origin 사용자면 불가(1.2.0 코드 task는 판정으로)"
 STAGED = "단계"
 NEVER = "불가"
-MERGE_STAGES = ("실행승인", "실행", "결과승인", "끝")
+MERGE_STAGES = ("실행", "결과승인", "끝")
 WRAP_STAGES = ("실행승인", "실행", "결과승인", "끝")
 DEPLOY_STAGES = ("사전조건", "직전확인", "명령", "확인", "결과승인", "브랜치", "기록", "넣기승인", "넣기", "끝")
 PROBE_STAGES = ("실행승인", "실행", "기록", "결과승인", "끝")
@@ -52,7 +53,7 @@ EXPECTED = {
     "reverify":       ("검증",     "늘",        "—", FOUR_ZERO,   "—",           "—", "—", "—", "R"),
     # merge의 읽기 판정은 exec.md 브랜치 판정 `충돌`이 있을 때
     "merge":          ("구현",     "조건",      "늘", STAGED,     MERGE_STAGES,  "예", "예", "—", "M"),
-    "full-verify":    ("검증",     "늘",        "—", ASK_ONLY,    "—",           "—", "—", "—", "V"),
+    "full-verify":    ("검증",     "늘",        "—", FINDINGS,    "—",           "—", "—", "—", "V"),
     "wrap-up":        ("마무리",   "늘",        "늘", STAGED,      WRAP_STAGES,   "—", "—", "—", "W"),
     "deploy-plan":    ("배포",     "늘",        "—", NEVER,       "—",           "—", "—", "—", "D"),
     "deploy-exec":    ("배포",     "조건",      "늘", STAGED,      DEPLOY_STAGES, "—", "—", "—", "E"),
@@ -113,6 +114,8 @@ def _notify_word(kind):
         return DECIDE_ZERO
     if policy == "all_cells":
         return FOUR_ZERO
+    if policy == "findings":
+        return FINDINGS
     return ASK_ONLY
 
 

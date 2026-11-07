@@ -89,6 +89,19 @@ echo
 nested() { LC_ALL=C sort -u | awk '{for(i=1;i<=n;i++) if(index($0, k[i] "/")==1) next; print; if(sub(/\/\*\*$/, "")) k[++n]=$0}'; }
 none() { awk '{print "- " $0; c++} END{if(!c) print "- 없음"}'; }
 ui_file() { find "$1" \( $PRUNE \) -prune -o -type f \( -name '*.tsx' -o -name '*.jsx' -o -name '*.vue' -o -name '*.svelte' -o -name '*.html' -o -name '*.kt' \) -print 2>/dev/null | head -1; }
+echo "## 시험 변화 경로 단서"
+echo "### 시험을 돌리는 곳 후보"
+{ find . -maxdepth 3 \( $PRUNE \) -prune -o -type d -path './.github/workflows' -print 2>/dev/null | sed 's|$|/**|'
+  find ./scripts ./tools ./deploy -maxdepth 2 -type f \( -name '*test*' -o -name '*smoke*' \) -print 2>/dev/null
+} | sed 's|^\./||' | nested | none | lim
+echo "### 정답 경로 후보"
+{ find . -maxdepth 4 \( $PRUNE \) -prune -o -type d \( -name golden -o -name goldens \) -print 2>/dev/null | sed 's|$|/**|'
+  find . -maxdepth 4 \( $PRUNE \) -prune -o -type f -name '*.golden.*' -print 2>/dev/null
+} | sed 's|^\./||' | nested | none | lim
+echo "### 시험 도우미 경로 후보"
+find ./tools ./scripts -maxdepth 2 -type f \( -name 'vitest-*' -o -name 'jest-*' -o -name 'playwright-*' \) -print 2>/dev/null \
+  | sed 's|^\./||' | nested | none | lim
+echo
 echo "## 경로 단서"
 echo "### 화면 경로 후보"
 find . -maxdepth 3 \( $PRUNE \) -prune -o -type d \( -name client -o -name web -o -name frontend -o -name components \

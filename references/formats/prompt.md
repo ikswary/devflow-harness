@@ -34,6 +34,7 @@ task 정의: {등록표 `definition` 칸의 정의 파일 경로} (전체), …\
 정찰(명령과 기준선): {절대 경로}\recon.md
 돌릴 것: {빌드, 관련 테스트 명령}
 변이 확인: {task 폴더}\result.md 「변이 확인 지시」 절
+전·후 명령: (전·후를 돌릴 때) `screen.py --flow-commands` 출력
 판정을 쓸 곳: {task 폴더}\judge-run.md
 로그를 쓸 곳: {task 폴더}\logs\
 ```

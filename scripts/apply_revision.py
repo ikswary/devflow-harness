@@ -2,6 +2,7 @@
 
 변경 task의 작성자는 정본을 직접 고치지 않고 자기 task 폴더의 revised 폴더에 고친 판(정본과 같은 상대 경로)을 쓴다.
 판정과 승인을 통과한 뒤 메인이 이 스크립트로 옮긴다. 정본 맨 끝의 「변경 이력」에 task id를 남긴다.
+1.2.0부터 시작한 실행은 옮긴 뒤에 승인 해시를 찍는다(project_docs.py. 승인 순간에 재면 이력 줄 때문에 달라짐으로 뜬다).
 
 사용:
   python apply_revision.py {실행 폴더} {변경 task id} [--dry-run]
@@ -11,6 +12,7 @@ import sys
 
 import devflow_lib
 import kinds
+import project_docs
 
 
 def main(argv):
@@ -49,6 +51,7 @@ def main(argv):
                 print("{} → {}{}".format(rel, dst, " (dry-run)" if dry else ""))
                 if not dry:
                     devflow_lib.write_text(dst, text + "\n")
+                    project_docs.stamp_revision(run_dir, t, rel)
                 moved += 1
                 continue
             if "## 변경 이력" not in text:
@@ -62,6 +65,7 @@ def main(argv):
             print("{} → {}{}".format(rel, dst, " (dry-run)" if dry else ""))
             if not dry:
                 devflow_lib.write_text(dst, text)
+                project_docs.stamp_revision(run_dir, t, rel)
             moved += 1
     print("옮긴 정본 {}개".format(moved))
     return 0

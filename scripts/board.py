@@ -2,9 +2,10 @@
 
 사용:
   python board.py {실행 폴더}                 전체 표 + 승인 대기열 + 시작할 수 있는 task + 고리 검사
-  python board.py {실행 폴더} --queue         승인 대기열만
+  python board.py {실행 폴더} --queue         승인 대기열만. 1.2.0 설계는 요구사항 상세가 모두 닫힐 때까지 빠지고 그 줄이 따로 나온다
   python board.py {실행 폴더} --ready         지금 시작할 수 있는 task만(흐름 상한, 폴더 사용 중, 받아오기 대기, 커밋 대기,
-                                              kind별 시작 조건: 흐름별 검증·전체 검증·마무리). 이어서 합칠 수 있는 흐름,
+                                              kind별 시작 조건: 흐름별 검증·전체 검증·마무리, 1.2.0 설계가 둘 이상이면
+                                              구현·흐름 안 수정은 실행 전체 설계 뒤). 이어서 합칠 수 있는 흐름,
                                               재검증 없는 수정, 보류에 막힌 대기 task(남은 것이 모두 그것이면 끝 질문),
                                               그 아래 점검 확인이 없는 기록 점검 걸림(`! 기록 점검:`, 없으면 줄 없음),
                                               `하네스 판본:` 한 줄(SKILL.md 1절), 맨 끝에 `메인 컨텍스트:` 한 줄(SKILL.md 8절)
@@ -14,20 +15,35 @@
   python board.py {실행 폴더} --infra-premise 상세 정본마다 「인프라 전제」의 `- 없음`이 아닌 줄(`{파일}: {줄}`), 절이 없으면
                                               `! {파일}: 「인프라 전제」 절 없음`, 끝에 `인프라 결정 task: {id} ({상태})` 또는 `없음`
   python board.py {실행 폴더} --resume        재개 때 볼 것(진행·자체검증·승인대기, 실행 중 에이전트와 그 결과 파일의 마지막
-                                              수정 시각, 외부 작업 진행, 답 반영 대기, 판정 파일이 덜 찬 판정자 표지).
+                                              수정 시각, 외부 작업 진행, 답 반영 대기, 판정 파일이 덜 찬 판정자 표지, 치운 변경).
                                               `--now "시각"`으로 기준 시각을 줄 수 있다
   python board.py {작업 공간} --backlog       작업 공간의 모든 실행에서 남은 백로그
 """
 import os
 import sys
 
+import delegation
 import devflow_lib
 import kinds
+import places
+import retry_diff
+import slots
 
 # --ready의 못 띄움 이유와 --resume의 task 줄 메모
 COMMIT_WAIT = "커밋 대기: {}"
 RESUME_STATUS = "상태 {}"
+SUMMARY_WAIT = "요구사항 종합을 기다림 {}개(묻지 않는다): {}"
+RUN_WIDE_WAIT = "실행 전체 설계 기다림: {}"
+RUN_WIDE_CLOSED = "실행 전체 설계 닫힘: {}"
+RUN_WIDE_STUCK = "실행 전체 설계 {}가 닫힌 설계 {}에 막힘: depends_on에서 뺀다(풀리면 고친 판, references/kinds/design/main-order.md)"
+RUN_WIDE_NEEDED = "실행 전체 설계 필요"
+RUN_WIDE_REVISION = "실행 전체 설계 고친 판 필요"
 MARK_NOTE = "판정자 표지 {} (에이전트 목록에서 이름을 찾는다. 없고 판정 파일도 없으면 --judge-clear 뒤 다시 띄운다)"
+PARK_CUT_NOTE = "치우다 끊김 {} (task_set.py {id} --park로 잇거나 --park-cancel로 취소한다)"
+PARK_NOTE = "치운 변경 {}: {}"
+PARK_DROP_HINT = " (백로그로 닫으려면 사람 답으로 --park-drop --record)"
+PARK_CONFLICT_BLOCK = "치운 변경 충돌 중: {}"
+PARK_CUT_BLOCK = "치우다 끊긴 task: {}"
 
 
 def blocked_ids(tasks, tid):
@@ -49,7 +65,7 @@ def is_ready(tasks, t, holds=None):
     if wrap and holds is None:
         holds = devflow_lib.hold_blockers(tasks)
     for ref in [t.get("parent", "")] + list(t.get("depends_on", [])):
-        if not ref or ref not in tasks or tasks[ref].get("status") == kinds.DONE:
+        if not ref or ref not in tasks or devflow_lib.dependency_done(tasks[ref]):
             continue
         if wrap and devflow_lib.settled(tasks[ref], tasks, holds):
             continue
@@ -78,8 +94,20 @@ def find_cycles(tasks):
     return cycles
 
 
+def summary_wait(tasks, t):
+    """설계의 승인을 막는 요구사항 상세 id(설계 7.2절). 종합이 나온 뒤에 묻는다. 닫혔거나 보류에 막힌 상세는 기다리지 않는다."""
+    if t.get("kind") != "design" or not devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V120):
+        return []
+    return [o["id"] for o in tasks.values() if o.get("kind") == "req-detail" and detail_open(tasks, o)]
+
+
+def detail_open(tasks, detail):
+    """요구사항 상세가 아직 사람을 거칠 수 있는가."""
+    return detail.get("status") not in kinds.CLOSED_STATUSES and detail["id"] not in devflow_lib.hold_blockers(tasks)
+
+
 def queue(tasks):
-    waiting = [t for t in tasks.values() if t.get("status") == "승인대기"]
+    waiting = [t for t in tasks.values() if t.get("status") == "승인대기" and not summary_wait(tasks, t)]
 
     def key(t):
         try:
@@ -108,6 +136,9 @@ def print_queue(tasks):
         print("{}. {} {} (막고 있는 task {}개{}, 정해 주실 것 {}건, 요청 {})".format(
             i, t["id"], t.get("title", ""), len(ids), ": " + ", ".join(ids) if ids else "", t.get("n_decide", "0") or 0,
             t.get("approval_requested", "") or "-"))
+    held = [t for t in tasks.values() if t.get("status") == "승인대기" and summary_wait(tasks, t)]
+    if held:
+        print(SUMMARY_WAIT.format(len(held), ", ".join("{}(← {})".format(t["id"], ", ".join(summary_wait(tasks, t))) for t in held)))
 
 
 # 코드 폴더에 쓰는 task는 등록표 `kinds.CODE_DIR_KINDS`(원인 분석은 재현 테스트를 쓴다), 흐름의 구현·수정은
@@ -117,6 +148,15 @@ def print_queue(tasks):
 def writes(t):
     """코드 폴더에 쓰는 task. 옛 실행의 코드를 고치는 change도 센다(새로 만드는 것은 fix)."""
     return t.get("kind") in kinds.CODE_DIR_KINDS or devflow_lib.is_code_change(t)
+
+
+def in_slot(t):
+    """칸 폴더에서 도는 task: 칸을 쓰는 실행의 쓰는 task. 단계가 있는 task(합치기)와 받아오기 충돌을 고치는 task는
+    지금처럼 흐름 폴더에서 돈다. 충돌이 그 폴더의 병합에 남아 있기 때문이다."""
+    run = devflow_lib.run_dir_of(t)
+    if slots.SYNC_ORIGIN in str(t.get("origin", "") or ""):
+        return False
+    return bool(run and t.get("flow") and writes(t) and t.get("kind") not in kinds.STAGE_KINDS and slots.slot_count(run) > 1)
 
 
 def load_flows(run_dir):
@@ -176,7 +216,8 @@ def flow_done(tasks, name, f, holds):
     code = [o for o in tasks.values() if o.get("flow") == name and o.get("kind") in kinds.AUTO_DEPEND_KINDS]
     if not code:
         return status == "폴더 없음"
-    return all(o.get("status") in ("보류", "백로그") or o["id"] in holds for o in code)
+    return all(o.get("status") == "보류" or o["id"] in holds
+               or (o.get("status") == "백로그" and not devflow_lib.unfinished_mark(o)) for o in code)
 
 
 def downstream(tasks, roots, kinds):
@@ -209,6 +250,92 @@ def round_flows(tasks, flows, role):
     return out
 
 
+def plain_designs(tasks):
+    """실행 전체 설계가 아니고 닫혀 나가지 않은 설계."""
+    return [o for o in tasks.values() if o.get("kind") == "design" and not devflow_lib.is_run_wide(o)
+            and o.get("status") not in ("보류", "백로그")]
+
+
+def design_of(tasks, t):
+    """코드 task를 낸 설계: 부모를 따라 올라가 만나는 설계, 없으면 같은 흐름의 설계. 원인 분석에서 나온 코드는 그 설계가 없다."""
+    seen, tid = set(), t.get("parent", "")
+    while tid in tasks and tid not in seen:
+        seen.add(tid)
+        o = tasks[tid]
+        if o.get("kind") == "root-cause":
+            return None
+        if o.get("kind") == "design" and not devflow_lib.is_run_wide(o):
+            return o
+        tid = o.get("parent", "")
+    flow = t.get("flow", "")
+    return next((o for o in plain_designs(tasks) if flow and o.get("flow") == flow), None)
+
+
+def wave_state(tasks, design):
+    """설계의 물결이 어디까지 왔나(설계 7.2절): 기다리는 이유, 없으면 빈 글. 실행 전체 설계와 그 고친 판의 depends_on이 물결이다.
+    이미 코드가 시작한 설계는 덮는 실행 전체 설계가 있어도 멈추지 않는다."""
+    if len(plain_designs(tasks)) < 2:
+        return ""
+    family = [o for o in tasks.values() if devflow_lib.is_run_wide(o)]
+    covers = [o for o in family if design["id"] in o.get("depends_on", [])]
+    if any(devflow_lib.dependency_done(o) for o in covers):
+        return ""
+    if any(o.get("kind") in kinds.AUTO_DEPEND_KINDS and o.get("status") not in ("대기", "백로그") and design_of(tasks, o) is design
+           for o in tasks.values()):
+        return ""
+    if covers:
+        closed = all(o.get("status") in ("보류", "백로그") for o in covers)
+        return (RUN_WIDE_CLOSED if closed else RUN_WIDE_WAIT).format(", ".join(o["id"] for o in covers))
+    return RUN_WIDE_REVISION if family else RUN_WIDE_NEEDED
+
+
+def run_wide_block(tasks, flows, t):
+    """구현 kind와 흐름 안 수정이 실행 전체 설계를 기다리는 이유. 수정 흐름의 수정은 기다리지 않는다(원인 분석의 자식 설계와 서로 막힌다).
+    판본은 그 설계로 본다. 대기 코드 task에는 아직 시작 판본이 없다."""
+    if t.get("kind") not in kinds.AUTO_DEPEND_KINDS:
+        return ""
+    flow = t.get("flow", "")
+    if t.get("kind") == "fix" and devflow_lib.flow_role(flow, flows.get(flow)) == "fixes":
+        return ""
+    design = design_of(tasks, t)
+    if design is None or not devflow_lib.version_at_least(design.get("started_version"), devflow_lib.RULES_V120):
+        return ""
+    return wave_state(tasks, design)
+
+
+def wave_holds(tasks, flows):
+    """{대기 task id: [닫힌 실행 전체 설계 id]}. 기다림은 의존이 아니라 hold_blockers에 들지 않는다. 그 흐름의 검증도 함께 든다.
+    끝 질문 길을 태운다(설계 7.2절: 실행 전체 설계 자체가 보류면 사람에게 묻는다)."""
+    closed_head = RUN_WIDE_CLOSED.split("{}")[0]
+    out = {}
+    for o in tasks.values():
+        reason = run_wide_block(tasks, flows, o) if o.get("status") == "대기" else ""
+        if reason.startswith(closed_head):
+            out[o["id"]] = [x.strip() for x in reason[len(closed_head):].split(",")]
+    held_flows = {tasks[i].get("flow") for i in out}
+    for o in tasks.values():
+        if o.get("kind") == "flow-verify" and o.get("status") == "대기" and o.get("flow") in held_flows:
+            out[o["id"]] = next(v for i, v in out.items() if tasks[i].get("flow") == o.get("flow"))
+    return out
+
+
+def park_conflict(tasks, folder):
+    """치운 변경을 붙이다 난 충돌이 폴더에 남았으면 그 파일들. 표지 `park_applying`이 있을 때만 git을 부른다."""
+    if not folder or not any(str(o.get("park_applying", "") or "").strip() for o in tasks.values()):
+        return []
+    try:
+        return retry_diff.unmerged(retry_diff.status_entries(folder))
+    except (retry_diff.GitError, OSError):
+        return []
+
+
+def park_cut(tasks, t):
+    """같은 흐름에서 치우다 끊긴 다른 task. 반쯤 되돌린 폴더라 그 사이 커밋하면 잇지도 취소하지도 못한다."""
+    flow = t.get("flow", "")
+    return [o for o in tasks.values() if flow and o.get("flow") == flow and o.get("id") != t.get("id")
+            and str(o.get("parked_pending", "") or "").strip()]
+
+
 def start_blocks(tasks, flows, cap, t, holds=None):
     """의존은 풀렸지만 지금 띄우면 안 되는 이유(없으면 빈 목록). SKILL.md 1절 2, references/kinds/merge/main-order.md 「받아오기」.
     머리 파일 `waiting_user`(formats.md 3절)가 비어 있지 않으면 '사용자 할 일 대기'.
@@ -218,14 +345,21 @@ def start_blocks(tasks, flows, cap, t, holds=None):
     if holds is None:
         holds = devflow_lib.hold_blockers(tasks)
     if writes(t) and flow:
-        if any(o.get("flow") == flow and writes(o) and o.get("status") in kinds.BUSY_STATUSES
-               for o in tasks.values() if o is not t):
+        slotted = in_slot(t)   # 칸 모드의 폴더, 커밋 대기는 칸 배정(slots.assign)이 본다
+        if not slotted and any(o.get("flow") == flow and writes(o) and o.get("status") in kinds.BUSY_STATUSES
+                               for o in tasks.values() if o is not t):
             why.append("폴더 사용 중")
         if flows.get(flow, {}).get("sync_pending"):
             why.append("받아오기 먼저")
         waiting = [x for x in commit_waiting(tasks, flow) if x != t.get("id")]
-        if waiting:
+        if waiting and not slotted:
             why.append(COMMIT_WAIT.format(", ".join(waiting)))
+        cut = park_cut(tasks, t)
+        if cut:
+            why.append(PARK_CUT_BLOCK.format(", ".join(o["id"] for o in cut)))
+        conflict = park_conflict(tasks, str(flows.get(flow, {}).get("dir", "") or "").strip())
+        if conflict:
+            why.append(PARK_CONFLICT_BLOCK.format(", ".join(conflict)))
         busy_flows = {o.get("flow") for o in tasks.values()
                       if writes(o) and o.get("status") in kinds.BUSY_STATUSES and o.get("flow")}
         if flow not in busy_flows and len(busy_flows) >= cap:
@@ -259,19 +393,26 @@ def start_blocks(tasks, flows, cap, t, holds=None):
                 and o.get("status") in ("진행", "자체검증", "승인대기")]
         if busy:   # 다른 마무리는 기다리지 않되 함께 돌지는 않는다(같은 통합 폴더 문서를 고친다)
             why.append("다른 마무리 진행 중: " + ", ".join(busy))
+        if devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V120):
+            handed = devflow_lib.handed_without_probe(devflow_lib.run_dir_of(t), tasks)
+            if handed:
+                why.append("넘긴 「하실 일」의 탐침이 없음: " + ", ".join(handed))
         fx = [n for n, f in round_flows(tasks, flows, "fixes").items()
               if not flow_done(tasks, n, f, holds) and any(
                   o.get("flow") == n and o.get("kind") in kinds.AUTO_DEPEND_KINDS and o.get("status") == kinds.DONE
                   for o in tasks.values())]
         if fx:
             why.append("수정 흐름 안 합침: " + ", ".join(fx))
+    wide = run_wide_block(tasks, flows, t)
+    if wide:
+        why.append(wide)
     if t.get("waiting_user"):
         why.append("사용자 할 일 대기")
     return why
 
 
 def unreverified_fixes(tasks):
-    """검증 task에서 나온 수정(부모나 cause_task가 검증 task) 가운데 어느 재검증의 depends_on에도 없는 것."""
+    """검증 task에서 나온 수정(부모나 cause_task가 검증 task) 가운데 어느 재검증의 depends_on에도 없는 것. 코드 확인에서 온 수정은 뺀다."""
     covered = set()
     for o in tasks.values():
         if o.get("kind") == "reverify":
@@ -280,6 +421,8 @@ def unreverified_fixes(tasks):
     for o in tasks.values():
         if o.get("kind") != "fix" or o.get("status") in ("백로그", "보류") or o["id"] in covered:
             continue
+        if devflow_lib.CODE_CHECK_ORIGIN in str(o.get("origin", "")):
+            continue   # 사람이 고친 코드를 보고 승인하므로 재검증 없이 합친다. 합치기는 이 수정이 끝나기를 기다린다
         src = [x for x in (o.get("parent", ""), str(o.get("cause_task", "")).strip()) if x in tasks]
         if any(tasks[x].get("kind") in kinds.VERIFY_KINDS for x in src):
             out.append(o["id"])
@@ -313,43 +456,93 @@ def mergeable_flows(tasks, flows, run_dir, holds):
         fixes = [o for o in mine if o.get("kind") in ("fix", "reverify")]
         if not all(devflow_lib.settled(o, tasks, holds) for o in fixes) or any(o["id"] in nore for o in fixes):
             continue
+        # 흐름 리뷰의 답에서 만든 task는 kind와 흐름이 달라도(정본만 고치는 변경) 기다린다. 사람의 이의가 합친 뒤로 밀리지 않는다
+        reviews = {o["id"] for o in mine if devflow_lib.flow_review_rules(o)}
+        if any(devflow_lib.answer_source(o)[0] in reviews and not devflow_lib.settled(o, tasks, holds) for o in tasks.values()):
+            continue
         if role == "feature":
-            if not any(o.get("kind") == "flow-verify" and o.get("status") == kinds.DONE for o in mine):
+            if not any(o.get("kind") == "flow-verify" and devflow_lib.dependency_done(o) for o in mine):
                 continue
         else:
             fv = [o for o in tasks.values() if o.get("kind") == "full-verify"]
             if not fv or not all(devflow_lib.settled(o, tasks, holds) for o in fv):
                 continue
-            if not any(o.get("kind") == "fix" and o.get("status") == kinds.DONE for o in mine):
+            if not any(o.get("kind") == "fix" and devflow_lib.dependency_done(o) for o in mine):
                 continue
         out.append(n)
     return out
 
 
+def split_by_slot(tasks, run_dir, ready, held):
+    """칸을 쓰는 실행의 시작 후보에 흐름마다 칸을 배정한다. (시작할 것, 못 띄우는 것, {id: 칸})."""
+    groups, marks = {}, {}
+    for t, _ in ready:
+        if in_slot(t):
+            groups.setdefault(t.get("flow"), []).append(t)
+    verdict = {}
+    for flow, group in groups.items():
+        verdict.update(slots.assign(tasks, run_dir, flow, group))
+    kept = []
+    for t, why in ready:
+        got = verdict.get(t["id"])
+        if isinstance(got, str):
+            held.append((t, [got]))
+        else:
+            kept.append((t, why))
+            if got:
+                marks[t["id"]] = got
+    return kept, held, marks
+
+
 def print_ready(tasks, run_dir=None):
     flows = load_flows(run_dir) if run_dir else {}
     cap = flow_cap(run_dir) if run_dir else kinds.RUN_DEFAULTS["동시에 도는 흐름"]
-    holds = devflow_lib.hold_blockers(tasks)
+    holds = dict(devflow_lib.hold_blockers(tasks), **wave_holds(tasks, flows))
     ready, held = [], []
     for t in tasks.values():
         if not is_ready(tasks, t, holds):
             continue
         why = start_blocks(tasks, flows, cap, t, holds)
         (held if why else ready).append((t, why))
+    ready, held, marks = split_by_slot(tasks, run_dir, ready, held) if run_dir else (ready, held, {})
     print("지금 시작할 수 있는 task {}개".format(len(ready)))
     for t, _ in ready:
         mark = " (코드 폴더 필요: 흐름 {})".format(t.get("flow", "")) if t.get("kind") in kinds.CODE_WRITER_KINDS else ""
+        mark += " [칸 {}]".format(marks[t["id"]]) if t["id"] in marks else ""
         print("- {} {} [{}]{}".format(t["id"], t.get("title", ""), t.get("kind", ""), mark))
     if held:
         print("의존은 풀렸지만 지금은 못 띄움 {}개(공유 자원 잠금은 메인이 따로 본다)".format(len(held)))
         for t, why in held:
             print("- {} {} [{}] ({})".format(t["id"], t.get("title", ""), t.get("kind", ""), ", ".join(why)))
+    for line in empty_returns(tasks) + ([slots.count_problem(run_dir)] if run_dir and slots.count_problem(run_dir) else []):
+        print(line)
+    for t in tasks.values():
+        for note in slots.insert_notes(t):
+            print("- " + note)
     print_state_lines(tasks, flows, run_dir, holds, ready)
+
+
+def empty_returns(tasks):
+    """결과 없이 반환된 에이전트의 줄(설계 A-R 문제 3). 표지가 있거나, 메인이 에이전트 이름만 비운 `진행` task다.
+    단계가 있는 task는 메인이 직접 돌 때가 있어 표지가 없으면 세지 않는다."""
+    out = []
+    for tid, t in tasks.items():
+        if t.get("status") not in kinds.BUSY_STATUSES or not devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V120):
+            continue
+        mark = str(t.get("returned_empty", "") or "").split()
+        if mark:
+            out.append(devflow_lib.EMPTY_RETURN_LINE.format(tid, mark[-1]))
+        elif t.get("status") == "진행" and not str(t.get("running_agent", "") or "").strip() and t.get("kind") not in kinds.STAGE_KINDS                 and not str(t.get("external_progress", "") or "").strip() and not os.path.isfile(os.path.join(t["_dir"], "result.md")):
+            out.append(devflow_lib.EMPTY_RETURN_LINE.format(tid, "(이름 없음)"))
+    return out
 
 
 def print_state_lines(tasks, flows, run_dir, holds, ready):
     """합칠 수 있는 흐름·재검증 없는 수정, 받아오기 보류, 보류에 막힌 대기와 끝 질문. 해당 없으면 찍지 않는다."""
     if run_dir:
+        card = places.open_card_note(tasks, run_dir)
+        if card:
+            print(card)
         can = mergeable_flows(tasks, flows, run_dir, holds)
         if can:
             print("합칠 수 있는 흐름: {} (합치기 task를 만든다, references/kinds/merge.md)".format(", ".join(can)))
@@ -358,14 +551,29 @@ def print_state_lines(tasks, flows, run_dir, holds, ready):
         print("재검증 없는 수정: {} (재검증 task를 만든다, SKILL.md 5절)".format(", ".join(nore)))
     for n, f in flow_items(flows):
         waiting = commit_waiting(tasks, n)
-        if f.get("sync_pending") and waiting:
+        running = slots.checking(tasks, n)
+        if f.get("sync_pending") and running:
+            print("받아오기 보류(넣은 뒤 확인 중): {} — {}".format(n, ", ".join(running)))
+        if f.get("sync_pending") and waiting and not (run_dir and slots.slot_count(run_dir) > 1):
             print("받아오기 보류(커밋 대기): {} — {}가 통과 못 한 채 승인대기".format(n, ", ".join(waiting)))
     if holds:
         print("보류에 막힌 대기 task {}개: {}".format(len(holds), ", ".join(
             "{}(← {})".format(k, ", ".join(v)) for k, v in sorted(holds.items()))))
+    for o in tasks.values():
+        stuck = [d for d in o.get("depends_on", []) if devflow_lib.is_run_wide(o) and o.get("status") == "대기" and d in tasks
+                 and tasks[d].get("kind") == "design" and tasks[d].get("status") in ("보류", "백로그")]
+        if stuck:
+            print(RUN_WIDE_STUCK.format(o["id"], ", ".join(stuck)))
+    designs = plain_designs(tasks)
+    if any(devflow_lib.version_at_least(o.get("started_version"), devflow_lib.RULES_V120) for o in designs):
+        for reason, note in ((RUN_WIDE_NEEDED, "설계 행이 모두 생긴 뒤 만든다"), (RUN_WIDE_REVISION, "메인이 고친 판을 만든다. 그 설계의 코드만 기다린다")):
+            ids = [o["id"] for o in designs if wave_state(tasks, o) == reason]
+            if ids:
+                print("{}: {} ({}, references/kinds/design/main-order.md)".format(reason, ", ".join(ids), note))
     active = [o for o in tasks.values() if o.get("status") in ("진행", "자체검증", "승인대기")]
-    left = [o for o in tasks.values() if o.get("status") == "대기" and not devflow_lib.settled(o, tasks, holds)]
-    shelved = [o["id"] for o in tasks.values() if o.get("status") == "보류"]
+    left = [o for o in tasks.values() if o.get("status") == "대기" and not devflow_lib.settled(o, tasks, holds) and o["id"] not in holds]
+    shelved = [o["id"] for o in tasks.values() if o.get("status") == "보류"
+               or (devflow_lib.is_run_wide(o) and o.get("status") == "백로그" and any(o["id"] in v for v in holds.values()))]
     if not ready and not active and not left and holds:
         print("! 끝 질문: 남은 task가 모두 보류에 막혔다(보류 {}) — 보류 목록을 보이고 끝낼지 묻는다(SKILL.md 9절)".format(
             ", ".join(shelved)))
@@ -437,7 +645,7 @@ def last_output(run_dir, t):
         for sub in kinds.CANON_DIRS:
             for root, _dirs, files in os.walk(os.path.join(run_dir, sub)):
                 cands += [p for p in (os.path.join(root, f) for f in files) if os.path.getmtime(p) >= started]
-    folder = flows_dir(run_dir, t.get("flow", "")) if run_dir and writes(t) else None
+    folder = slots.folder_of(flows_dir(run_dir, t.get("flow", "")), t) if run_dir and writes(t) else None
     if folder:
         import subprocess
         try:
@@ -477,10 +685,41 @@ def agent_note(run_dir, t, now):
     return note
 
 
+def park_notes(run_dir, t):
+    """치워 둔 task의 재개 줄(설계 8.2절). 파일 목록 해시로 붙기 전, 붙은 뒤, 충돌, 어긋남을 가린다."""
+    notes = []
+    pending = str(t.get("parked_pending", "") or "").strip()
+    if pending:
+        notes.append(PARK_CUT_NOTE.format(retry_diff.parse_mark(pending)[0], id=t["id"]))
+    for key in ("parked", "repro_patch"):
+        mark = str(t.get(key, "") or "").strip()
+        if not mark:
+            continue
+        patch = retry_diff.parse_mark(mark)[0]
+        folder = flows_dir(run_dir, t.get("flow", "")) if run_dir else None
+        if not folder:
+            state = "폴더 없음"
+        else:
+            try:
+                state = retry_diff.park_state(folder, mark, os.path.join(run_dir, patch), str(t.get("park_applying", "") or "").strip())[0]
+            except (retry_diff.GitError, OSError) as e:
+                state = "상태를 읽지 못함({})".format(e)
+        notes.append(PARK_NOTE.format(patch, state) + (PARK_DROP_HINT if key == "parked" else ""))
+    return notes
+
+
 def print_resume(tasks, run_dir=None, now=None):
     import time
     now = now or time.time()
     print("재개 때 볼 것")
+    card = places.open_card_note(tasks, run_dir) if run_dir else ""
+    if card:
+        print("{} (screen.py {{실행 폴더}} {{id}} --card로 그 카드를 다시 낸다)".format(card))
+    pending = delegation.read_pending(run_dir) if run_dir else None
+    if pending:
+        print("위임 대기: \"{}\" — {} (위임이 아니다. 답이 없으면 평소 길로 간다)".format(pending["text"], delegation.pending_sentence(pending["levels"])))
+    for line in empty_returns(tasks):
+        print(line)
     for tid, t in tasks.items():
         notes = []
         if t.get("status") in ("진행", "자체검증", "승인대기"):
@@ -498,6 +737,7 @@ def print_resume(tasks, run_dir=None, now=None):
         mark = str(t.get("judge_started", "") or "").strip()
         if mark and t.get("status") in ("진행", "자체검증") and not devflow_lib.judges_present(t)[0]:
             notes.append(MARK_NOTE.format(mark))
+        notes += park_notes(run_dir, t) + slots.insert_notes(t)
         if notes:
             print("- {} {}: {}".format(tid, t.get("title", ""), " / ".join(notes)))
 

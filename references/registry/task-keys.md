@@ -42,12 +42,30 @@
 | stage | kv | — |
 | exported_commit | script | — |
 | partial_flow | kv | — |
+| run_wide | kv | — |
 | deploy_outcome | kv | — |
 | deployed_commit | kv | — |
 | created | script | — |
 | started | script | — |
 | approval_requested | script | — |
 | approved | script | — |
+| waiting_policy | engine | — |
+| parked | engine | — |
+| parked_pending | engine | — |
+| repro_patch | engine | — |
+| park_applying | engine | — |
+| holds_nothing | engine | — |
+| insert_pending | engine | — |
+| insert_failed | engine | — |
+| commit_via | engine | — |
+| slot | engine | — |
+| slot_base | engine | — |
+| returned_empty | engine | — |
+| asked_at | engine | — |
+| card_open | engine | — |
+| chosen_scope | engine | — |
+| start_commit | engine | — |
+| reviewed_tip | engine | — |
 
 | 순서 | 본문 절 | 채우는 쪽 |
 | --- | --- | --- |

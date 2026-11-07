@@ -15,4 +15,7 @@
 | 기획(`brief`, 흐름 없음) — 과도기 | 개요 정본(이번 회차 묶음만), 질문 답, `decisions.md`, 요청이 가리키는 문서·캡처 경로 | `references/kinds/brief.md` 「자체 검증」. 언제: 요구사항 개요가 기획 행 없이 끝났을 때. `depends_on` = 개요와 아직 안 끝난 개요 변경 task. 상세 행이 이미 있으면 기획은 상세 행을 쓰지 않고(범위에 그 id들을 적는다) 화면 설계·UI 규약 행만 쓰며, 상세가 옛 규칙으로 이미 화면 설계 행을 썼으면 그 묶음의 화면 설계 행도 쓰지 않는다 |
 | 화면 설계(`ui-design`) — 상세가 기획의 화면 유무를 뒤집었을 때 | 그 묶음의 화면 목록(기획)과 상세 정본 | `references/kinds/ui-design.md` 「자체 검증」. `depends_on` = 그 상세(와 UI 규약 task). 만든 직후 그 묶음 설계 task의 `depends_on`에 더한다. 반대로 화면이 없어진 묶음의 화면 설계 task는 `--reason`으로 `보류` |
 | 인프라 결정(`infra-design`, 실행에 하나) | `board.py {실행 폴더} --infra-premise`가 낸 「인프라 전제」 줄과 그 묶음(「정본의 절」 `design\infra.md`) | `references/kinds/infra-design.md` 「자체 검증」. 언제: 상세 task가 `완료`될 때마다 `--infra-premise`를 돌려 `- 없음`이 아닌 줄이 있고 인프라 결정 task가 없을 때. 있고 `대기`면 `--add "범위|…"`로 그 묶음을 더하고, 이미 시작했으면 그 정본의 변경 task. 만든 뒤 「인프라 전제」가 있는 묶음의 설계와 공통 설계 가운데 `대기`인 것의 `depends_on`에 그 id를 더한다 |
+| 넘긴 「하실 일」(`probe`) | 넘긴 일 원문과 `남는 것: 자원`. `origin` = `하실 일 넘김 {낸 task}` | `references/kinds/probe.md` 「자체 검증」. 언제: 사람이 「하실 일」을 Claude에게 넘겼을 때. 그 일이 승인을 기다리는 명령 단계 안의 줄이면 만들지 않고 고친 판을 받는다 |
 | 탐침 거짓의 변경(`change`) | `origin` = 탐침 task id와 가정 번호 | `references/kinds/change.md`. 언제: 탐침의 결과승인에서 정본을 고친다고 답했을 때 |
+
+사용자의 답이 코드·DB처럼 되돌리기 어려운 것을 바꾸고 고칠 방법이 하나로 정해지지 않으면, 코드를 고치는 task를 바로 만들지 않고 설계 블록의 고친 판을 쓰는 전용 task를 먼저 거친다.

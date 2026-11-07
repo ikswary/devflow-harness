@@ -345,6 +345,21 @@ def test_s11_conventions_collects_committed_code_tasks_only(run_dir):
         assert absent not in text, absent
 
 
+# --- 3의 2: 바꾸는 변경 task는 끝나지 않은 앞 변경 task에 대한 의존을 남긴다. 표지가 있는 완료도 끝나지 않은 것이다(설계 8.3절)
+
+@pytest.mark.parametrize("mark,kept", [({}, False), ({"insert_failed": "T009"}, True)])
+def test_s03b_replace_keeps_dependency_on_unfinished_change(run_dir, mark, kept):
+    run_dir.task("T001", "요구사항 고침", kind="change", block="요구사항", status="완료")
+    run_dir.result("T001", screen_result("T001", children=children_section(child_row("목록 화면"))))
+    run_dir.task("T002", "앞 변경", kind="change", block="요구사항", status="완료", **mark)
+    run_dir.task("T003", "목록 화면", depends_on=["T002"])
+
+    r = run_script("spawn_children", run_dir, "T001", "--replace", "--now", "2026-10-15 11:00:00")
+
+    assert r.returncode == 0, r.output
+    assert ("T002" in run_dir.tasks()["T003"]["depends_on"]) is kept
+
+
 # --- 12 --------------------------------------------------------------------------------------------------------
 
 def test_s12_apply_revision_waits_for_approval_then_moves_and_logs(run_dir):

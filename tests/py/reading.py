@@ -31,7 +31,8 @@ WRITER_ONLY = "references/roles/writer-only.md"   # 작성자만(5.10)
 AGENT_ROLE = "references/roles/agent.md"
 JUDGE_ROLE = "references/roles/judge.md"
 CASE = "{경우}"
-CASE_EXCLUDE = ("main-order.md", "run-check.md")
+CASE_EXCLUDE = ("main-order.md", "run-check.md", "flow-review.md")   # flow-review.md는 흐름별 검증만 읽는다
+FLOW_REVIEW = "references/kinds/verify/flow-review*.md"   # 경우 파일처럼 모듈이 가리키므로 「읽을 것」 대조에서 뺀다(`*`가 그 표지다)
 
 
 def _kind(definition):
@@ -98,11 +99,11 @@ _WRITER_SPEC = {
     "design-writer:change:ui-design": (("change", "ui-design"), ("ui-spec", "test-rules")),
     "design-writer:question": (("question",), ("design-doc", "test-rules")),
     "code-writer:implementation": (("implementation",), ("implementation-practice", "build-and-test", "test-rules",
-                                                          "code-task")),
-    "code-writer:fix": (("implementation",), ("implementation-practice", "build-and-test", "test-rules", "code-task")),
-    "code-writer:fe-implementation": (("fe-implementation",), ("code-task", "implementation-practice", "build-and-test",
+                                                          "code-task", "code-judgment")),
+    "code-writer:fix": (("implementation",), ("implementation-practice", "build-and-test", "test-rules", "code-task", "code-judgment")),
+    "code-writer:fe-implementation": (("fe-implementation",), ("code-task", "code-judgment", "implementation-practice", "build-and-test",
                                                                 "test-rules", "ui-spec")),
-    "code-writer:be-implementation": (("be-implementation",), ("code-task", "implementation-practice", "build-and-test",
+    "code-writer:be-implementation": (("be-implementation",), ("code-task", "code-judgment", "implementation-practice", "build-and-test",
                                                                 "test-rules")),
     "code-writer:probe": (("probe",), ("build-and-test",)),
     "infra-writer:infra-design": (("infra-design",), ("design-doc", "release-practice")),
@@ -125,13 +126,13 @@ _READ_JUDGE_KINDS = (("question", "req-overview", "req-detail", "brief", "ui-des
                         "infra-design", "probe", "fe-implementation", "be-implementation"))
 # 실행 판정자가 판정하는 kind
 _RUN_JUDGE_KINDS = ("implementation", "fix", "root-cause", "merge", "wrap-up", "deploy-exec",
-                    "fe-implementation", "be-implementation")
+                    "fe-implementation", "be-implementation", "flow-verify")
 # 실행 판정 파일을 다른 모듈에서 읽는 kind(`agents/run-judge.md` 「읽을 것」)
 _RUN_CHECK_OF = {"fe-implementation": "implementation", "be-implementation": "implementation"}
 # 읽기 판정자의 판정용 방법 문서: test-rules(implementation·fix·fe·be·design·root-cause·검증 셋),
 # code-task(implementation·fix·fe·be), code-review-checklist(검증 셋), design-doc(infra-design)
 _READ_JUDGE_PRACTICES = {k: ("test-rules",) for k in ("design", "root-cause")}
-_READ_JUDGE_PRACTICES.update({k: ("test-rules", "code-task")
+_READ_JUDGE_PRACTICES.update({k: ("test-rules", "code-task", "code-judgment")
                               for k in ("implementation", "fix", "fe-implementation", "be-implementation")})
 _READ_JUDGE_PRACTICES.update({k: ("test-rules", "code-review-checklist")
                               for k in ("flow-verify", "full-verify", "reverify")})
@@ -146,7 +147,7 @@ def _new_agent(agent, *files):
 def _new_writer(actor):
     agent, _, _ = parse_actor(actor)
     modules, practices = _WRITER_SPEC[actor]
-    files = (WRITER, WRITER_ONLY) + _formats_for("writer")
+    files = (WRITER, WRITER_ONLY) + _formats_for("writer") + ((FLOW_REVIEW,) if actor == "verify-writer:flow-verify" else ())
     for m in modules:
         files += _module(m)
     for p in practices:
@@ -155,7 +156,7 @@ def _new_writer(actor):
 
 
 def _new_read_judge(kind, target=None):
-    files = (WRITER, JUDGE_ROLE) + _formats_for("read-judge") + _module(definition_of(kind))
+    files = (WRITER, JUDGE_ROLE) + _formats_for("read-judge") + _module(definition_of(kind)) + ((FLOW_REVIEW,) if kind == "flow-verify" else ())
     if target:
         files += _module(target)   # change는 대상 모듈과 그 경우 파일도
     for p in _READ_JUDGE_PRACTICES.get(kind, ()):
@@ -246,6 +247,7 @@ BASELINE = {
     "run-judge:deploy-exec": 31840,
     "run-judge:fe-implementation": 31616,
     "run-judge:be-implementation": 31616,
+    "run-judge:flow-verify": 37647,
 }
 
 # ---------------------------------------------------------------------------

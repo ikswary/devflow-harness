@@ -5,9 +5,9 @@
 맡는 범위: 화면 구현(`fe-implementation`)·서버 구현(`be-implementation`)이 아닌 코드(도구·스크립트·라이브러리·설정·마이그레이션·문서)를 맡는다.
 
 ## 먼저 읽을 것
-`${CLAUDE_PLUGIN_ROOT}/references/practices/implementation-practice.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/build-and-test.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/code-task.md`(코드 task 공통), 설계 정본의 해당 절, 흐름 규약 파일(있으면). 수정 task면 경우 파일 `references/kinds/implementation/fix.md`도.
+`${CLAUDE_PLUGIN_ROOT}/references/practices/implementation-practice.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/build-and-test.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/code-task.md`(코드 task 공통), `${CLAUDE_PLUGIN_ROOT}/references/practices/code-judgment.md`, 설계 정본의 해당 절, 흐름 규약 파일(있으면). 수정 task면 경우 파일 `references/kinds/implementation/fix.md`도.
 
-판정자: `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/code-task.md`
+판정자: `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/code-task.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/code-judgment.md`
 
 ## 하는 일
 방법 문서 「코드 task 공통」의 같은 절을 따른다.

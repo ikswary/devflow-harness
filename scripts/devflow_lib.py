@@ -4,6 +4,8 @@
 값은 한 줄 문자열이거나 `[a, b]` 꼴의 목록이다. 형식은 formats.md가 원천이다.
 """
 import io
+import fnmatch
+import hashlib
 import os
 import posixpath
 import re
@@ -413,6 +415,57 @@ def run_value(run_dir, name, default):
     return default
 
 
+EMPTY_RETURN, EMPTY_RESUMED = "결과 없이 반환", "이어 씀"   # journal의 일 칸. 측정이 멈춘 시간으로 잰다
+EMPTY_RETURN_LINE = "! 결과 없이 반환: {} {} — 끝나지 않았습니다. 사람 답을 기다리지 말고 이어 쓰는 에이전트를 띄운다(references/main/errors.md)"
+SHEET_UPLOAD_KEY = "한 장 올리기"
+PLAIN_ASK = "묻기: 한 장 올리기 허용이라 `AskUserQuestion` 대신 일반 메시지로 묻고 턴을 끝낸다(references/main/sheet-upload.md)"
+SHEET_SENT, SHEET_FAILED = "한 장 올림", "한 장 못 올림"   # journal의 일 칸. 측정이 센다
+SHEET_SENT_FILE = "sheet-sent.md"   # task 폴더. `{한 장 sha256} {일회 표지} {링크}`. 다음 판의 한 장에는 맞지 않는다
+SHEET_ALLOWED_MARK = "-"   # 일회 표지 자리: 값이 `허용`일 때 올린 것. 일회 올리기면 올릴 때의 승인 기록 줄 수다
+
+
+def sheet_upload(run_dir):
+    """run.md 「이번 실행의 값」 `한 장 올리기`의 값. 마지막 행이 `허용`일 때만 허용이다(거두면 `없음` 행을 더한다).
+    행이 없는 옛 실행과 그 밖의 값은 시작값 `없음`이다."""
+    path = os.path.join(run_dir, "run.md")
+    values = sections(read_text(path)).get("이번 실행의 값", "") if os.path.isfile(path) else ""
+    last = kinds.RUN_DEFAULTS[SHEET_UPLOAD_KEY]
+    for line in values.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) >= 2 and cells[0] == SHEET_UPLOAD_KEY:
+            last = "허용" if cells[1] == "허용" else kinds.RUN_DEFAULTS[SHEET_UPLOAD_KEY]
+    return last
+
+
+def _sheet_hash(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def sheet_sent_write(t, link):
+    """올린 표지를 지금 한 장에 묶는다. 한 장이 없거나 링크가 비면 표지를 두지 않는다. 못 올렸을 때도 이 함수로 지운다."""
+    sheet, mark = os.path.join(t["_dir"], "sheet.html"), os.path.join(t["_dir"], SHEET_SENT_FILE)
+    if link and os.path.isfile(sheet):
+        once = SHEET_ALLOWED_MARK if sheet_upload(run_dir_of(t)) == "허용" else len(record_lines(t))
+        write_text(mark, "{} {} {}\n".format(_sheet_hash(sheet), once, link))
+    elif os.path.isfile(mark):
+        os.remove(mark)
+
+
+def sheet_sent_link(t):
+    """지금 사람이 열 수 있는 한 장의 링크. 표지가 없거나 한 장이 그 뒤에 바뀌었으면 빈 글이다.
+    값이 `허용`이 아니면 이 답을 기다리는 일회 올리기만 인정한다(값을 거두고 페이지를 지웠으면 링크가 죽었다). 답을 적으면 일회 올리기는 끝난다."""
+    sheet, mark = os.path.join(t["_dir"], "sheet.html"), os.path.join(t["_dir"], SHEET_SENT_FILE)
+    if not os.path.isfile(sheet) or not os.path.isfile(mark):
+        return ""
+    cells = read_text(mark).strip().split(" ", 2)
+    if len(cells) != 3 or cells[0] != _sheet_hash(sheet):
+        return ""
+    if sheet_upload(run_dir_of(t)) != "허용" and cells[1] != str(len(record_lines(t))):
+        return ""
+    return cells[2].strip()
+
+
 def journal_append(run_dir, kind, tid, line):
     """journal.md에 `- {YYYY-MM-DD HH:MM} | {일} | {id} | {줄}` 한 줄을 그 파일의 줄 끝 꼴로 더한다(덧붙이기 전용)."""
     from datetime import datetime
@@ -438,6 +491,14 @@ MTIME_SLACK = 60    # 초. 판정자가 첫 줄 시각을 쓴 뒤 파일을 닫�
 ISOLATION_CONTRACT_VERSION = "1.0.1"
 RULES_V110 = "1.1.0"   # 1.1.0 판본 문턱. 이 판본부터 시작한 task에만 영역·판정 표지·재사용 거부 규칙을 적용한다
 RULES_V111 = "1.1.1"   # 이 판본부터 시작한 STAGE kind task에만 묻는 stage별 판정 요구(kinds.STAGE_JUDGES)를 건다
+CANON_PATH_RE = re.compile(r"(?<![\w-])(?:spec|ui|design)[\\/][^\s`()'\"|,]*")   # 머리 파일 글에 적힌 정본 경로
+DESIGN_COPY = "design-copy"
+# 값 안의 `]`는 끊지 않는다(`src/app/[id]/page.tsx:12`). 태그는 다음 태그나 줄 끝에서 닫힌다
+JUDGMENT_TAG = re.compile(r"\[(종류|위치|따름|설계)\s*:\s*(.*?)\](?=\s*(?:\[(?:종류|위치|따름|설계)\s*:|$))")
+JUDGMENT_PLACE = re.compile(r"^[^,]+:\d+(?:-\d+)?$")
+JUDGMENT_NONE = re.compile(r"^- 없음(?:\s*\(.*\))?\s*$")
+RULES_V120 = "1.2.0"   # 이 판본(1.2.0-dev.n 포함)부터 시작한 task에만 판단 기록·코드 확인 규칙을 적용한다
+CODE_CHECK_ORIGIN = "코드 확인"   # 곳 답의 승인 기록 지점(`코드 확인 {키}`)과 그 답으로 만든 수정의 origin에 든다
 
 
 def is_new_task(t):
@@ -451,6 +512,85 @@ def version_at_least(value, minimum):
         return tuple(int(x) for x in m.groups()) if m else None
     got, need = parts(value), parts(minimum)
     return bool(got and need and got >= need)
+
+
+# 값의 가림. 사람에게 보이고 파일에 남는 글(한 장, 실행 지도, 코드 확인 카드)이 함께 쓴다
+MASK = "[가림]"
+KEY_BLOCK = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S)
+SECRET_PAIR = re.compile(r"""(?i)((?:api[ _-]?key|service[_-]?role(?:[_-]?key)?|access[_-]?key|session[_-]?key|secret[_-]?key|credential|secret|token|password|passwd|pwd|authorization|private[_-]?key|비밀번호|암호|토큰)["']?\s*[:=]\s*)"""
+                         r"""((?:bearer|basic)\s+\S+|"[^"]*"|'[^']*'|\S+)""")
+# 문서의 타입 이름, 자리 표시, 한글 문장은 값이 아니다(설계 문서를 읽을 수 있어야 한다)
+COOKIE_PAIR = re.compile(r"""(?i)((?<![\w-])(?:set-)?cookie["']?\s*[:=]\s*)(\S.*)$""")   # 쿠키는 값이 여럿이라 줄 끝까지 가린다
+NOT_A_VALUE = re.compile(r"(?i)^(?:string|str|number|int|integer|bool|boolean|null|none|undefined|true|false|object|array|any"
+                         r"|required|optional|text|uuid)[,|;)]*$|^[$<{\[(|가-힣]")
+URL_CREDENTIAL = re.compile(r"(\b[a-z][a-z0-9+.-]{0,30}://[^\s:/@]{1,256}:)[^\s@/]{1,256}(@)")
+KNOWN_TOKEN = re.compile(r"\b(?:sk|ghp|gho|ghs|ghu|github_pat|glpat|xox[abps])[-_][A-Za-z0-9_-]{10,}|\bAKIA[0-9A-Z]{16}\b"
+                         r"|\beyJ[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]*){0,2}"   # JWT(Supabase 키 꼴)
+                         r"|(?i:\bbearer\s+)[A-Za-z0-9._~+/=-]{16,}")
+PHONE = re.compile(r"\b01\d[- ]?\d{3,4}[- ]?\d{4}\b|\+82[- ]?\(?0?1\d\)?[- ]?\d{3,4}[- ]?\d{4}\b")
+# 도메인 끝이 알파벳이어야 메일이다(`next@14.2.1`은 판 번호). 길이를 묶어 긴 줄에서도 느려지지 않는다
+MAIL = re.compile(r"(?<![A-Za-z0-9._%+-])(?!git@)[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b")
+KEY_BEGIN, KEY_END = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), re.compile(r"-----END [A-Z ]*PRIVATE KEY-----")
+
+
+def mask_line(line):
+    """한 줄의 비밀값 값 꼴과 전화번호·메일 꼴을 가린다."""
+    def pair(m):
+        return m.group(0) if NOT_A_VALUE.match(m.group(2)) else m.group(1) + MASK
+
+    line = COOKIE_PAIR.sub(lambda m: m.group(0) if NOT_A_VALUE.match(m.group(2)) else m.group(1) + MASK, line)
+    line = SECRET_PAIR.sub(pair, line)
+    line = URL_CREDENTIAL.sub(lambda m: m.group(1) + MASK + m.group(2), line)
+    line = KNOWN_TOKEN.sub(MASK, line)
+    line = PHONE.sub(MASK, line)
+    return MAIL.sub(MASK, line)
+
+
+def mask_lines(rows):
+    """줄 목록을 줄 수와 번호를 그대로 두고 가린다. 개인 키 묶음은 줄마다 가린다. (가린 줄 목록, 바뀐 줄 수)."""
+    out, changed, in_key = [], 0, False
+    for line in rows:
+        if in_key or KEY_BEGIN.search(line):
+            in_key = not KEY_END.search(line)
+            out.append(MASK)
+            changed += 1
+            continue
+        clean = mask_line(line)
+        changed += clean != line
+        out.append(clean)
+    return out, changed
+
+
+LEVEL_NOT = re.compile(r"L\d(?:\s*[~\-–—～〜]\s*L?\d)?\s*(?:은|는|을|를)?\s*(?:제외|빼고|뺌|말고|아님|없음|안\s*함)")
+RISK_SENTENCE = "받아들인 위험은 답을 `--record \"승인|위험 수용|{원문}\"`으로 적고 `decisions.md`에 `[위험 수용 T0xx] {항목}` 한 줄을 쓴다"   # 문서 넷과 같은 글
+DELEGATED_ANSWER = re.compile(r"이후\s*전체|나머지\s*자동|자동\s*승인|전부\s*자동")   # 위임의 말. 칸에 `위임 {층}`을 적지 않은 승인은 거부한다
+
+
+def levels_in(value):
+    """칸 글의 층. 괄호 안 글과 뺀 층은 세지 않는다."""
+    found = set()
+    value = LEVEL_NOT.sub("", re.sub(r"[(（][^)）]*[)）]", "", value or ""))
+    for low, high in re.findall(r"L(\d)(?:\s*[~\-–—～〜]\s*L?(\d))?", value):
+        ends = sorted((int(low), int(high or low)))
+        found.update(range(ends[0], ends[1] + 1))
+    return tuple("L{}".format(n) for n in sorted(found))
+
+
+def delegation_levels(run_dir):
+    """run.md 「이번 실행의 값」 `위임` 행의 층(설계 9절). `L1~L3`은 범위를 풀어 ("L1", "L2", "L3")이다. 행이나 층이 없으면 빈 튜플.
+    괄호 안 글과 `L4 제외`, `L1 아님`처럼 뺀 층은 세지 않는다(좁은 쪽으로 읽는다)."""
+    try:
+        values = sections(read_text(os.path.join(run_dir, "run.md"))).get("이번 실행의 값", "")
+    except OSError:
+        return ()
+    for line in values.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if not line.startswith("|") or len(cells) < 2 or not cells[0].startswith("위임"):
+            continue
+        found = levels_in(cells[1])
+        if found:
+            return found
+    return ()
 
 
 def uses_isolation_contract(t):
@@ -519,6 +659,39 @@ def doc_check_commit(t):
     return doc_check_result(t)[0]
 
 
+def inside(root, path):
+    """path가 root 안의 파일인가. 링크를 푼 경로로 본다."""
+    return os.path.normcase(os.path.realpath(path)).startswith(os.path.normcase(os.path.realpath(root)) + os.sep)
+
+
+def copy_canon_sections(run_dir, task_dir, section_text):
+    """코드 task가 시작할 때 「정본의 절」 파일의 사본과 해시를 뜬다(설계 6.12절). 정본은 git 밖이고 덮어써지므로,
+    판정자가 `[설계:]`를 그 task 시점의 판으로 대조하려면 사본이 있어야 한다. 이미 떴으면 그대로 둔다."""
+    folder = os.path.join(task_dir, DESIGN_COPY)
+    hashes = os.path.join(folder, "hashes.md")
+    if os.path.isfile(hashes):
+        return
+    rows, seen = [], set()
+    for m in CANON_PATH_RE.finditer(section_text or ""):
+        rel = posixpath.normpath(m.group(0).rstrip(".:;").replace("\\", "/"))
+        if rel.lower() in seen:
+            continue
+        seen.add(rel.lower())
+        path = os.path.join(run_dir, *rel.split("/"))
+        if not os.path.isfile(path) or not inside(run_dir, path):
+            rows.append("없음 " + rel)
+            continue
+        with open(path, "rb") as f:
+            data = f.read()
+        target = os.path.join(folder, *rel.split("/"))
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "wb") as f:
+            f.write(data)
+        rows.append("{} {}".format(hashlib.sha256(data).hexdigest(), rel))
+    os.makedirs(folder, exist_ok=True)
+    write_text(hashes, "\n".join(rows) + "\n" if rows else "(정본의 절 없음)\n")
+
+
 def run_dir_of(t):
     return os.path.dirname(os.path.dirname(t["_dir"])) if t.get("_dir") else None   # tasks\T…의 두 단계 위
 
@@ -528,6 +701,74 @@ def stage_judges(t, stage):
     if not stage or not version_at_least(t.get("started_version", ""), RULES_V111):
         return None
     return kinds.STAGE_JUDGES.get((t.get("kind", ""), stage))
+
+
+def needs_judgment_record(t):
+    """결과 파일 「판단」과 판정 파일 「판단 대조」를 쓰는 task: 1.2.0부터 시작한 코드 task."""
+    return t.get("kind") in kinds.AUTO_DEPEND_KINDS and version_at_least(t.get("started_version"), RULES_V120)
+
+
+def judgment_problems(t):
+    """결과 파일 「판단」 절의 문제 목록. 꼴은 `references/practices/code-judgment.md`다."""
+    path = os.path.join(t["_dir"], "result.md")
+    if not needs_judgment_record(t) or not os.path.isfile(path):
+        return []
+    body = sections(read_text(path), level=2).get("판단", "").strip()
+    if not body:
+        return ["「판단」 절 없음"]
+    out = []
+    for line in body.splitlines():
+        indented = line.startswith((" ", "\t"))
+        if not line.strip() or JUDGMENT_NONE.match(line) or (indented and not line.lstrip().startswith("- ")):
+            continue
+        if indented or not line.startswith("- ") or not judgment_line_ok(line):
+            out.append("「판단」 줄의 꼴: " + line[:60])
+    return out
+
+
+def judgment_tags(line):
+    """「판단」 줄의 표지 [(이름, 값)]. 값의 공백과 백틱을 벗긴다."""
+    return [(key, value.strip(" `")) for key, value in JUDGMENT_TAG.findall(line)]
+
+
+def judgment_line_ok(line):
+    """`[설계:]` 하나이거나, 닫힌 `[종류:]`, `파일:줄` 꼴 `[위치:]` 하나씩에 `[따름:]`이 있어도 되는 줄."""
+    found = judgment_tags(line)
+    tags = dict(found)
+    if len(tags) != len(found) or not all(tags.values()):
+        return False
+    if "설계" in tags:
+        return set(tags) == {"설계"}
+    return tags.get("종류") in kinds.JUDGMENT_KINDS and bool(JUDGMENT_PLACE.match(tags.get("위치", ""))) \
+        and ("따름" not in tags or bool(JUDGMENT_PLACE.match(tags["따름"])))
+
+
+FLOW_REVIEW_SECTION = "흐름 리뷰 전·후"
+
+
+def answer_source(t):
+    """`--from-answer`로 만든 task가 가리키는 답의 (task, 시각). 아니면 ("", "")."""
+    m = ANSWER_ORIGIN.match(str(t.get("origin", "") or "").strip())
+    return (m.group(1), m.group(2)) if m else ("", "")
+
+
+def open_objection(t, tasks):
+    """닫히지 않은 흐름 리뷰 이의의 시각(없으면 빈 글): 마지막 이의 뒤에 그 답에서 만든 task도 철회도 없을 때."""
+    last, withdrawn = "", ""
+    for line in record_lines(t):
+        f = record_fields(line)
+        if len(f) >= 2 and f[1] == REVIEW_OBJECTION:
+            last = f[0]
+        elif len(f) >= 2 and f[1] == OBJECTION_WITHDRAWN:
+            withdrawn = f[0]
+    if not last or withdrawn >= last:
+        return ""
+    return "" if any(answer_source(o)[0] == t.get("id") and answer_source(o)[1] >= last for o in tasks.values()) else last
+
+
+def flow_review_rules(t):
+    """1.2.0부터 시작한 흐름별 검증: 실행 판정이 전·후를 돌리고 화면이 흐름 리뷰 차례를 쓴다(설계 7.1절). 옛 task는 지금 규칙 그대로다."""
+    return t.get("kind") == "flow-verify" and version_at_least(t.get("started_version"), RULES_V120)
 
 
 def required_judges(t, stage=None):
@@ -543,10 +784,12 @@ def required_judges(t, stage=None):
     gate = stage_judges(t, stage)
     if gate is not None:
         need |= set(gate)
-    if gate is None and k is not None and k.run_judge == "always":
-        need.add("run")
+    if gate is None and k is not None and k.run_judge == "always" and (kind != "flow-verify" or flow_review_rules(t)):
+        need.add("run")   # 흐름별 검증의 실행 판정은 전·후 몫이고 1.2.0부터다
     if gate is None and k is not None and k.read_judge == "always":
         need.add("read")
+    if needs_judgment_record(t):
+        need.add("read")   # 숨은 판단과 코드 의견은 읽기 판정이 쓴다(설계 11.1절)
     if kind in kinds.IMPLEMENT_KINDS and k.read_judge == "conditional":
         cells = result_cells(t) or {}
         if t.get("closes_ac") or str(t.get("machine_check", "")).strip() == "3" or item_count(cells.get("알릴 것", "")):
@@ -621,6 +864,16 @@ def judges_present(t, stage=None):
             and doc_check_command(run_dir_of(t)) and (not doc_check_result(t)[0] or doc_check_result(t)[1] is None):
         missing.append("main-run.md 「넣기 전 문서 검사」의 검증 commit·종료 코드 없음(recon.md 「문서를 읽는 검사」를 배포 기록 "
                        "커밋에서 돌림. 실패한 결과는 화면 맨 위에 올리고 묻는다)")
+    if needs_judgment_record(t) and os.path.isfile(os.path.join(d, kinds.JUDGE_FILES["read"])) \
+            and "판단 대조" not in sections(read_text(os.path.join(d, kinds.JUDGE_FILES["read"])), level=2):
+        missing.append("judge.md 「판단 대조」 절 없음(references/practices/code-judgment.md)")
+    if flow_review_rules(t) and os.path.isfile(os.path.join(d, kinds.JUDGE_FILES["run"])) \
+            and FLOW_REVIEW_SECTION not in sections(read_text(os.path.join(d, kinds.JUDGE_FILES["run"])), level=2):
+        missing.append("judge-run.md 「{}」 절 없음(references/formats/judge-run-file.md)".format(FLOW_REVIEW_SECTION))
+    if flow_review_rules(t) and judge_header(os.path.join(d, kinds.JUDGE_FILES["read"]))[1] is not None \
+            and judge_header(os.path.join(d, kinds.JUDGE_FILES["run"]))[1] is not None \
+            and judge_header(os.path.join(d, kinds.JUDGE_FILES["read"]))[1] < judge_header(os.path.join(d, kinds.JUDGE_FILES["run"]))[1]:
+        missing.append("읽기 판정이 실행 판정보다 앞섬(새 전·후를 「이 흐름이 한 일」과 대조하도록 읽기 판정을 다시 띄운다)")
     if not missing:
         missing.extend(judge_run_contract_problems(t))
     return (not missing), "; ".join(missing)
@@ -631,7 +884,7 @@ FINAL_CI_KEYS = ("범위", "검증 commit", "검증 artifact")
 
 def final_ci_values(t):
     """judge-run.md 「최종 배포 후보 CI」의 {범위, 검증 commit, 검증 artifact}. 마무리의 완료 관문, 얼림의 넣는 끝
-    (exec.py), 배포의 권위 있는 최종 CI(task_set.canonical_final_ci)가 함께 읽는 하나의 원천."""
+    (exec.py), 배포의 권위 있는 최종 CI(canonical_final_ci)가 함께 읽는 하나의 원천."""
     path = os.path.join(t["_dir"], kinds.JUDGE_FILES["run"])
     text = sections(read_text(path), level=2).get("최종 배포 후보 CI", "") if os.path.isfile(path) else ""
     values = {}
@@ -640,6 +893,70 @@ def final_ci_values(t):
         if m:
             values[m.group(1)] = m.group(2)
     return values
+
+
+SOURCE_TESTED = "없음(소스 시험)"   # 소스를 시험하고 배포 때 빌드하는 프로젝트의 `검증 artifact`. 이 글자 그대로일 때만 표지다
+SOURCE_TESTED_FACT = "빌드 결과물 자체를 시험한 것은 아닙니다. 빌드 설정과 환경 차이는 배포 뒤 확인이 잡습니다"
+ARTIFACT_ID = re.compile(r"[A-Za-z0-9][!-~]*")
+
+
+def started_tasks(run_dir):
+    """시작한 적이 있는 task. 시작한 적 없는 대기·백로그·보류 행(시작 시각과 판본이 모두 빔)은 세지 않는다."""
+    return [o for o in load_tasks(run_dir).values()
+            if not (o.get("status") in ("대기", "백로그", "보류") and not o.get("started") and not o.get("started_version"))]
+
+
+def run_from_v120(run_dir):
+    """이 실행이 1.2.0부터 시작했는가: 시작한 task가 있고 모두 1.2.0 이상이다. run.md 판본은 하네스를 올릴 때 고치고
+    새 task의 started_version은 지금 판본이므로, 그 하나만 보면 앞서 시작한 실행의 뒤 task가 새 규칙을 받는다."""
+    started = started_tasks(run_dir)
+    return bool(started) and all(version_at_least(o.get("started_version"), RULES_V120) for o in started)
+
+
+def final_ci_artifact_problem(value):
+    """1.2.0부터 `검증 artifact`로 받는 값은 소스 시험 표지 글자 그대로이거나, 숫자가 든 빈칸 없는 식별자다(문제 글, 없으면 빈 글)."""
+    if value == SOURCE_TESTED or (ARTIFACT_ID.fullmatch(value) and any(c.isdigit() for c in value)):
+        return ""
+    return "최종 배포 후보 CI 검증 artifact가 식별자나 `{}`가 아님({})".format(SOURCE_TESTED, value)
+
+
+def canonical_final_ci(run_dir):
+    """현재 실행의 권위 있는 최종 후보: 완료된 1.0.1 wrap-up 가운데 가장 늦게 승인된 것."""
+    wraps = [o for o in load_tasks(run_dir).values()
+             if o.get("kind") == "wrap-up" and o.get("status") == kinds.DONE and uses_isolation_contract(o)]
+    if not wraps:
+        return None, "완료된 1.0.1 wrap-up 최종 CI가 없음"
+    wraps.sort(key=lambda o: (str(o.get("approved", "")), str(o.get("id", ""))))
+    authority = wraps[-1]
+    values = final_ci_values(authority)
+    missing = [k for k in FINAL_CI_KEYS if not values.get(k)]
+    if missing:
+        return None, "{}의 최종 CI 필수 값 없음: {}".format(authority.get("id"), ", ".join(missing))
+    return values, ""
+
+
+def deploy_only_run(run_dir):
+    """1.2.0부터 시작했고 마무리 task가 하나도 없는 실행(배포만). 끝나지 않은 마무리가 있으면 아니다."""
+    return run_from_v120(run_dir) and not any(o.get("kind") == "wrap-up" for o in load_tasks(run_dir).values())
+
+
+def no_ci_accepted(run_dir, t):
+    """배포만 실행에서 사람이 최종 CI 없음을 받아들였는가."""
+    return deploy_only_run(run_dir) and risk_accepted(t, item=NO_CI_RISK)
+
+
+def source_tested_lines(run_dir, t):
+    """마무리·배포 화면에 보일 소스 시험의 한계. 빌드 결과물을 시험했거나 1.2.0 앞에 시작한 실행이면 빈 목록."""
+    kind = str(t.get("kind", ""))
+    if not (kind == "wrap-up" or kind.startswith("deploy-")) or not run_from_v120(run_dir):
+        return []
+    if kind != "wrap-up" and deploy_only_run(run_dir):
+        fact = "- 이 실행에는 마무리 task가 없어 최종 CI가 없습니다. 올라갈 커밋을 이 실행이 시험하지 않았습니다"
+        return [fact if no_ci_accepted(run_dir, t) else fact + ". 배포를 닫으려면 그 위험을 받아들인다는 답이 필요합니다"]
+    values = final_ci_values(t) if kind == "wrap-up" else canonical_final_ci(run_dir)[0] or {}
+    if values.get("검증 artifact") != SOURCE_TESTED:
+        return []
+    return ["- 최종 CI는 소스를 시험했습니다. " + SOURCE_TESTED_FACT]
 
 
 def final_ci_cause(t):
@@ -662,18 +979,33 @@ def final_ci_failed(t):
 RISK_REFUSED = re.compile(r"안\s*함|않|아니|거부")
 
 
-def risk_accepted(t, since=None):
+BUILD_ID_RISK, TREE_RISK, NO_CI_RISK = "빌드 식별자", "작업 트리", "최종 CI 없음"   # 위험 수용 답의 결정 칸에 적는 이유(`승인|위험 수용 {이유}|{원문}`)
+
+
+def risk_answer(line, item=""):
+    """승인 기록 한 줄이 위험을 받아들인 답인가. item을 주면 결정 칸에 그 이유가 있고 원문이 있는 답만 받는다.
+    item이 없으면(최종 CI·문서 검사 실패) 이유가 붙은 답은 받지 않는다: 사람이 동의한 위험이 다르다."""
+    f = record_fields(line)
+    decision = f[2].strip() if len(f) >= 3 else ""
+    if not decision.startswith("위험 수용") or RISK_REFUSED.search(decision) or not approval_line(line) \
+            or reused_answer(line):
+        return False
+    if not item:
+        return not any(reason in decision for reason in (BUILD_ID_RISK, TREE_RISK, NO_CI_RISK))
+    return item in decision and bool((record_quote(line) or "").strip())
+
+
+def risk_accepted(t, since=None, item=""):
     """실패를 사람이 받아들였는가: 기준 시각(since, 없으면 실행 판정 파일의 판정 시각) 뒤의 승인 줄 가운데 결정 칸이
     `위험 수용`으로 시작하고 부정어(`안 함`·`않`·`아니`·`거부`)가 없는 것(`--record "승인|위험 수용|{원문}"`,
-    selfcheck.md 「실패 처리」의 위험을 받아들임 = 승인). 리뷰 111b N4: `위험 수용 안 함`을 승인으로 세던 판별."""
+    selfcheck.md 「실패 처리」의 위험을 받아들임 = 승인). 리뷰 111b N4: `위험 수용 안 함`을 승인으로 세던 판별.
+    item을 주면 그 이유를 적은 답만 센다(risk_answer)."""
     from datetime import datetime
     judged = since if since is not None else judge_header(os.path.join(t["_dir"], kinds.JUDGE_FILES["run"]))[1]
     for line in record_lines(t):
-        f = record_fields(line)
-        decision = f[2].strip() if len(f) >= 3 else ""
-        if not decision.startswith("위험 수용") or RISK_REFUSED.search(decision) or not approval_line(line) \
-                or reused_answer(line):
+        if not risk_answer(line, item):
             continue
+        f = record_fields(line)
         for fmt, n in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16)):
             try:
                 when = datetime.strptime(f[0][:n], fmt).timestamp()
@@ -716,8 +1048,25 @@ def judge_run_contract_problems(t):
     return problems
 
 
+RECORD_MESSAGE = ' | 원문 메시지: "'
+TEST_CHANGE_POINT = "시험 변화"
+UNMEASURED_POINT = CODE_CHECK_ORIGIN + " 재지 못함 "   # `코드 확인 재지 못함 {T}|합쳐도 됨|{원문}`. 보안 신호와 시험 변화를 함께 푼다. 줄에는 `{T}@{커밋}`으로 적힌다
+UNMEASURED_NO_COMMIT = "없음"   # 답 줄과 다시 잰 줄의 커밋 칸: 커밋 값이 비었다(코드가 없다는 뜻이 아니라 모른다는 뜻이다)
+UNMEASURED_ANSWER = "합쳐도 됨"
+REVIEW_OBJECTION = "리뷰 이의"   # 흐름 리뷰의 `이의 n`. 고치는 task가 생기거나 철회될 때까지 그 검증을 닫지 못한다
+OBJECTION_WITHDRAWN = REVIEW_OBJECTION + " 철회"
+PARTIAL_POINTS = (TEST_CHANGE_POINT, CODE_CHECK_ORIGIN, REVIEW_OBJECTION)   # 한 지점의 답을 남기는 승인 기록 지점의 머리. 전체 승인으로 세지 않고 상태도 옮기지 않는다
+
+
+def record_core(line):
+    """승인 기록 줄에서 `원문 메시지:` 칸을 뗀 줄. 그 칸은 사람이 읽는 기록이고, 한 메시지에 다른 task의 답이 함께 있으므로
+    승인 판별과 얼림의 재료가 되지 않는다."""
+    at = line.rfind(RECORD_MESSAGE)
+    return line[:at] if at >= 0 else line
+
+
 def record_lines(t):
-    return [l.strip() for l in t["_sections"].get("승인 기록", "").splitlines() if l.strip().startswith("- ")]
+    return [record_core(l.strip()) for l in t["_sections"].get("승인 기록", "").splitlines() if l.strip().startswith("- ")]
 
 
 def record_fields(line):
@@ -748,22 +1097,106 @@ def has_quoted_answer(t):
     """사용자 답의 원문(따옴표 안의 말)이 있는 승인 기록 줄이 있는가. 알림·점검 확인 줄은 세지 않는다."""
     for line in record_lines(t):
         f = record_fields(line)
-        if len(f) >= 2 and f[1] in ("알림", "점검 확인"):
-            continue
+        if len(f) >= 2 and (f[1] in ("알림", "점검 확인") or f[1].startswith(PARTIAL_POINTS)):
+            continue   # 곳 답과 시험 변화 답은 그 지점의 답이고 task 전체의 답이 아니다(설계 6.16절)
         if re.search(r'"[^"]+"', line):
             return True
     return False
+
+
+CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+_ANSWER_TASK = re.compile(r"^(T\d{3,})\s+(\S.*)$")
+_ANSWER_TASK_ITEM = re.compile(r"^([" + CIRCLED + r"])\s*(\S.*)$")
+_ANSWER_TASK_ITEMS = re.compile(r"^(\S.*?)\s+([" + CIRCLED + r"\s]+)$")
+_ANSWER_OBJECTION = re.compile(r"^이의\s+(\d+)$")
+_ANSWER_REST = re.compile(r"^나머지\s+(\S.*)$")
+_ANSWER_EXCEPT = re.compile(r"^(\d+)\s*빼고\s+(\S.*)$")
+_ANSWER_ITEM = re.compile(r"^(\d+)[.)]?\s+(\S.*)$")
+
+
+def _answer_piece(text):
+    m = _ANSWER_TASK.match(text)
+    if m:
+        task, rest = m.group(1), m.group(2)
+        one = _ANSWER_TASK_ITEM.match(rest)
+        if one:
+            return {"task": task, "item": CIRCLED.index(one.group(1)) + 1, "value": one.group(2)}
+        many = _ANSWER_TASK_ITEMS.match(rest)
+        if many:
+            return {"task": task, "value": many.group(1),
+                    "items": [CIRCLED.index(c) + 1 for c in many.group(2) if c in CIRCLED]}
+        return {"task": task, "value": rest}
+    m = _ANSWER_OBJECTION.match(text)
+    if m:
+        return {"objection": int(m.group(1))}
+    m = _ANSWER_REST.match(text)
+    if m:
+        return {"rest": True, "value": m.group(1)}
+    m = _ANSWER_EXCEPT.match(text)
+    if m:
+        return {"except": int(m.group(1)), "value": m.group(2)}
+    m = _ANSWER_ITEM.match(text)
+    if m:
+        return {"item": int(m.group(1)), "value": m.group(2)}
+    if re.fullmatch(r"[0-9]+", text):
+        return {"number": int(text)}
+    return {"value": text}
+
+
+def _answer_settled(piece, allowed, with_text):
+    """값을 화면의 선택지로 맞춘 조각, 맞지 않으면 None. 맨 번호와 이의는 값이 없고, with_text의 선택지만 뒤에 글을 받는다."""
+    value = piece.get("value")
+    if value is None or value in allowed or re.fullmatch(r"[0-9]+", value):
+        return piece
+    for name in with_text:
+        m = re.fullmatch(re.escape(name) + r"(?:\s*:\s*|\s+)(\S.*)", value, re.S)
+        if m:
+            return dict(piece, value=name, text=m.group(1))
+    return None
+
+
+def _answer_pieces(text):
+    """줄바꿈과 쉼표로 나눈다. 조각에 `:`가 나오면 그 줄의 나머지는 글이므로 나누지 않는다."""
+    out = []
+    for line in (text or "").split("\n"):
+        pending = line
+        while pending:
+            head, comma, tail = pending.partition(",")
+            if ":" in head or not comma:
+                out.append(pending)
+                break
+            out.append(head)
+            pending = tail
+    return [p.strip() for p in out if p.strip()]
+
+
+def parse_answer(text, allowed, with_text=(), own_task=None):
+    """답의 꼴(설계 8.1절)을 기계로 푼다. allowed는 그 화면의 선택지 이름이고 with_text는 그 가운데 뒤에 글을 받는 것이다.
+    조각이 모두 꼴에 맞고 값이 선택지이면 목록, 아니면 None(메인이 되묻는다). own_task를 주면 다른 task의 조각은 그 화면이
+    풀도록 값을 보지 않고 `raw`에 원문을 담아 돌려준다. 글은 한 줄이다(여러 task의 답은 줄로 나눈다)."""
+    parsed = []
+    for text_piece in _answer_pieces(text):
+        piece = _answer_piece(text_piece)
+        if own_task and piece.get("task") not in (None, own_task):
+            parsed.append({"task": piece["task"], "raw": text_piece})
+        else:
+            parsed.append(_answer_settled(piece, allowed, with_text))
+    return parsed if parsed and all(parsed) else None
+
+
+HANDED_POINT = "하실 일 넘김"   # 넘김 답의 지점. 승인 줄이 아니라 명령을 얼리지도, 화면을 닫지도 않는다
 
 
 def approval_line(line):
     """승인 기록 한 줄이 승인인가(지점 칸이나 결정 칸이 `승인`, 옛 꼴 원문 "승인"·"승인 (…)").
     알림·점검 확인·되물음 줄과 결정이 보류·거절·되돌림인 줄은 승인이 아니다. 규칙 판 1의 승인 판별과
     exec.py의 얼림이 함께 쓴다."""
+    line = record_core(line)
     f = record_fields(line)
     if len(f) < 2:   # 칸이 없는 옛 꼴은 원문만 본다
         return bool(re.search(r'"승인\s*(?:\(|")', line))
     point, decision = f[1], (f[2] if len(f) > 2 else "")
-    if point in ("알림", "점검 확인") or point.startswith("되물음"):
+    if point in ("알림", "점검 확인", HANDED_POINT, "L4 확인", "실물 확인") or point.startswith(("되물음",) + PARTIAL_POINTS):
         return False
     if any(w in decision for w in ("보류", "거절", "되돌림")):
         return False
@@ -958,6 +1391,9 @@ def agent_def_problems(agents_dir=None):
 # 2 이상에만 건다), 단계(`kinds.stages_of`, 묻는 단계 `kinds.ASK_STAGES`), 흐름 역할(`kinds.FLOW_ROLES`)은 등록표에 있다.
 
 
+UNFINISHED_KEYS = ("insert_pending", "insert_failed", "waiting_policy", "parked")
+
+
 def rules_level(t):
     """0: 옛 task(started_version 없음), 1: 규칙 판 1 규칙으로 시작, 2 이상: 그 판의 규칙으로 시작(`rules`)."""
     if not is_new_task(t):
@@ -1003,11 +1439,26 @@ def hold_blockers(tasks):
     return out
 
 
+def unfinished_mark(t):
+    """넣기·정책 대기·치움 표지가 있는가. 있으면 상태가 `완료`여도 끝나지 않은 것으로 센다(설계 8.3절)."""
+    return any(str(t.get(k, "") or "").strip() for k in UNFINISHED_KEYS)
+
+
+def dependency_done(t):
+    """의존 판정이 끝으로 보는 task: 표지가 없는 `완료`."""
+    return t.get("status") == kinds.DONE and not unfinished_mark(t)
+
+
 def settled(t, tasks, blockers=None):
     """가드가 끝으로 세는가: 완료·보류·백로그, 또는 보류에 막힌 대기. 흐름별 검증은 보류에 막혀도 끝으로 세지 않는다
-    (같은 흐름 코드 task의 자동 의존 사슬로 막히므로, 끝으로 세면 사람에게 묻지 않고 마무리가 뜬다. 묻는 길은 board.py)."""
+    (같은 흐름 코드 task의 자동 의존 사슬로 막히므로, 끝으로 세면 사람에게 묻지 않고 마무리가 뜬다. 묻는 길은 board.py).
+    `보류`를 먼저 본다. 치운 변경이 남아도 끝이다. 그 밖에 표지가 있으면 끝이 아니다."""
     st = t.get("status")
-    if st in (kinds.DONE, "보류", "백로그"):
+    if st == "보류":
+        return True
+    if unfinished_mark(t):
+        return False
+    if st in (kinds.DONE, "백로그"):
         return True
     if st == "대기" and t.get("kind") != "flow-verify":
         b = hold_blockers(tasks) if blockers is None else blockers
@@ -1215,7 +1666,7 @@ _CANON = "|".join(kinds.CANON_DIRS)
 CANON_RE = re.compile(r"^(?:" + _CANON + r")/[^/]|^tasks/T\d+/(?:revised/(?:" + _CANON + r")/[^/]|result\.md$)")
 
 
-PATH_TOKEN = re.compile(r"(?:[A-Za-z]:)?[\w.*{}\-]*[/\\][\w./\\*{}\-]*|[\w*{}\-]+\.[A-Za-z0-9*]{1,8}")
+PATH_TOKEN = re.compile(r"(?:[A-Za-z]:)?[\w.*{}\-]*[/\\][\w./\\*{}\-]*|[\w*{}\-]+\.[A-Za-z0-9*]{1,8}|\.[A-Za-z][\w.\-]*")
 NOTE_TAIL = re.compile(r"\s+[—–]\s.*$")          # `- 경로 — 설명`의 설명
 PAREN = re.compile(r"[（(][^)）]*[)）]")            # 괄호 설명
 
@@ -1251,21 +1702,26 @@ def touch_format_problems(text):
     return bad
 
 
-def outside_canon(paths, run_dir=None):
-    """정본 밖 경로(코드·문서 등). 실행 폴더의 절대 경로와 작업 공간 기준 경로(`_workspace/{실행}/…`, `{실행}/…`)는
-    실행 폴더 기준으로 바꿔 본다(한 change 행이 `_workspace/{실행}/design/…`). `..`는 푼다."""
-    base = (os.path.abspath(run_dir).replace("\\", "/").rstrip("/") + "/").lower() if run_dir else ""
-    name = os.path.basename(os.path.abspath(run_dir)).lower() if run_dir else ""
-    bad = []
-    for p in paths:
-        q = p.replace("\\", "/")
-        if base and q.lower().startswith(base):
+def canon_relative(path, run_dir=None):
+    """실행 폴더의 절대 경로와 작업 공간 기준 경로(`_workspace/{실행}/…`, `{실행}/…`)를 실행 폴더 기준으로 바꾼다. `..`는 푼다."""
+    q = path.replace("\\", "/")
+    if run_dir:
+        base = os.path.abspath(run_dir).replace("\\", "/").rstrip("/").lower() + "/"
+        name = os.path.basename(os.path.abspath(run_dir)).lower()
+        if q.lower().startswith(base):
             q = q[len(base):]
-        elif name:
+        else:
             m = re.search(r"(?:^|/)(?:_workspace/)?" + re.escape(name) + "/", q, re.I)
             if m and (m.start() == 0 or "_workspace/" in q[:m.end()].lower()):
                 q = q[m.end():]
-        q = posixpath.normpath(re.sub(r"^\./", "", q))
+    return posixpath.normpath(re.sub(r"^\./", "", q))
+
+
+def outside_canon(paths, run_dir=None):
+    """정본 밖 경로(코드·문서 등). 경로 꼴은 `canon_relative`가 맞춘다(한 change 행이 `_workspace/{실행}/design/…`)."""
+    bad = []
+    for p in paths:
+        q = canon_relative(p, run_dir)
         if q.startswith("..") or not CANON_RE.match(q):
             bad.append(p)
     return bad
@@ -1308,6 +1764,22 @@ def project_paths(run_dir):
     return out
 
 
+def production_marks(run_dir):
+    """(운영 표지 패턴 목록, 운영 브랜치). 표지는 프로젝트 설정 「경로 목록」 절의 `- 운영 표지: …` 줄이다."""
+    path = os.path.join(os.path.dirname(os.path.abspath(run_dir)), PROJECT_SETTINGS)
+    text = read_text(path) if os.path.isfile(path) else ""
+    marks, branch = [], ""
+    for line in sections(text).get("경로 목록", "").splitlines():
+        if line.startswith("- ") and ":" in line and line[2:].split(":", 1)[0].strip() == "운영 표지":
+            raw = line.split(":", 1)[1].replace("`", "").strip()
+            if not EMPTY_ITEM.match("- " + raw):
+                marks = [p.strip() for p in raw.split(",") if p.strip()]
+    for line in text.splitlines():
+        if line.startswith("- ") and ":" in line and line[2:].split(":", 1)[0].strip() == "운영 브랜치":
+            branch = line.split(":", 1)[1].replace("`", "").strip()
+    return marks, branch
+
+
 def path_in_list(path, patterns):
     """경로가 패턴 목록의 하나에 드는가. 패턴은 저장소 기준 `/` 경로로 `**`(여러 단계)·`*`(한 단계 안)만 쓰고 전체가 맞아야 한다.
     경로의 와일드카드는 글자 그대로 대조한다(`db/migrations/*.sql`은 `db/migrations/**`에 든다)."""
@@ -1321,14 +1793,325 @@ def path_in_list(path, patterns):
     return False
 
 
-def touched_in_paths(t, key):
+# 시험 변화(설계 6.12절 「시험」). 기계 줄은 `machine_check.py`가 task 폴더에 쓰고 꼴은 `practices/test-rules.md`다
+
+TEST_CHANGES = "test-changes.md"
+TEST_BASE_HEAD = "기준: "   # 파일 첫 줄. 다음 측정이 같은 커밋에서 잰다
+TEST_REMOVALS = ("끄기", "삭제")   # 위임 중에도 합치기 전에 기다리는 변화(설계 9절)
+TEST_UNMEASURED = "재지 못함"   # 줄을 남기지 못한 task. 끄기가 있는지 모르므로 코드 확인의 재지 못함 답(확인 없이 합쳐도 된다)이 있어야 닫는다
+MEASURED_STATUSES = ("자체검증", "승인대기", kinds.DONE)
+TEST_EXPECT_ONLY = "기대값만 바꿈"
+TEST_PROXY = "대리 확인"
+TEST_BASELINE = "기준선 추가"
+TEST_COUNT_ONLY = "기대값 변경"   # 건수와 펼침만. 묻지 않는다
+TEST_PULLED = "받아온 변경"   # 받아오기 병합에서 들어온 쪽 그대로인 파일의 건수, 또는 가려내지 못했다는 한 줄. 묻지 않는다
+TEST_CHANGE_NAMES = TEST_REMOVALS + (TEST_UNMEASURED,
+    "범위 축소", "시험을 돌리는 곳", "재시도", "제한 시간과 허용 범위", "단언 약화", "정답 파일", "실패 거름", "시험 도우미",
+    TEST_PROXY, TEST_BASELINE, TEST_EXPECT_ONLY, "리터럴이 제품 값으로", TEST_COUNT_ONLY, TEST_PULLED)
+TEST_SETTING_LABELS = {"run": "시험을 돌리는 곳", "golden": "정답 경로", "helper": "시험 도우미 경로"}
+BASELINE_SEEN = "baseline-seen.md"
+TEST_ANSWER = re.compile(r"([\w,]+)=(받아들임|되살림)")
+ANSWER_ORIGIN = re.compile(r"^사용자\s+(T\d+)\s+(\d{4}-\d\d-\d\d \d\d:\d\d(?::\d\d)?)")
+
+
+def test_change_settings(run_dir):
+    """프로젝트 설정 「시험 변화 경로」 절의 패턴 목록. 파일·절·줄이 없거나 `없음`이면 빈 목록."""
+    out = {key: [] for key in TEST_SETTING_LABELS}
+    path = os.path.join(os.path.dirname(os.path.abspath(run_dir)), PROJECT_SETTINGS)
+    if not os.path.isfile(path):
+        return out
+    labels = {label: key for key, label in TEST_SETTING_LABELS.items()}
+    for line in sections(read_text(path)).get("시험 변화 경로", "").splitlines():
+        label, _, raw = line[2:].partition(":") if line.startswith("- ") else ("", "", "")
+        raw = raw.replace("`", "").strip()
+        if label.strip() in labels and not EMPTY_ITEM.match("- " + raw):
+            out[labels[label.strip()]] = [p.strip() for p in raw.split(",") if p.strip()]
+    return out
+
+
+def baseline_items(run_dir):
+    """recon.md 「기준선」의 `- ` 줄."""
+    path = os.path.join(run_dir, "recon.md")
+    text = sections(read_text(path), level=2).get("기준선", "") if os.path.isfile(path) else ""
+    return [line.strip() for line in text.splitlines() if line.startswith("- ")]
+
+
+def note_baseline(run_dir):
+    """실행의 첫 기계 조건 검사 때 기준선을 떠 둔다. 정찰 문서는 git 밖이라 뒤에 늘어난 줄을 이것과 견준다."""
+    path = os.path.join(run_dir, BASELINE_SEEN)
+    if not os.path.isfile(path):
+        write_text(path, "\n".join(baseline_items(run_dir)) + "\n")
+
+
+def baseline_additions(run_dir):
+    """첫 검사 뒤에 recon.md 「기준선」에 늘어난 줄."""
+    path = os.path.join(run_dir, BASELINE_SEEN)
+    if not os.path.isfile(path):
+        return []
+    seen = set(read_text(path).splitlines())
+    return [line for line in baseline_items(run_dir) if line not in seen]
+
+
+def test_change_base(t):
+    """앞 측정이 적어 둔 기준 커밋(없으면 "")."""
+    path = os.path.join(t["_dir"], TEST_CHANGES)
+    for line in read_text(path).splitlines() if os.path.isfile(path) else []:
+        if line.startswith(TEST_BASE_HEAD):
+            return line[len(TEST_BASE_HEAD):].strip()
+    return ""
+
+
+def clear_test_changes(t):
+    """다시 재기 전에 앞 회차의 줄을 지운다. 재지 못하면 앞 줄이 남아 잰 것으로 보이지 않게 한다. 기준 줄은 남긴다."""
+    path = os.path.join(t["_dir"], TEST_CHANGES)
+    base = test_change_base(t)
+    if base:
+        write_text(path, TEST_BASE_HEAD + base + "\n")
+    elif os.path.isfile(path):
+        os.remove(path)
+
+
+def test_changes_measured(t):
+    """이번 회차의 줄이 있는가(변화가 없어도 `- 없음`을 쓴다)."""
+    path = os.path.join(t["_dir"], TEST_CHANGES)
+    return os.path.isfile(path) and any(line.startswith("- ") for line in read_text(path).splitlines())
+
+
+def _test_row(tid, change, place, basis, why="적지 않음", guard="없음", key_text=""):
+    # 키에 줄 번호를 넣지 않는다. 재시도로 줄이 밀려도 앞서 받은 답이 그 변화를 가리킨다
+    name = re.sub(r":\d+(?:-\d+)?$", "", place)
+    key = "s" + hashlib.sha1("{}|{}|{}{}".format(tid, change, name, key_text).encode("utf-8")).hexdigest()[:6]
+    return {"task": tid, "change": change, "place": place, "file": name, "basis": basis, "why": why, "guard": guard,
+            "key": key, "ask": change not in (TEST_COUNT_ONLY, TEST_PULLED), "answer": "", "quote": ""}
+
+
+def test_change_answers(tasks):
+    """승인 기록 `- {시각} | 시험 변화 | {키},{키}=받아들임 {키}=되살림 | 원문: "…"`을 {키: (답, 원문)}으로. 뒤 줄이 이긴다."""
+    out = {}
+    for t in tasks.values():
+        for line in record_lines(t):
+            f = record_fields(line)
+            if len(f) >= 3 and f[1] == TEST_CHANGE_POINT and (record_quote(line) or "").strip():
+                for keys, value in TEST_ANSWER.findall(f[2]):
+                    out.update({key: (value, record_quote(line) or "") for key in keys.split(",") if key})
+    return out
+
+
+def person_quote(text):
+    """사람이 그 일을 두고 한 말인가. 빈 답과 위임의 말은 코드를 보지 않고 합치는 답으로 세지 않는다."""
+    text = (text or "").strip()
+    return bool(text) and not DELEGATED_ANSWER.search(text) and "위임" not in text
+
+
+def commit_mark(t):
+    """답과 다시 재기를 묶는 그 task의 지금 커밋 값."""
+    return str(t.get("commit", "") or "").strip() or UNMEASURED_NO_COMMIT
+
+
+def unmeasured_answers(tasks):
+    """승인 기록의 `코드 확인 재지 못함 {T}@{커밋}|합쳐도 됨|{원문}`을 {T: 원문}으로. 답은 받을 때의 코드에 대한 것이라 커밋이 지금과 같을 때만 센다.
+    `@{커밋}`이 없는 옛 꼴은 어느 코드의 답인지 모르므로 세지 않는다."""
+    out = {}
+    for t in tasks.values():
+        for line in record_lines(t):
+            f = record_fields(line)
+            if len(f) >= 3 and f[1].startswith(UNMEASURED_POINT) and f[2] == UNMEASURED_ANSWER and person_quote(record_quote(line)):
+                task, at, mark = f[1][len(UNMEASURED_POINT):].strip().partition("@")
+                if at and task in tasks and commit_mark(tasks[task]) == mark.strip():
+                    out[task] = record_quote(line)
+    return out
+
+
+def prior_answer(t, tasks):
+    """그 task를 계기로 한 사람의 답 원문: 자기 승인 기록, 없으면 `origin`이 가리킨 답. 없으면 None."""
+    for line in record_lines(t):
+        f = record_fields(line)
+        if len(f) >= 2 and f[1] not in ("알림", "점검 확인") and not f[1].startswith(("되물음",) + PARTIAL_POINTS) and record_quote(line):
+            return record_quote(line)
+    if not user_origin(t):
+        return None
+    origin = str(t.get("origin", ""))
+    m = ANSWER_ORIGIN.match(origin.strip())
+    source = tasks.get(m.group(1)) if m else None
+    for line in record_lines(source) if source else []:
+        if line.startswith("- " + m.group(2)) and record_quote(line):
+            return record_quote(line)
+    return origin
+
+
+def _section_lines(path, name):
+    text = sections(read_text(path), level=2).get(name, "") if os.path.isfile(path) else ""
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def test_change_rows(t, tasks=None):
+    """코드 task 하나의 시험 변화 줄(1.2.0부터 시작한 task). 기계 줄에 결과 파일 「시험 변화」의 이유와 대신 지키는 것을 붙이고,
+    기계가 못 본 작성자 줄과 판정자의 `대리 확인:`을 더하고, 받은 답을 붙인다."""
+    if not needs_judgment_record(t):
+        return []
+    tasks = load_tasks(run_dir_of(t)) if tasks is None else tasks
+    rows = []
+    machine = os.path.join(t["_dir"], TEST_CHANGES)
+    # 커밋이 있는 보류·백로그는 코드가 흐름 브랜치에 남으므로 내려도 재지 못함이 사라지지 않는다
+    measured_at = t.get("status") in MEASURED_STATUSES or (t.get("status") in HELD_STATUSES and str(t.get("commit", "") or "").strip())
+    if not test_changes_measured(t) and not no_code(t) and measured_at:
+        rows.append(_test_row(t["id"], TEST_UNMEASURED, t["id"], "machine_check가 줄을 남기지 못함"))
+    for line in read_text(machine).splitlines() if os.path.isfile(machine) else []:
+        cells = [c.strip() for c in line[2:].split(" | ", 2)] if line.startswith("- ") else []
+        if len(cells) == 3:
+            rows.append(_test_row(t["id"], *cells))
+    for line in _section_lines(os.path.join(t["_dir"], "result.md"), "시험 변화"):
+        cells = [c.strip() for c in line[2:].split(" | ")] if line.startswith("- ") else []
+        if len(cells) < 2:
+            continue
+        why = cells[2] if len(cells) > 2 and cells[2] else "적지 않음"
+        guard = cells[3] if len(cells) > 3 and cells[3] else "없음"
+        name = re.sub(r":\d+(?:-\d+)?$", "", cells[1])
+        found = [r for r in rows if r["change"] == cells[0] and r["file"] == name]
+        if not found:
+            rows.append(_test_row(t["id"], cells[0], cells[1], "작성자", why, guard))
+        for row in found:
+            row.update(why=why, guard=guard)
+    for line in _section_lines(os.path.join(t["_dir"], "judge.md"), "판단 대조"):
+        m = re.match(r"^(?:- )?" + TEST_PROXY + r":\s*(.*)$", line)
+        cells = [c.strip() for c in m.group(1).split(" | ")] if m else []
+        if len(cells) == 3:
+            rows.append(_test_row(t["id"], TEST_PROXY, cells[0], "본 것: {} / 못 본 것: {}".format(cells[1], cells[2])))
+    return _with_answers(rows, t, tasks)
+
+
+def _with_answers(rows, t, tasks):
+    answers = test_change_answers(tasks)
+    merged = unmeasured_answers(tasks)
+    for row in rows:
+        if row["change"] == TEST_UNMEASURED:   # 코드 확인의 답으로만 푼다. 먼저 다시 재는 차례를 건너뛰지 않고, 답이 커밋에 묶인다
+            if row["task"] in merged:
+                row["answer"], row["quote"] = "받아들임", merged[row["task"]]
+        elif row["key"] in answers:
+            row["answer"], row["quote"] = answers[row["key"]]
+        elif row["change"] == TEST_EXPECT_ONLY and t is not None:
+            quote = prior_answer(t, tasks)
+            if quote is not None:
+                row["answer"], row["quote"] = "앞선 답", quote
+    return rows
+
+
+def _baseline_rows(run_dir, tasks):
+    # 기준선은 실패를 빼는 곳이다. 뒤에 넣은 줄이 앞선 답을 물려받지 않게 키에 그 줄을 넣는다
+    return _with_answers([_test_row("실행", TEST_BASELINE, "recon.md 「기준선」", line, key_text=line) for line in baseline_additions(run_dir)], None, tasks)
+
+
+HELD_STATUSES = ("보류", "백로그")
+
+
+def not_in_flow(t):
+    """이 흐름에 합쳐지지 않는 코드 task: 커밋 없는 보류·백로그. 커밋이 있으면 코드가 흐름 브랜치에 남으므로 보류로 합치기 전 가드를 피하지 못한다."""
+    return t.get("status") in HELD_STATUSES and not str(t.get("commit", "") or "").strip()
+
+
+def held_test_rows(t, tasks):
+    """흐름 리뷰가 묻지 않는, 합쳐지지 않는 코드 task의 시험 변화 줄. 줄은 `wrap_up_test_lines`로 마무리 리뷰에 남는다."""
+    return [row for other in tasks.values() if other.get("kind") in kinds.AUTO_DEPEND_KINDS and other.get("flow") == t.get("flow")
+            and not_in_flow(other) for row in test_change_rows(other, tasks) if row["ask"] and not row["answer"]]
+
+
+def flow_test_rows(t, tasks=None):
+    """흐름별 검증이면 그 흐름의 코드 task와 실행의 기준선 추가 줄, 코드 task면 그 task의 줄.
+    커밋 없는 보류·백로그 코드 task의 줄은 합치지 않는 코드라 묻지 않고, 흐름 검증의 완료도 막지 않는다(남은 것만 검증하는 `partial_flow`가 멈추지 않게)."""
+    tasks = load_tasks(run_dir_of(t)) if tasks is None else tasks
+    if t.get("kind") in kinds.AUTO_DEPEND_KINDS:
+        return test_change_rows(t, tasks)
+    if t.get("kind") != "flow-verify" or not version_at_least(t.get("started_version"), RULES_V120):
+        return []
+    rows = []
+    for other in tasks.values():
+        if other.get("kind") in kinds.AUTO_DEPEND_KINDS and other.get("flow") == t.get("flow") and not not_in_flow(other):
+            rows += test_change_rows(other, tasks)
+    return rows + _baseline_rows(run_dir_of(t), tasks)
+
+
+def test_change_line(row):
+    return "{change} | {place} | {basis} | 이유: {why} | 대신 지키는 것: {guard} | {task}".format(**row)
+
+
+def test_unmeasured_open(row):
+    """재지 못함 줄이 아직 답을 기다리는가. `되살림`은 다시 재라는 뜻이고, 빈 답과 위임의 말은 풀지 않는다."""
+    return row["change"] == TEST_UNMEASURED and not (row["answer"] == "받아들임" and person_quote(row["quote"]))
+
+
+def unanswered_test_removals(t):
+    """답 없는 시험 끄기·삭제와 재지 못한 task의 줄(앞에 `[키]`). 흐름별 검증을 합치기 전까지 막는 가드가 부른다(설계 9절, 11.1절)."""
+    return ["[{}] {}".format(row["key"], test_change_line(row)) for row in flow_test_rows(t)
+            if (row["change"] in TEST_REMOVALS and not row["answer"]) or test_unmeasured_open(row)]
+
+
+def restored_done(key, tasks):
+    """`되살림`의 뒤 task(`origin`에 그 키를 적은 task)가 끝났는가."""
+    return any(key in str(t.get("origin", "")) and t.get("status") == kinds.DONE for t in tasks.values())
+
+
+def wrap_up_test_lines(tasks, only=None):
+    """마무리 리뷰에 올릴 줄(설계 6.12절): 답 없이 남은 변화(위임으로 지나감, 흐름 뒤 수정), 대신 지키는 것 없이 받아들인 변화,
+    재지 못한 채 합친 task, 아직 되살리지 않은 `되살림`. only는 회차의 task id 집합이다."""
+    rows = []
+    for t in tasks.values():
+        if only is None or t.get("id") in only:
+            rows += test_change_rows(t, tasks)
+    new_task = next((t for t in tasks.values() if needs_judgment_record(t)), None)
+    if new_task is not None:
+        rows += _baseline_rows(run_dir_of(new_task), tasks)
+    return [test_change_line(row) for row in rows
+            if row["ask"] and (not row["answer"] or (row["answer"] == "받아들임" and row["guard"] == "없음")
+                               or (row["answer"] == "되살림" and not restored_done(row["key"], tasks)))]
+
+
+DEFAULT_CONFIG_PATTERNS = [
+    "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "requirements*.txt", "pyproject.toml",
+    "build.gradle*", "settings.gradle*", "pom.xml", "go.mod", "go.sum", "tsconfig*.json", "*.config.*",
+    "wrangler.*", ".env*", "*.sql", "**/migrations/**", "**/migration/**", "Dockerfile*", ".github/**",
+]
+# 설정·마이그레이션 가운데 인프라인 것. 인프라 경로가 `없음`인 빈 저장소에서 마이그레이션이 알림으로 지나가지 않게 한다(설계 5.2절)
+def pattern_match(path, patterns):
+    """`machine_check.py`의 패턴 대조: `*`가 `/`를 넘는다. 경로 목록의 `path_in_list`와 뜻이 다르다."""
+    for p in patterns:
+        if fnmatch.fnmatch(path, p) or fnmatch.fnmatch(path, p.rstrip("/") + "/*") or path == p:
+            return True
+        if "**" in p and fnmatch.fnmatch(path, p.replace("**/", "*")):
+            return True
+    return False
+
+
+DEFAULT_INFRA_PATTERNS = ["wrangler.*", ".env*", "*.sql", "**/migrations/**", "**/migration/**", "Dockerfile*", ".github/**"]
+# 사람 답 없이 끝내는 충돌의 파일(설계 5.3절 6): 코드나 명령이 들지 않은 형식과 목록. 사용자 결정으로 `package.json`은 남긴다. `*.config.*`, 빌드 스크립트, `pyproject.toml`은 뺀다
+SETTING_PATTERNS = ["tsconfig*.json", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "requirements*.txt", "go.mod", "go.sum",
+                    "poetry.lock", "Cargo.lock", ".gitignore", ".gitattributes", ".editorconfig"]
+
+
+def infra_paths_in(run_dir, paths):
+    """파일 목록 가운데 인프라에 드는 것. 프로젝트 설정 경로 목록이 있으면 그것으로, 없으면 기본 패턴으로 본다(`touched_in_paths`와 같다)."""
+    patterns = project_paths(run_dir)["인프라"]
+    if patterns:
+        return [p for p in paths if path_in_list(p, patterns)]
+    return [p for p in paths if pattern_match(p, DEFAULT_INFRA_PATTERNS) or pattern_match(p.rsplit("/", 1)[-1], DEFAULT_INFRA_PATTERNS)]
+
+
+def settings_only(run_dir, paths):
+    """동작을 바꾸지 않는 충돌의 파일 조건(설계 5.3절 6): 모두 설정·형식 파일이고 프로젝트의 인프라 경로에 들지 않는다. 비면 재지 못한 것이라 거짓이다."""
+    def setting(p):
+        base = p.rsplit("/", 1)[-1]
+        return pattern_match(base, SETTING_PATTERNS) and not infra_paths_in(run_dir, [p]) and not pattern_match(base, DEFAULT_INFRA_PATTERNS)
+    return bool(paths) and all(setting(p) for p in paths)
+
+
+def touched_in_paths(t, key, fallback=()):
     """머리 파일 「건드릴 파일」 경로 가운데 프로젝트 설정 경로 목록 `key`(화면·인프라·문서)에 드는 것.
-    실행 폴더는 `t["_dir"]`의 두 단계 위다. 경로 목록이 없으면 빈 목록."""
+    실행 폴더는 `t["_dir"]`의 두 단계 위다. 경로 목록이 없으면 fallback으로 본다."""
     if not t.get("_dir"):
         return []
     patterns = project_paths(os.path.dirname(os.path.dirname(t["_dir"])))[key]
     if not patterns:
-        return []
+        paths = [p.replace("\\", "/") for p in touch_paths(t.get("_sections", {}).get("건드릴 파일", ""))]
+        return [p for p in paths if pattern_match(p, fallback) or pattern_match(p.rsplit("/", 1)[-1], fallback)]
     return [p for p in touch_paths(t.get("_sections", {}).get("건드릴 파일", "")) if path_in_list(p, patterns)]
 
 
@@ -1382,12 +2165,242 @@ DOMAIN_CRITERIA_HEAD = "(스크립트 주입: 영역 판정)"
 
 def no_change(t):
     """코드를 바꾸지 않은 코드 task인가(`no_change: true`, 메인이 적는다). 커밋이 없어도 R4·커밋 대기에 걸지 않는다."""
-    return str(t.get("no_change", "") or "").strip().lower() in ("true", "예")
+    # 넣기 충돌을 수정 task가 맡아 넣었으면(`commit_via`, 설계 8.3절) 이 task의 코드는 그 수정 task의 커밋에 있다
+    return str(t.get("no_change", "") or "").strip().lower() in ("true", "예") or bool(str(t.get("commit_via", "") or "").strip())
+
+
+def no_code(t):
+    """재 볼 코드가 없는가: `no_change` 표시가 있고 커밋이 없다. 커밋이 있으면 코드가 있으므로 표시를 보지 않는다."""
+    return no_change(t) and not str(t.get("commit", "") or "").strip()
+
+
+WRAP_REVIEW = "wrap-review.md"   # 마무리 리뷰 파일(`visual.py --wrap-review`, 설계 7.3절)
+PROBE_NOTHING = "없음"
+HANDED_ORIGIN = "하실 일 넘김"   # 넘긴 「하실 일」의 탐침 origin(설계 5.3절 1)
+HANDED_REMAINS = "자원"
+HANDED_MARK = re.compile(r"\[하실 일 넘김 (T\d+)\]")
+SUPERSEDED_MARK = "→ 대체:"
+REMAINS_LINE = re.compile(r"^[\s\-*`]*남는 것[`*\s]*[:：][ \t`*]*([^\s`*|,.()]*)", re.M)
+
+
+def handed_without_probe(run_dir, tasks):
+    """답 표지 `[하실 일 넘김 T0xx]`가 있는데 그 origin의 탐침 task가 없는 T0xx 목록(설계 5.3절 1). 마무리 시작 조건이 대조한다. 원문 따옴표 안과 대체된 줄은 표지가 아니다.
+    decisions.md를 못 읽어도 시작을 막지 않는다(마무리 리뷰가 재지 못함으로 말한다)."""
+    path = os.path.join(run_dir, "decisions.md")
+    try:
+        lines = read_text(path).splitlines() if os.path.isfile(path) else []
+    except (OSError, UnicodeError):
+        lines = []
+    lines += [line for t in tasks.values() for line in record_lines(t)]
+    marked = []
+    for line in lines:
+        head = line.split('"')[0]
+        if SUPERSEDED_MARK in head:
+            continue
+        marked += [m for m in HANDED_MARK.findall(head) if m not in marked]
+    made = [str(t.get("origin", "") or "") for t in tasks.values() if t.get("kind") == "probe"]
+    return [m for m in marked if not any(re.match(re.escape(HANDED_ORIGIN) + r"\s+" + m + r"(?!\d)", o.strip()) for o in made)]
+
+
+def probe_remains(t):
+    """탐침이 끝난 뒤 남기는 것(`남는 것:` 줄, 설계 5.3절). 「범위」에 적고 비면 `없음`이다. 넘긴 일은 적지 않아도 `자원`으로 보고,
+    여러 줄이면 `없음`이 아닌 값이 이긴다. 모르는 값은 그대로 돌려주어 묻는 쪽으로 간다."""
+    found = [v for v in REMAINS_LINE.findall(t.get("_sections", {}).get("범위", "")) if v]
+    others = [v for v in found if v != PROBE_NOTHING]
+    if others:
+        return others[0]
+    if str(t.get("origin", "") or "").strip().startswith(HANDED_ORIGIN):
+        return HANDED_REMAINS
+    return PROBE_NOTHING
 
 
 def user_origin(t):
     """사용자 원문을 계기로 만든 task인가(`origin`이 `사용자`로 시작, `task_set.py new --from-answer`가 채움)."""
     return str(t.get("origin", "") or "").strip().startswith("사용자")
+
+
+PROPERTY_MARK = re.compile(r"\[성질\s*[:：]\s*([^\]]*)\]")
+DERIVED_CELLS = ("정해 주실 것", "알릴 것", "확인 안 된 것")   # 성질이 붙는 칸(설계 5.2절)
+ADDABLE_PROPERTIES = ("범위", "밖", "비용", "위험")   # 판정자가 `성질 더함:`으로 더하는 값
+MOVED_CELLS = ("알릴 것", "확인 안 된 것")   # 옮겨 오는 줄의 칸(설계 5.3절 7). 결정과 「하실 일」은 옮겨 와도 사람에게 간다
+ANSWER_CRITERION = "「답하신 것의 반영」이 이 원문의 요구를 빠짐없이, 넘치지 않게 옮겼다"
+MOVED_ITEM = re.compile(r"^- \[T\d+\]")
+
+
+def item_properties(section_text):
+    """칸에 적힌 `[성질: …]`의 값 집합(설계 5.2절). 쉼표나 가운뎃점으로 나눈다."""
+    found = set()
+    for mark in PROPERTY_MARK.findall(section_text or ""):
+        found |= {p.strip(" `") for p in re.split(r"[,·/、]", mark) if p.strip(" `")}
+    return found
+
+
+def has_risk_mark(section_text):
+    """성질 표시 안에 `위험`이 있는가. 꼴이 어긋나도 묻는 쪽으로 읽는다."""
+    return any("위험" in mark for mark in PROPERTY_MARK.findall(section_text or ""))
+
+
+def answer_is_judged(t):
+    """사용자 답을 옮긴 task의 판정 기준에 그 옮김을 보는 줄이 있는가(`task_set.py new --from-answer`가 넣는다)."""
+    return ANSWER_CRITERION in t.get("_sections", {}).get("판정 기준", "")
+
+
+def next_criterion(text, sentence):
+    """판정 기준 끝에 붙일 줄. 번호 목록이면 가장 큰 번호 다음, 아니면 글머리."""
+    numbers = [int(n) for n in re.findall(r"^(\d+)\.\s", text or "", re.M)]
+    return "{}. {}".format(max(numbers) + 1, sentence) if numbers else "- " + sentence
+
+
+def without_moved_items(section_text):
+    """다른 task에서 옮겨 온 `- [T0xx]` 항목(하위 줄 포함)을 뗀 칸. 옮겨 온 줄은 알림 판단과 수에 넣지 않는다(설계 5.3절 7)."""
+    out, moved = [], False
+    for line in (section_text or "").splitlines():
+        if line.startswith("- "):
+            moved = bool(MOVED_ITEM.match(line))
+        if not moved:
+            out.append(line)
+    return "\n".join(out)
+
+
+def review_contract(t):
+    """그 task의 리뷰 계약(설계 4.3절). 변경 task는 고치는 정본으로 가른다: `spec` 아래가 있으면 scope, 아니면 approach."""
+    kind = t.get("kind")
+    if kind in kinds.KINDS and kinds.KINDS[kind].review:
+        return kinds.KINDS[kind].review
+    return "scope" if any(p.startswith("spec/") for p in change_paths(t)) else "approach"
+
+
+def change_paths(t):
+    """변경 task가 고치는 정본의 실행 폴더 기준 경로."""
+    run_dir = os.path.dirname(os.path.dirname(t["_dir"])) if t.get("_dir") else None
+    paths = touch_paths(t.get("_sections", {}).get("건드릴 파일", ""))
+    return [re.sub(r"^tasks/T\d+/revised/", "", canon_relative(p, run_dir)) for p in paths]
+
+
+def is_design_revision(t):
+    """변경 task가 설계 정본만 고치는가. 인프라 정본은 자원 결정이라 뺀다(설계 7.2절의 고친 판)."""
+    paths = change_paths(t)
+    return bool(paths) and all(p.startswith("design/") and not p.startswith("design/infra") for p in paths)
+
+
+def is_run_wide(t):
+    """실행 전체 설계이거나 그 고친 판인가(머리 키 `run_wide`, 설계 7.2절)."""
+    return str(t.get("run_wide", "") or "").strip().lower() in ("true", "예")
+
+
+# 정본의 요구사항 행. 화면 AC 검사의 AC_HEAD_RE보다 넓다: 표 행과 앞붙이(`E-AC-1`)도 읽는다
+_ROW_HEAD = r"^\s*(?:[-*+]\s+|\d+[.)]\s+|\|\s*|#+\s*)?[*_`\[]*"
+AC_ROW_RE = re.compile(_ROW_HEAD + r"((?:[A-Z]+-)?AC-[0-9A-Za-z_-]+)")
+FR_ROW_RE = re.compile(_ROW_HEAD + r"((?:[A-Z]+-)?FR-[0-9A-Za-z_-]+)")
+_ITEM_LINE = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|\|)")
+MARK_FILLED = "담당이 채움"     # 작성자가 채운 값(설계 7.6절). 기획은 괄호 없이 쓴다
+MARK_CHANGED = "[바뀜:"         # 기존 동작을 바꾸는 요구. 작성자가 `[바뀜: 파일:줄]`로 쓰고 판정자가 대조한다
+
+
+def ac_rows(text):
+    """인수 기준 [(번호, 그 행의 글)]. 행은 줄머리가 그 번호인 줄부터 다음 제목이나 FR·AC 줄 앞까지이고, 울타리 안은 보지 않는다.
+    같은 번호가 다시 나오면(추적표) 앞의 행만 둔다."""
+    rows, current, seen, fence = [], None, set(), False
+    for line in (text or "").splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            fence, current = not fence, None
+            continue
+        if fence:
+            continue
+        head = AC_ROW_RE.match(line)
+        if head or FR_ROW_RE.match(line) or line.lstrip().startswith("#"):
+            current = None
+        if head and head.group(1) not in seen:
+            seen.add(head.group(1))
+            current = [head.group(1), line.strip()]
+            rows.append(current)
+        elif current is not None and line.strip():
+            current[1] += "\n" + line.strip()
+    return [tuple(r) for r in rows]
+
+
+def filled_lines(text):
+    """담당 값이 있는 줄. 목록·표 줄과 인수 기준 행 안의 줄만이다. 범례 문장과 울타리 안은 값이 아니다."""
+    in_rows = {line for _, row in ac_rows(text) for line in row.splitlines()}
+    out, fence = [], False
+    for line in (text or "").splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+        elif not fence and MARK_FILLED in line and (_ITEM_LINE.match(line) or line.strip() in in_rows):
+            out.append(line.strip())
+    return out
+
+
+def spec_marks(text):
+    """정본 글의 셈: 인수 기준 수, 기존 동작을 바꾸는 요구, 담당 값이 있는 줄, 표지 없는 새 동작(설계 7.6절)."""
+    rows = ac_rows(text)
+    changed = sum(1 for _, row in rows if MARK_CHANGED in row)
+    plain = sum(1 for _, row in rows if MARK_CHANGED not in row and MARK_FILLED not in row)
+    return {"ac": len(rows), "changed": changed, "filled": len(filled_lines(text)), "new": plain}
+
+
+def written_canon(run_dir, t):
+    """task가 쓴 정본의 실행 폴더 기준 경로(`\\` 구분, 있는 파일만, 처음 나온 차례). 「건드릴 파일」이 먼저이고,
+    없으면 결과 「본문」의 `정본:` 줄이다(정본을 처음 쓰는 task는 행에 건드릴 파일을 적지 않는다). 이름표가 없으면 자기 kind의
+    정본 가운데 첫 경로만 본다. 본문은 다른 정본도 인용한다."""
+    def found(text):
+        out = []
+        for m in CANON_PATH_RE.finditer(text or ""):
+            # 경로 뒤에 조사가 붙을 수 있다(`spec/a.md를`)
+            rel = re.sub(r"(\.(?:md|html))[^.\\/]*$", r"\1", m.group(0).rstrip(".:;")).replace("/", "\\")
+            path = os.path.join(run_dir, *rel.split("\\"))
+            if rel not in out and os.path.isfile(path) and inside(run_dir, path):
+                out.append(rel)
+        return out
+    paths = found(t.get("_sections", {}).get("건드릴 파일", ""))
+    prefix = kinds.WRITTEN_CANON.get(t.get("kind", ""))
+    result = os.path.join(t.get("_dir") or "", "result.md")
+    if paths or prefix is None or not os.path.isfile(result):
+        return paths
+    body = sections(read_text(result)).get("본문", "")
+
+    def own(rel):
+        q = rel.replace("\\", "/")
+        if not q.startswith(prefix) or (prefix == "design/" and q.startswith("design/infra")):
+            return False
+        return prefix != "spec/" or os.path.basename(q) not in SPEC_SKIP
+    labelled = [rel for rel in found("\n".join(l for l in body.splitlines() if "정본:" in l)) if own(rel)]
+    return labelled or [rel for rel in found(body) if own(rel)][:1]
+
+
+JUDGE_ORIGIN = re.compile(r"판정자 (T\d+)")   # 판정자 대안 문장에서 온 변경 task의 origin(설계 5.3절 4)
+CORRECTION_CRITERION = "이 대안 문장만 옮겼고 그 밖은 바꾸지 않았다"
+_SAME_MEANING = re.compile(r"뜻\s*바뀜\s*[:：]\s*없음")
+
+
+def _cited_canon(line):
+    return {re.sub(r":\d.*$", "", m.rstrip(".:;")).replace("\\", "/") for m in CANON_PATH_RE.findall(line)}
+
+
+def unchanged_corrections(judge_text, paths=None):
+    """판정자 「권장」의 대안 문장 가운데 뜻이 그대로이고 설계 정본을 고치는 줄. 요구사항·기획을 함께 가리키면 뺀다.
+    인프라·화면 정본의 정정은 묻는다. paths를 주면 그 정본을 모두 가리키는 줄만이다."""
+    out = []
+    for line in sections(judge_text or "", level=2).get("권장", "").splitlines():
+        cited = _cited_canon(line)
+        design = {p for p in cited if p.startswith("design/") and not p.startswith("design/infra")}
+        if line.startswith("- ") and _SAME_MEANING.search(line) and design and not any(p.startswith("spec/") for p in cited) \
+                and (paths is None or set(paths) <= design):
+            out.append(line)
+    return out
+
+
+def correction_is_judged(t):
+    """판정 기준에 대안 문장의 옮김을 보는 줄이 있는가(`task_set.py new --origin "판정자 …"`가 넣는다)."""
+    return CORRECTION_CRITERION in t.get("_sections", {}).get("판정 기준", "")
+
+
+def correction_sentence(t):
+    """판정 기준에 옮겨 적은 대안 문장. 없으면 빈 글."""
+    for line in t.get("_sections", {}).get("판정 기준", "").splitlines():
+        if CORRECTION_CRITERION in line:
+            return line.split(CORRECTION_CRITERION, 1)[1].lstrip(": ").strip()
+    return ""
 
 
 def fix_cap(run_dir):

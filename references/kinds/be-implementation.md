@@ -3,9 +3,9 @@
 서버 코드(경로·요청·응답·저장·오류 코드)를 쓴다. 마이그레이션·배포 설정은 이 kind가 아니라 구현 task 행 몫이다(막지 않는다. 인프라 경로를 건드리면 알림으로 지나가지 않는다).
 
 ## 먼저 읽을 것
-`${CLAUDE_PLUGIN_ROOT}/references/practices/code-task.md`(코드 task 공통), `${CLAUDE_PLUGIN_ROOT}/references/practices/implementation-practice.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/build-and-test.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`, 설계 정본 「공용 형식」과 해당 절, 흐름 규약 파일(있으면).
+`${CLAUDE_PLUGIN_ROOT}/references/practices/code-task.md`(코드 task 공통), `${CLAUDE_PLUGIN_ROOT}/references/practices/code-judgment.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/implementation-practice.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/build-and-test.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`, 설계 정본 「공용 형식」과 해당 절, 흐름 규약 파일(있으면).
 
-판정자: `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/code-task.md`
+판정자: `${CLAUDE_PLUGIN_ROOT}/references/practices/test-rules.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/code-task.md`, `${CLAUDE_PLUGIN_ROOT}/references/practices/code-judgment.md`
 
 ## 하는 일
 방법 문서 「코드 task 공통」의 같은 절을 따르고, 더해서 머리 파일 「시그니처와 결정 번호」에 `[계약]`이 있는 행은 설계 「공용 형식」의 그 항목(경로·요청·응답·오류 코드)을 그대로 쓰고 그 항목을 단언하는 계약 시험을 둔다.

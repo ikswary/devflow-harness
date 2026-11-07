@@ -8,6 +8,8 @@
 - `STATUS_GLYPH`: `[v]완료`, `[>]진행`, `[~]자체검증`, `[?]승인대기`, `[ ]대기`, `[-]보류`, `[b]백로그`
 - `ASK_STAGES`: `실행승인`, `결과승인`, `직전확인`, `넣기승인`
 - `EXEC_POINTS`: `실행승인`, `결과승인`, `넣기승인`, `되돌림`
+- `OWNED_POINT`: `실행`
+- `OLD_STAGES`: `merge` `실행승인`
 - `STAGE_JUDGES`: `merge` 실행승인 = 없음, `merge` 결과승인 = 없음, `wrap-up` 실행승인 = read+run, `wrap-up` 결과승인 = read+run, `deploy-exec` 직전확인 = 없음, `deploy-exec` 결과승인 = 없음, `deploy-exec` 넣기승인 = read
 - `JUDGE_FILES`: `read` = `judge.md`, `run` = `judge-run.md`
 - `CELLS`: `정해 주실 것`, `하실 일·허용 요청`, `알릴 것`, `답하신 것의 반영`, `확인 안 된 것`, `건수만`
@@ -15,4 +17,5 @@
 - `UNDECIDED_TAGS`: `환경`, `지시`, `대상`
 - `FLOW_ROLES`: `feature`, `fixes`, `integration`, `deploy`
 - `CANON_DIRS`: `spec`, `ui`, `design`
+- `JUDGMENT_KINDS`: `구조`, `데이터`, `트랜잭션`, `오류`, `외부호출`, `보안`, `동작`, `시험`
 
