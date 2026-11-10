@@ -4,3 +4,8 @@ __pycache__/
 /.claude-plugin/types/
 .pytest_cache/
 _workspace/
+
+# 공개하지 않는 작업 문서
+/BACKLOG.md
+/docs/approval-learning-proposal.md
+/docs/domain-split-proposal.md
