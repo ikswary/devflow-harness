@@ -29,7 +29,7 @@ from test_sheet import NEW, child_row, page_of, screen_of, sheet_of, task
 def test_sheet_shows_material_before_numbered_items(run_dir):
     task(run_dir, kind="root-cause", material="문제: 되돌림이 멈춥니다. 원인: 검사. 고치는 법: 키로 정합니다.", decide="- 고를 것 (가) 예", notify="- 근본 원인")
     page = page_of(run_dir)
-    assert page.index("문제: 되돌림이 멈춥니다") < page.index("정하는 것:") < page.index("터미널 번호")
+    assert page.index("문제: 되돌림이 멈춥니다") < page.index("정하는 것:") < page.index(visual.HEAD_ITEMS_TITLE)
 
 
 def test_sheet_without_material_warns(run_dir):
@@ -37,7 +37,7 @@ def test_sheet_without_material_warns(run_dir):
     task(run_dir, kind="change", sections={"건드릴 파일": "- design/list.md"}, decide="- 고를 것 (가) 예")
     write(run_dir.task_dir("T001") / "revised" / "design" / "list.md", "| 규칙 | 값 |\n|---|---|\n| 정렬 | 최근 |\n")
     page = page_of(run_dir)
-    assert screen.MATERIAL_MISSING.split("(")[0] in page and page.index("리뷰 자료 없음") < page.index("터미널 번호")
+    assert screen.MATERIAL_MISSING.split("(")[0] in page and page.index("리뷰 자료 없음") < page.index(visual.HEAD_ITEMS_TITLE)
 
 
 def test_terminal_shows_material_before_main_lines(run_dir):
@@ -81,7 +81,7 @@ def test_material_sections_fold_only_when_the_sheet_holds_them(run_dir):
     assert run_script("visual", run_dir.path, "T001", "--sheet-sent", "https://claude.ai/code/artifact/0").returncode == 0
     out = screen_of(run_dir)
     assert "- 전: 멈춤" not in out and "  문제와 고치는 법" in out and "나머지 3줄은 한 장" in out and "고치면 보이는 모양" in out
-    assert "- 전: 멈춤" in page_of(run_dir)
+    assert "<li>전: 멈춤</li>" in page_of(run_dir)
 
 
 def test_old_task_keeps_its_lines(run_dir):

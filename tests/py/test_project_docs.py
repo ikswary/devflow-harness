@@ -6,6 +6,7 @@ import sys
 import pytest
 
 import devflow_lib
+import md_html
 import project_docs
 import task_set
 import visual
@@ -533,9 +534,9 @@ def test_failing_generator_keeps_the_file_and_reports(run_dir, project):
 # ---------------------------------------------------------------- 제안 도면과 생성본
 
 
-def flow_review_task(run_dir, project, proposal, name="구조도"):
+def flow_review_task(run_dir, project, proposal, name="구조도", table="| 표 |"):
     settings(run_dir, gen_line(name, "docs/generated/structure.md", "A-->B\nB-->C", project))
-    write(run_dir.path / "design" / "feat.md", "# 설계\n\n## 제안 도면\n### {}\n```mermaid\n{}\n```\n\n## 시험 표\n| 표 |\n".format(name, proposal))
+    write(run_dir.path / "design" / "feat.md", "# 설계\n\n## 제안 도면\n### {}\n```mermaid\n{}\n```\n\n## 시험 표\n{}\n".format(name, proposal, table))
     run_dir.flow("feat", dir=str(project), status="진행")
     run_dir.task("T030", "설계", {"건드릴 파일": "- design/feat.md"}, kind="design", block="설계", status="완료", **NEW)
     run_dir.task("T040", "검증", kind="flow-verify", block="검증", status="자체검증", flow="feat", parent="T030", **NEW)
@@ -556,10 +557,14 @@ def test_matching_drawing_shows_no_block_and_is_not_a_failure(run_dir, project):
     assert "설계와 달라진 점" not in page
 
 
-def test_proposal_stays_as_source_text_on_the_sheet(run_dir, project):
-    flow_review_task(run_dir, project, "A-->D")
+def test_flow_review_sheet_draws_proposal_and_shows_test_table(run_dir, project):
+    """흐름 리뷰 한 장의 「구조도와 시험 표」(visual._design_blocks)도 도면을 그림 자리와 원문으로, 시험 표를 표로 낸다."""
+    flow_review_task(run_dir, project, "A-->D", table="| 인수 기준 | 계층 |\n|---|---|\n| AC-1 `a|b` | 단위 |")
     (page, _) = visual.sheet_html(str(run_dir.path), run_dir.tasks()["T040"])
-    assert "```mermaid" in page and "<script" not in page and "<svg" not in page
+    part = page.split("<h2>구조도와 시험 표</h2>")[1]
+    assert md_html.DIAGRAM_OPEN in part and "<pre>A--&gt;D</pre>" in part and "```mermaid" not in part
+    assert "<td>AC-1 <code>a|b</code></td><td>단위</td>" in part
+    assert page.count("<script") == 2 and visual.SHEET_SCRIPTS in page and "<svg" not in page
 
 
 def test_no_generator_says_it_could_not_compare(run_dir, project):

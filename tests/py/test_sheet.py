@@ -1,7 +1,7 @@
 """1.2.0 A2: 화면 머리 세 줄, 리뷰 자료, 브라우저 한 장(설계 4.2절, 7.6절).
 
 - 머리 세 줄은 1.2.0부터 시작한 task의 묻는 화면에만 나오고, 값은 등록표와 칸에서 스크립트가 낸다.
-- 한 장은 스크립트 없는 고정 틀이다. 값을 이스케이프하고 비밀값과 개인정보의 값 꼴을 가린다.
+- 한 장은 고정 틀이다. 값을 가린 뒤 이스케이프한다. 스크립트는 mermaid 도면이 있을 때만 고정된 둘이다(test_sheet_render.py).
 - 만들지 못해도 승인을 막지 않는다.
 """
 import os
@@ -18,8 +18,10 @@ from conftest import run_script, write
 from test_review_contract import code_task
 
 NEW = {"started_version": "1.2.0-dev.1", "rules": "2"}
-ALLOWED_TAGS = {"html", "head", "meta", "title", "style", "body", "h1", "h2", "h3", "p", "pre", "div", "details", "summary", "iframe"}
-ALLOWED_ATTRS = {"lang", "charset", "name", "http-equiv", "content", "class", "sandbox", "srcdoc"}
+# Markdown 변환(md_html)이 내는 태그와 속성까지. script·src는 없다: 도면이 없는 장에는 스크립트를 싣지 않는다
+ALLOWED_TAGS = {"html", "head", "meta", "title", "style", "body", "h1", "h2", "h3", "h4", "h5", "p", "pre", "div", "details", "summary", "iframe",
+                "table", "thead", "tbody", "tr", "th", "td", "ul", "ol", "li", "code", "strong", "span", "section", "br", "hr", "figure"}
+ALLOWED_ATTRS = {"lang", "charset", "name", "http-equiv", "content", "class", "sandbox", "srcdoc", "start", "value", "open"}
 HOSTILE = '<script>alert(1)</script><img src=x onerror=y>'
 
 

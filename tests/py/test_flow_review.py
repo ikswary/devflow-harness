@@ -17,6 +17,7 @@ import collect
 import devflow_lib as lib
 import flow_review
 import kinds
+import md_html
 import places
 import screen
 import visual
@@ -850,7 +851,7 @@ def test_terminal_and_sheet_numbers_are_the_same(run_dir):
     numbers = screen.shown_items(shown)
     assert sorted(numbers) == list(range(1, len(numbers) + 1)) and len(numbers) >= 3
     for n, body in numbers.items():
-        assert "[{}] {}".format(n, body.split("\n")[0]) in page.replace("&lt;", "<").replace("&gt;", ">")
+        assert '<span class="no">{}</span><div class="text"><p>{}</p>'.format(n, md_html.inline(body.split("\n")[0])) in page
 
 
 def test_rerun_after_retry_needs_a_later_read_judge(run_dir):

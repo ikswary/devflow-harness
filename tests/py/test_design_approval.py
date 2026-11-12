@@ -1,7 +1,7 @@
 """1.2.0 A8: 설계 승인과 요구사항 종합(설계 7.2절, 7.6절, 5.1절, 5.3절 4).
 
 - 설계가 둘 이상이면 구현은 실행 전체 설계를 기다린다. 물결 밖의 뒤늦은 설계는 고친 판을 요구하고, 도는 흐름은 멈추지 않는다.
-- 설계 화면은 7.2절 차례이고, `볼 곳`은 kind마다 스크립트가 센다. 한 장 머리에 판과 터미널 번호를 적는다.
+- 설계 화면은 7.2절 차례이고, `볼 곳`은 kind마다 스크립트가 센다. 한 장 머리에 판과 승인 화면 항목(터미널과 같은 번호)을 싣는다.
 - 답이나 판정자 대안 문장만 옮긴 고친 판은 자식 행과 결정 번호가 그대로면 알림이다.
 - 요구사항 종합은 블록의 마지막 상세에 실리고, 그 전에는 설계를 묻지 않는다.
 - 옛 판본으로 시작한 task는 지금 규칙 그대로다.
@@ -13,6 +13,7 @@ import pytest
 import board
 import devflow_lib as lib
 import kinds
+import md_html
 import places
 import screen
 import visual
@@ -497,7 +498,7 @@ def test_prefixed_fr_rows_are_collected_on_the_sheet(run_dir):
     write(run_dir.path / "spec" / "edit.md", "| E-FR-1 | 고친다 |\n| E-AC-1 | E-FR-1 값 [담당이 채움] |\n| E-AC-2 | E-FR-1 |\n")
     task(run_dir, kind="req-detail", sections={"건드릴 파일": "- spec/edit.md"})
     page = page_of(run_dir)
-    assert "기능 요구사항 1개" in page and "표지가 있는 인수 기준 1개" in page and "| E-FR-1 | E-AC-1, E-AC-2 |" in page
+    assert "기능 요구사항 1개" in page and "표지가 있는 인수 기준 1개" in page and "<td>E-FR-1</td><td>E-AC-1, E-AC-2</td>" in page
     assert "볼 곳: 기존 동작을 바꾸는 요구 0, 담당 값 1, 새 동작 1" in screen_of(run_dir)
 
 
@@ -558,7 +559,7 @@ def test_sheet_collects_marked_acs_open_and_folds_the_rest(run_dir):
     assert "표지가 있는 인수 기준 2개" in open_part and "AC-2" in open_part and "AC-3" in open_part
     assert "기능 요구사항 2개" in open_part and "FR-2 정렬한다" in open_part
     assert "AC-4" in folded.split("</details>")[0]
-    assert "번호 추적표" in folded and "| P-1 | FR-1 | AC-1, AC-4 |" in folded
+    assert "번호 추적표" in folded and "<td>P-1</td><td>FR-1</td><td>AC-1, AC-4</td>" in folded
     assert page.index("표지가 있는 인수 기준") < page.index("새 문서 전체")
 
 
@@ -585,14 +586,18 @@ def test_sheet_head_has_version_and_terminal_numbers(run_dir):
     task(run_dir, meta=dict(NEW, retry="1"), material="한 일", decide="- 고를 것 (가) 예", unverified="- 가정 password=hunter2")
     page = page_of(run_dir)
     assert "판 2 · 결과 " in page.split("<h2>")[0]
-    assert "[1] 가정 password=[가림]" in page and "[2] 고를 것 (가) 예" in page and "hunter2" not in page
+    assert '<span class="no">1</span><div class="text"><p>가정 password=[가림]</p>' in page and "hunter2" not in page
+    assert '<span class="no">2</span><div class="text"><p>고를 것 (가) 예</p>' in page
+    assert '<section class="cell ask"><h3>정해 주실 것 (1)</h3>' in page and "<h3>확인 안 된 것 (1)</h3>" in page
+    assert visual.HEAD_ITEMS_EXAMPLE.format(2, "가") in page
     shown = screen_of(run_dir)
     assert "- [1] 가정" in shown and "- [2] 고를 것" in shown
 
 
 def test_sheet_without_items_says_no_numbers(run_dir):
     task(run_dir, material="한 일")
-    assert "터미널 번호" not in page_of(run_dir)
+    page = page_of(run_dir)
+    assert visual.HEAD_ITEMS_TITLE not in page and '<div class="item">' not in page
 
 
 def test_sheet_with_unreadable_board_keeps_going(run_dir, monkeypatch, capsys):
@@ -608,13 +613,14 @@ def test_sheet_with_unreadable_board_keeps_going(run_dir, monkeypatch, capsys):
 DIAGRAM = "## 제안 도면\n```mermaid\nflowchart LR\n  A[<script>x</script>] --> B\n```\n\n## 시험 표\n| 인수 기준 | 계층 |\n|---|---|\n| AC-1 | 단위 |\n\n## 다른 절\n본문\n"
 
 
-def test_sheet_shows_proposed_diagram_as_source_and_test_table_open(run_dir):
+def test_sheet_draws_proposed_diagram_and_shows_test_table_open(run_dir):
     write(run_dir.path / "design" / "list.md", "# 설계\n\n" + DIAGRAM)
     task(run_dir, sections={"건드릴 파일": "- design/list.md"}, material="한 일")
     page = page_of(run_dir)
     head = page.split("<details>")[0]
-    assert "제안 도면" in head and "flowchart LR" in head and "| AC-1 | 단위 |" in head and "다른 절" not in head
-    assert "<script" not in page and "<svg" not in page
+    assert "제안 도면" in head and "flowchart LR" in head and "<td>AC-1</td><td>단위</td>" in head and "다른 절" not in head
+    assert md_html.DIAGRAM_OPEN in head and "A[&lt;script&gt;x&lt;/script&gt;]" in head and "<script>x" not in page
+    assert page.count("<script") == 2 and page.endswith(visual.SHEET_SCRIPTS + "</body></html>")
 
 
 def test_sheet_shows_one_line_when_there_is_no_diagram(run_dir):
@@ -626,7 +632,7 @@ def test_sheet_shows_one_line_when_there_is_no_diagram(run_dir):
 def test_sheet_of_run_wide_shows_flow_map(run_dir):
     write(run_dir.path / "design" / "run.md", "## 흐름 지도\n| 흐름 | 설계 |\n|---|---|\n| a | T001 |\n")
     task(run_dir, meta=dict(NEW, run_wide="true"), sections={"건드릴 파일": "- design/run.md"})
-    assert "| a | T001 |" in page_of(run_dir).split("<details>")[0]
+    assert "<td>a</td><td>T001</td>" in page_of(run_dir).split("<details>")[0]
 
 
 def test_sheet_of_change_shows_only_changed_design_sections(run_dir):
@@ -641,7 +647,7 @@ def test_sheet_of_old_task_has_no_head_numbers_or_sections(run_dir):
     write(run_dir.path / "design" / "list.md", "# 설계\n\n" + DIAGRAM)
     task(run_dir, meta=OLD, sections={"건드릴 파일": "- design/list.md"}, decide="- 고를 것")
     page = page_of(run_dir)
-    assert "터미널 번호" not in page and "판 1" not in page and "<h3>제안 도면</h3>" not in page
+    assert visual.HEAD_ITEMS_TITLE not in page and "판 1" not in page and "<h3>제안 도면</h3>" not in page
 
 
 # ---------------------------------------------------------------- 고친 판 알림

@@ -14,18 +14,20 @@
 사용:
   python visual.py {실행 폴더} {task id}     종료 0 / 2(사용법·task 없음)
   python visual.py {실행 폴더} {task id} --sheet
-    브라우저 한 장(설계 4.2절). tasks\\{id}\\sheet.html을 쓰고 `한 장: file:///…`을 낸다. 스크립트 없는 고정 틀이고 값은 모두
-    이스케이프하며, 비밀값의 값 꼴과 전화번호·메일 꼴은 가린다(타입 이름과 한글 문장은 두므로 모든 꼴을 잡지는 못한다).
+    브라우저 한 장(설계 4.2절). tasks\\{id}\\sheet.html을 쓰고 `한 장: file:///…`을 낸다. 고정 틀이고 값은 모두 가린 뒤
+    이스케이프하며(비밀값의 값 꼴과 전화번호·메일 꼴. 타입 이름과 한글 문장은 두므로 모든 꼴을 잡지는 못한다), Markdown은 md_html.py가
+    표·목록·코드로 낸다. 스크립트는 mermaid 도면이 있을 때만 싣고, CSP가 고정 판 파일 하나와 초기화 스크립트 해시 하나만 허용한다.
     만들지 못하면 `한 장 없음: {이유} ({재료 폴더})`이고 승인은 막지 않는다.
     「이번 실행의 값」 `한 장 올리기`가 `허용`이면 `올릴 파일: {경로}`를 함께 낸다(references/main/sheet-upload.md). 게시 때 문서 뼈대로 감싸이므로
-    이미지는 data:로 넣고, 색은 토큰으로 두고, 스크립트와 바깥 자원을 쓰지 않는다.
+    이미지는 data:로 넣고, 색은 토큰으로 두고, 바깥 자원은 cdnjs의 mermaid 파일 하나(SRI 고정)만 쓴다.
   python visual.py {실행 폴더} {task id} --sheet --once
     값이 `없음`이어도 그 한 번을 위해 크기를 보고 `올릴 파일:`을 낸다. 값은 바꾸지 않는다.
   python visual.py {실행 폴더} {task id} --sheet-sent "링크"
   python visual.py {실행 폴더} {task id} --sheet-failed "사유"
     올린 결과를 journal에 한 줄 남긴다. `collect.py --measure`가 센다. `--sheet-sent`의 표지가 지금 한 장과 맞을 때만 화면이 자료를 접는다.
-    1.2.0부터 시작한 task는 머리에 판과 터미널 번호를 적고, 요구사항 정본의 `담당이 채움`·`[바뀜:]` 표지를 모으며,
-    설계 정본의 제안 도면·시험 표·흐름 지도를 펼친다. 도면은 코드 원문으로 싣는다(틀에 스크립트가 없다).
+    1.2.0부터 시작한 task는 머리에 판과 승인 화면 항목(터미널과 같은 번호)을 싣고, 요구사항 정본의 `담당이 채움`·`[바뀜:]` 표지를 모으며,
+    설계 정본의 제안 도면·시험 표·흐름 지도를 펼친다. mermaid 울타리는 그림으로 그리고 원문을 접어 두며, 못 그리면 원문을 펼친다.
+    다른 다이어그램 언어는 코드 원문으로 보인다.
   python visual.py {실행 폴더} --run
     실행 지도(설계 7.3절). 정본과 기록에서 만들어 {실행 폴더}\\run-map.md에 쓰고 표준 출력에도 낸다. 읽는 자료이고 판정 근거가 아니다.
     값이 없는 칸은 제목도 쓰지 않는다. 흐름이 하나 이하면 줄기를 첫 줄 한 줄로 줄이고 펼친 지도는 파일에만 둔다.
@@ -36,6 +38,7 @@
 """
 import base64
 import difflib
+import hashlib
 import html
 import os
 import re
@@ -50,6 +53,7 @@ import deploy_reuse
 import devflow_lib
 import flow_review
 import kinds
+import md_html
 import places
 import project_docs
 import screen
@@ -210,7 +214,30 @@ def build(run_dir, tid):
 
 MASK, KEY_BLOCK, mask_line = devflow_lib.MASK, devflow_lib.KEY_BLOCK, devflow_lib.mask_line
 DOC_LIMIT = 400000   # 글자. 넘는 문서는 한 장에 싣지 않고 경로만 적는다
-SHEET_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
+# mermaid 도면 그리기(설계 4.2절). 판은 cdnjs 10.9.x의 마지막 판(2026-11-12 확인)이고, integrity는 받은 파일의 sha512를 직접 계산해 cdnjs 값과 맞췄다.
+# CSP는 이 파일 하나와 아래 초기화 스크립트 하나만 실행을 허용한다(호스트 전체를 열면 escape가 한 번 샐 때 다른 라이브러리를 불러 실행할 수 있다).
+# 페이지 이동으로 값이 나가는 길은 CSP가 막지 못하므로 escape(md_html)에 기댄다
+MERMAID_SRC = "https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.8/mermaid.min.js"
+MERMAID_SRI = "sha512-W44v4BgrfdCXnfKNCPLIa8yzpMbB5761jGLoi9UKSkAP5rveS4LqWnnBQV4n7hArLoGHijukXIpCxxbzqAX/Vg=="
+# 그림마다 차례로 parse → render. 되면 그림을 원문 앞에 넣고 안내를 지우고 원문을 접는다. 못 그리면(스크립트 없음·구문 오류) 그대로 둔다.
+# 테마는 게시 화면의 data-theme이 있으면 그것을, 없으면 시스템 설정을 따른다. 넓은 그림은 원래 크기로 두고 상자가 가로로 스크롤한다
+DIAGRAM_INIT = ("(function(){var m=window.mermaid;if(!m)return;"
+                "var t=document.documentElement.getAttribute('data-theme');"
+                "var d=t?t==='dark':!!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);"
+                "var w={useMaxWidth:false};"
+                "m.initialize({startOnLoad:false,securityLevel:'strict',theme:d?'dark':'default',flowchart:w,sequence:w,class:w,state:w,er:w,gantt:w,journey:w});"
+                "var f=document.querySelectorAll('figure.diagram'),i=0;"
+                "function next(){if(i>=f.length)return;var g=f[i],n=i++,s=g.querySelector('details pre'),x=s?s.textContent:'';"
+                "Promise.resolve().then(function(){return m.parse(x);}).then(function(){return m.render('sheet-diagram-'+n,x);})"
+                ".then(function(r){var b=document.createElement('div');b.className='drawn';b.innerHTML=r.svg;g.insertBefore(b,g.firstChild);"
+                "var p=g.querySelector('.draw-note');if(p)p.parentNode.removeChild(p);var e=g.querySelector('details');if(e)e.open=false;})"
+                "['catch'](function(){}).then(next);}"
+                "next();})();")
+DIAGRAM_INIT_HASH = "sha256-" + base64.b64encode(hashlib.sha256(DIAGRAM_INIT.encode("utf-8")).digest()).decode("ascii")
+SHEET_CSP = ("default-src 'none'; img-src data:; style-src 'unsafe-inline'; "
+             "script-src {} '{}'".format(MERMAID_SRC, DIAGRAM_INIT_HASH))
+SHEET_SCRIPTS = ('<script src="{}" integrity="{}" crossorigin="anonymous"></script><script>{}</script>'
+                 .format(MERMAID_SRC, MERMAID_SRI, DIAGRAM_INIT))
 SHEET_VIEWPORT = "width=device-width,initial-scale=1,viewport-fit=cover"
 SHEET_TITLE_CHARS = 40
 SHEET_LIGHT = "--bg:#fff;--fg:#222;--line:#ccc;--code:#f5f5f2;--add:#e4f5e4;--del:#fae4e4"
@@ -225,7 +252,24 @@ SHEET_STYLE = (":root{" + SHEET_LIGHT + "}"
                "h1{font-size:1.25rem}h2{font-size:1.05rem;border-bottom:1px solid var(--line);padding-bottom:.2rem;margin-top:1.6rem}"
                "pre{background:var(--code);padding:.6rem;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere}"
                ".add{background:var(--add)}.del{background:var(--del)}img{max-width:100%;height:auto}"
-               "iframe{box-sizing:border-box;width:100%;height:28rem;border:1px solid var(--line);background:#fff}")
+               "iframe{box-sizing:border-box;width:100%;height:28rem;border:1px solid var(--line);background:#fff}"
+               "h3{font-size:1rem;margin:1rem 0 .4rem}h4{font-size:.97rem;margin:.9rem 0 .3rem}h5{font-size:.95rem;margin:.8rem 0 .3rem}"
+               # 표는 상자 안에서 가로로 스크롤하고, 칸이 글자 단위로 눌리지 않게 최소 폭을 둔다(휴대폰 폭)
+               ".table{overflow-x:auto;margin:.6rem 0}.table table{border-collapse:collapse;font-size:14px;min-width:100%;"
+               "overflow-wrap:break-word;word-break:keep-all}"
+               "th,td{border:1px solid var(--line);padding:.35rem .5rem;vertical-align:top;text-align:left;min-width:6rem}th{background:var(--code)}"
+               "code{background:var(--code);padding:0 .25rem;border-radius:3px;font-size:.92em}pre code{padding:0}"
+               ".tag{display:inline-block;font-size:12px;line-height:1.5;border:1px solid var(--line);border-radius:10px;padding:0 .45rem;"
+               "margin:0 .15rem;white-space:nowrap}"
+               ".cell{margin:1rem 0}.cell.ask{border-left:4px solid var(--fg);padding-left:.7rem}.cell h3{margin:.4rem 0}"
+               ".lead{opacity:.8;margin:.3rem 0}"
+               ".item{display:flex;gap:.6rem;border:1px solid var(--line);border-radius:6px;padding:.5rem .7rem;margin:.45rem 0}"
+               ".item .no{flex:none;width:2rem;height:2rem;border-radius:50%;background:var(--fg);color:var(--bg);"
+               "display:flex;align-items:center;justify-content:center;font-weight:600}"
+               ".item .text{min-width:0;flex:1}.item .text>p:first-child{margin:.2rem 0}.item ul,.item ol{margin:.3rem 0;padding-left:1.2rem}"
+               ".pair{margin:.2rem 0}.pair>div{padding:.1rem .4rem}.pair-label{font-weight:600;margin-right:.3rem}"
+               "figure.diagram{margin:.6rem 0}.drawn{overflow-x:auto}.drawn svg{max-width:none;height:auto}.draw-note{font-size:13px;opacity:.8}"
+               "hr{border:0;border-top:1px solid var(--line)}")
 OPEN_SECTIONS = ("제안 도면", "시험 표", "흐름 지도", "배포 구성도")   # 설계 정본에서 처음부터 펼칠 절(설계 7.6절)
 ELEMENT_ID = re.compile(r"""data-el\s*=\s*["']([^"']+)["']""")
 
@@ -298,7 +342,8 @@ def _table_changes(before, after):
 
 def design_sections(text):
     """{절 제목: 그 절의 글}: 정본에서 처음부터 펼쳐 보일 절(설계 7.2절). 제목에 낱말이 든 ##·### 절을 다음 같은 층 제목 앞까지 원문 그대로 낸다.
-    제목 전체가 키라 도면 여러 절이 모두 나온다. 다이어그램 코드도 원문이다. 틀에 스크립트가 없어 그리지 않는다."""
+    제목 전체가 키라 도면 여러 절이 모두 나온다. 글은 원문이고, 한 장이 md_html로 표·목록으로 내며 mermaid 울타리는 그림으로 그린다
+    (1.2.1. 앞 판단 "원문으로 싣고 그림으로 보일지는 사용자가 실제 화면을 보고 정한다"의 조건이 채워졌다)."""
     out, word, level, rows, fence = {}, None, 0, [], False
 
     def close():
@@ -329,19 +374,55 @@ def _spec_blocks(text, safe):
         return devflow_lib.MARK_FILLED in row or devflow_lib.MARK_CHANGED in row
     picked = [row for _, row in rows if marked(row)]
     rest = [row for _, row in rows if not marked(row)]
-    out = ["<h3>기능 요구사항 {}개</h3>".format(len(frs)), "<pre>{}</pre>".format(html.escape(safe("\n".join(frs))))] if frs else []
+
+    def shown(lines):
+        return md_html.to_html(safe(_with_table_heads(text, lines)), mermaid=False)
+    out = ["<h3>기능 요구사항 {}개</h3>".format(len(frs)), shown(frs)] if frs else []
     if picked:
-        out += ["<h3>표지가 있는 인수 기준 {}개</h3>".format(len(picked)), "<pre>{}</pre>".format(html.escape(safe("\n".join(picked))))]
+        out += ["<h3>표지가 있는 인수 기준 {}개</h3>".format(len(picked)), shown(picked)]
     if rest:
-        out.append("<details><summary>나머지 인수 기준 {}개</summary><pre>{}</pre></details>".format(len(rest), html.escape(safe("\n".join(rest)))))
+        out.append("<details><summary>나머지 인수 기준 {}개</summary>{}</details>".format(len(rest), shown(rest)))
     trace = trace_rows(text, devflow_lib.AC_ROW_RE, devflow_lib.FR_ROW_RE)
     if trace:
-        out.append("<details><summary>번호 추적표</summary><pre>{}</pre></details>".format(html.escape(safe("\n".join(trace)))))
+        out.append("<details><summary>번호 추적표</summary>{}</details>".format(md_html.to_html(safe("\n".join(trace)), mermaid=False)))
     return out
 
 
+def _with_table_heads(text, rows):
+    """고른 행을 Markdown으로 잇는다. 표 행은 정본에서 그 행이 든 표의 머리 두 줄을 앞에 붙여, 같은 표의 행끼리 한 표로 묶는다.
+    머리를 찾지 못한 행과 목록 줄은 그대로 둔다."""
+    lines, heads, head, fence = text.splitlines(), {}, None, False
+    for i, line in enumerate(lines):
+        if FENCE_RE.match(line):
+            fence, head = not fence, None
+            continue
+        if fence or not line.lstrip().startswith("|"):
+            head = None
+            continue
+        if head is None and md_html.table_start(lines, i):
+            head = (line.strip(), lines[i + 1].strip())
+        elif head is not None:
+            heads.setdefault(line.strip(), head)
+    out, last = [], None
+    for row in rows:
+        now = heads.get(row.split("\n")[0].strip())
+        if now != last or now is None:
+            out.append("")
+            out += list(now) if now else []
+        out.append(row)
+        last = now
+    return "\n".join(out).strip("\n")
+
+
+HEAD_ITEMS_TITLE = "승인 화면 항목"
+HEAD_ITEMS_LEAD = "번호는 터미널 승인 화면의 `[n]`과 같습니다. "
+HEAD_ITEMS_EXAMPLE = '답할 때 "{} {}"처럼 이 번호로 부르시면 됩니다.'   # 첫 선택지 항목의 번호와 표지
+HEAD_ITEMS_PLAIN = "번호로 부르시면 됩니다."
+
+
 def _head_blocks(run_dir, t, safe):
-    """한 장 머리의 판과 터미널 번호(설계 4.2절). 번호는 screen.py가 매긴 그대로다. 화면 재료를 못 읽어도 한 장을 막지 않는다."""
+    """한 장 머리의 판과 승인 화면 항목(설계 4.2절). 칸과 번호는 screen.py가 매긴 그대로다(터미널과 같다). 칸마다 제목을 달고
+    항목은 번호 원 카드로, 항목 아래 줄은 카드 안 블록으로 낸다. 화면 재료를 못 읽어도 한 장을 막지 않는다."""
     res = os.path.join(t["_dir"], "result.md")
     stamp = datetime.fromtimestamp(os.path.getmtime(res)).strftime("%Y-%m-%d %H:%M:%S") if os.path.isfile(res) else "없음"
     try:
@@ -356,11 +437,14 @@ def _head_blocks(run_dir, t, safe):
     if "error" not in b and screen.material_missing(b):
         out.append("<p>{}</p>".format(html.escape(safe(screen.MATERIAL_MISSING))))
     out += ["<p>{}</p>".format(html.escape(safe(line))) for line in (screen.head_lines(b)[:1] if "error" not in b else [])]
-    lines = []
-    for title, body in screen.cell_blocks(b) if "error" not in b else []:
-        lines += [line[2:] for line in body.splitlines() if screen.ITEM_LINE.match(line)] if body else [title[2:]]
-    if lines:
-        out += ["<h2>터미널 번호</h2>", "<pre>{}</pre>".format(html.escape(safe("\n".join(lines))))]
+    cells = screen.cell_blocks(b) if "error" not in b else []
+    if not any(any(screen.ITEM_LINE.match(line) for line in body.splitlines()) if body else True for _, body in cells):
+        return out
+    cells = [(safe(title), safe(body or "")) for title, body in cells]
+    example = md_html.first_option(cells)
+    lead = HEAD_ITEMS_LEAD + (HEAD_ITEMS_EXAMPLE.format(*example) if example else HEAD_ITEMS_PLAIN)
+    out += ["<h2>{}</h2>".format(HEAD_ITEMS_TITLE), '<p class="lead">{}</p>'.format(md_html.inline(lead))]
+    out += [md_html.item_cards(title, body) for title, body in cells]
     return out
 
 
@@ -403,7 +487,7 @@ def _scenario_blocks(t, safe):
 
 
 def _drawing_blocks(run_dir, t, opened, safe):
-    """제안 도면과 생성본의 다른 곳(설계 7.2절). 달라도 실패가 아니고 같으면 싣지 않는다. 도면은 원문 표시를 유지한다."""
+    """제안 도면과 생성본의 다른 곳(설계 7.2절). 달라도 실패가 아니고 같으면 싣지 않는다. 다른 줄은 원문 대조가 목적이라 <pre>로 둔다."""
     drawings = {word: text for word, text in opened.items() if "제안 도면" in word}
     folder = places.code_folder(run_dir, t)
     if not drawings or not folder:
@@ -425,7 +509,7 @@ def _design_blocks(run_dir, tasks, t, summary, safe):
     if not opened:
         out.append("<p>{}: 이 검증의 부모 설계에서 제안 도면과 시험 표를 찾지 못함</p>".format(flow_review.UNREAD))
     for word, text in opened.items():
-        out += ["<h3>{}</h3>".format(html.escape(safe(word))), "<pre>{}</pre>".format(html.escape(safe(text)))]
+        out += ["<h3>{}</h3>".format(html.escape(safe(word))), md_html.to_html(safe(text))]
     out += ["<h3>설계 제안과 다른 곳(코드 task의 「건드릴 파일」에 없던 파일)</h3>",
             "<pre>{}</pre>".format(html.escape(safe("\n".join(summary["outside"]) or "없음")))]
     out += _drawing_blocks(run_dir, t, opened, safe)
@@ -504,7 +588,7 @@ def sheet_html(run_dir, t):
     body += head[:1]   # 판 줄. 사람은 문제와 고치는 법을 먼저 보고, 그다음 정할 것과 번호를 본다
     if material:
         title, lines = screen.material_parts(material, "이 흐름이 한 일" if review else "이 task가 한 일")
-        body += ["<h2>{}</h2>".format(html.escape(safe(title))), "<pre>{}</pre>".format(html.escape(safe("\n".join(lines))))]
+        body += ["<h2>{}</h2>".format(html.escape(safe(title))), md_html.to_html(safe("\n".join(lines)))]
     body += head[1:]
     if v120 and t.get("kind") == "deploy-plan":
         commands = deploy_reuse.sheet_lines(run_dir, t)
@@ -513,7 +597,7 @@ def sheet_html(run_dir, t):
     if review:
         body += _flow_blocks(run_dir, t, safe)
     if wrap_review:
-        body += ["<h2>마무리 리뷰</h2>", "<pre>{}</pre>".format(html.escape(safe(wrap_review)))]
+        body += ["<h2>마무리 리뷰</h2>", md_html.to_html(safe(wrap_review))]
     for rel, before, after in wires:
         body.append("<h2>모양: {}</h2>".format(html.escape(safe(rel))))
         big = over_limit(rel, before, after)
@@ -539,10 +623,10 @@ def sheet_html(run_dir, t):
         opened = design_sections(after) if v120 and _kind_of(rel) == DECISION else {}
         if before is None:
             for word, text in opened.items():
-                body += ["<h3>{}</h3>".format(html.escape(safe(word))), "<pre>{}</pre>".format(html.escape(safe(text)))]
+                body += ["<h3>{}</h3>".format(html.escape(safe(word))), md_html.to_html(safe(text))]
             if v120 and _kind_of(rel) == SPEC:
                 body += _spec_blocks(after, safe)
-            body.append("<details><summary>새 문서 전체</summary><pre>{}</pre></details>".format(html.escape(safe(after))))
+            body.append('<details><summary>새 문서 전체</summary><div class="doc">{}</div></details>'.format(md_html.to_html(safe(after))))
             base = project_docs.base_text(run_dir, rel)
             if base is not None and _kind_of(rel) == DECISION:
                 body.append("<details><summary>프로젝트 문서와 달라진 곳</summary><pre>{}</pre></details>".format(
@@ -553,7 +637,7 @@ def sheet_html(run_dir, t):
         old_open = design_sections(before)
         for word, text in opened.items():
             if text != old_open.get(word):
-                body += ["<h3>바뀐 {}</h3>".format(html.escape(safe(word))), "<pre>{}</pre>".format(html.escape(safe(text)))]
+                body += ["<h3>바뀐 {}</h3>".format(html.escape(safe(word))), md_html.to_html(safe(text))]
         before, after = KEY_BLOCK.sub(MASK, before), KEY_BLOCK.sub(MASK, after)
         removed, added = _table_changes(before, after)
         if removed or added:
@@ -564,10 +648,13 @@ def sheet_html(run_dir, t):
     if hidden:
         body.append("<p>{}줄을 가렸습니다.</p>".format(len(hidden)))
     name = "{} {}".format(safe(tid), safe(str(t.get("title", "")))).strip()[:SHEET_TITLE_CHARS]
+    content = "".join(body)
+    # 그리는 스크립트는 도면이 있는 장에만 싣는다. 사용자 글은 모두 escape되므로 글이 이 꼴을 만들 수 없다
+    scripts = SHEET_SCRIPTS if md_html.DIAGRAM_OPEN in content else ""
     page = ('<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="{}">'
             '<meta name="claude:viewport-fit-sides" content="cover"><meta http-equiv="Content-Security-Policy" content="{}">'
-            "<title>{}</title><style>{}</style></head><body>{}</body></html>").format(
-        SHEET_VIEWPORT, html.escape(SHEET_CSP, quote=True), html.escape(name), SHEET_STYLE, "".join(body))
+            "<title>{}</title><style>{}</style></head><body>{}{}</body></html>").format(
+        SHEET_VIEWPORT, html.escape(SHEET_CSP, quote=True), html.escape(name), SHEET_STYLE, content, scripts)
     return page, len(hidden)
 
 
