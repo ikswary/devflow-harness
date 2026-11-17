@@ -1,7 +1,7 @@
 // 판정 갱신: 이벤트와 분 타이머로 scripts/board_dash.py를 돌려 상태 judgment 하나에 넣는다.
 // 그리기는 status·panel이 같은 상태를 읽어 한다.
 import { read, update } from 'claude-code'
-import type { EngineInterface, On } from 'claude-code'
+import type { EngineInterface, HookFailure, On } from 'claude-code'
 
 import type { DashJudgment, DashState } from '../types'
 
@@ -12,6 +12,14 @@ const MINUTE_MS = 60000
 const MINUTE_LAG_MS = 1000
 const RUN_TIMEOUT_MS = 10000
 const EMPTY: DashState = { result: null, error: '', at: 0, invokedAt: null }
+
+// 관문 훅 tool.call의 몸이 실패했을 때 상태 judgment의 error 머리(패널에 "판정 실패: …"로 보임).
+export const TOOL_CALL_FAILED = '훅 tool.call 실패: '
+
+// .catch handler가 남기는 실패 사유: 메시지의 첫 줄, 메시지가 없으면(timeout) 실패 종류.
+export function failureText(error: HookFailure): string {
+  return (error.message ?? '').split(/\r?\n/)[0] || error.kind
+}
 
 // 모듈 변수: 다시 불러오면 처음 값이 되고, 옛 타이머도 함께 사라진다(reference.md:61-62).
 let batch: { cancel: () => void } | null = null
@@ -27,10 +35,14 @@ export function registerCommon(on: On): void {
     return r
   })
 
+  // 실패해도 도구 결과는 그대로 둔다(next는 다시 불러도 안전해 이미 돌았으면 그 결과를 다시 준다). 다음 판정이 성공하면 error가 지워진다.
   on('tool.call', async ($, e, next) => {
     const r = await next(e)
     schedule($)
     return r
+  }).catch(async ($, e, next) => {
+    await update($, judgmentRef, s => ({ ...EMPTY, ...s, error: TOOL_CALL_FAILED + failureText(next.error) }))
+    return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {

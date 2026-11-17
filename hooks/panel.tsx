@@ -3,12 +3,16 @@
 import { read } from 'claude-code'
 import type { EngineInterface, On } from 'claude-code'
 
+import { failureText } from './common'
 import { ALL, lanesOf, panelOpenArgs, unitOf } from './panel-map'
 import { panelRows } from './panel-view'
 
 const judgmentRef = { plugin: 'devflow-harness', key: 'judgment' } as const
 
 const COMMAND = { name: 'harness-panel', description: '하네스 진행 패널(흐름별 상태와 의존 지도)', immediate: true }
+
+// 명령 훅이 실패했을 때 명령 출력의 머리. 패널은 상태를 쓰지 않으므로 출력으로만 남긴다.
+export const PANEL_OPEN_FAILED = '하네스 패널을 열지 못했습니다: '
 
 // 모듈 변수: 지도 단위와 펼침. 패널을 닫으면 처음 값, 다시 불러와도 처음 값이다.
 let unit = ALL
@@ -46,13 +50,18 @@ export const registerPanel = (on: On) => {
     const state = await read($, judgmentRef)
     await $.ui.open(panelOpenArgs(state ?? null, e.presentation.columns))
     return {}
-  })
+  }).catch(async ($, e, next) => ({ text: PANEL_OPEN_FAILED + failureText(next.error) }))
 
+  // 실패해도 닫힌 뒤의 지도 단위·펼침은 처음 값(정상 경로와 같음).
   on('ui.close', { id: 'harness-panel' }, async ($, e, next) => {
     const r = await next(e)
     unit = ALL
     expanded = false
     return r
+  }).catch(async ($, e, next) => {
+    unit = ALL
+    expanded = false
+    return next(e)
   })
 
   on('ui.render', { component: 'Pane', requestId: 'harness-panel' }, async ($, e) => {

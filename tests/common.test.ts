@@ -4,6 +4,8 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine, MockClock } from 'claude-code/testing'
 
+import { TOOL_CALL_FAILED } from '../hooks/common'
+
 const VIEW = {
   name: 'dash-view',
   register(on: On) {
@@ -44,7 +46,8 @@ function ok(value: unknown, delayMs = 0): Answer {
   return { exitCode: 0, stdout: JSON.stringify(value), delayMs }
 }
 
-function world(on: On): World {
+// answerTool이 거짓이면 tool.call에 아래에서 답하는 훅이 없어 next(e)가 거부된다(시험 엔진에서 tool.call 훅 몸을 실패시키는 길).
+function world(on: On, p: { answerTool?: boolean } = {}): World {
   const w: World = {
     clock: mock.clock(on, { now: 30000 }),
     calls: [],
@@ -70,7 +73,7 @@ function world(on: On): World {
     }
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('tool.call', () => ({ result: 'ran' }))
+  if (p.answerTool !== false) on('tool.call', () => ({ result: 'ran' }))
   on('turn.complete', () => ({ text: 'answer' }))
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))
   on('skill.prompt', ($, e) => ({ text: e.text }))
@@ -314,4 +317,28 @@ test('_workspace가 없고 직전 결과도 같은 root·세션의 없음이면 
   await toolCall($)
   await w.clock.advance(500)
   expect(w.calls).toHaveLength(2)
+})
+
+// AC-03 tool.call: 엔진에서 일으킬 수 있는 실패는 next(e)의 거부다(설계 4.3절). 훅 몸이 next 뒤에 실패하는 경우는 시험 엔진에서 일으키지 못한다.
+test('tool.call 훅 몸이 실패해도 도구 호출은 아래가 낸 거부 그대로이고, 상태 error가 TOOL_CALL_FAILED + 그 사유 첫 줄, result는 직전 그대로, 다음 판정이 지움', { plugins: [VIEW] }, async ($, on) => {
+  const w = world(on, { answerTool: false })
+  const first = judgment('R1', { tasks: [{ id: 'T2' }] })
+  w.answers.push(ok(first), ok(first))
+  await start($, w)
+  await w.clock.advance(500)
+  expect((await shown($)).error).toBe('')
+  let reason = ''
+  const settled = await toolCall($).then(() => 'resolved', (err: unknown) => {
+    reason = String(err instanceof Error ? err.message : err)
+    return 'rejected'
+  })
+  expect(settled).toBe('rejected')
+  expect(reason).not.toBe('')
+  const failed = await shown($)
+  expect(failed.error).toBe(TOOL_CALL_FAILED + reason.split(/\r?\n/)[0])
+  expect(failed.result).toEqual(first)
+  await turnComplete($)
+  await w.clock.advance(500)
+  expect(w.calls).toHaveLength(2)
+  expect((await shown($)).error).toBe('')
 })

@@ -2,6 +2,7 @@
 // 판정은 common의 길(process.run의 답)로 넣는다. 띠 길의 여는 호출과 닫기는 함께 띄운 BAND 플러그인이 한다(panel-helpers).
 import { expect, test } from 'claude-code/testing'
 
+import { PANEL_OPEN_FAILED } from '../hooks/panel'
 import { panelOpenArgs } from '../hooks/panel-map'
 import { panelRows } from '../hooks/panel-view'
 import { DASH as RUN59 } from './panel-fx-run59'
@@ -21,6 +22,23 @@ const AB_TASKS = [
 const AB = dash(AB_TASKS, { flows: [flow('a', '진행'), flow('b', '진행')] })
 const AB_IDS = AB_TASKS.map(t => t.id)
 const has = (lines: string[], id: string) => cellOf(lines, id, AB_IDS).length > 0
+
+// AC-03 command.run: panel-helpers의 world는 ui.open을 늘 받아 주고 같은 이벤트를 두 번 걸 수 없어, 거부하는 ui.open만 따로 건다.
+test('$.ui.open이 거부되면 명령 출력의 text가 PANEL_OPEN_FAILED로 시작해 거부 사유로 끝남', async ($, on) => {
+  const refused = '자리 없음'
+  const asked: string[] = []
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', ($, e) => {
+    asked.push(e.id)
+    return { deny: refused }
+  })
+  const out = (await runCommand($)) as Record<string, unknown>
+  expect(asked).toEqual(['harness-panel'])
+  expect(typeof out.text).toBe('string')
+  const text = String(out.text)
+  expect(text.startsWith(PANEL_OPEN_FAILED)).toBe(true)
+  expect(text.endsWith(refused)).toBe(true)
+})
 
 test('등록: isInteractive false면 명령 등록 0, true면 harness-panel 1, 이어 /clear(session.end clear) 뒤 2', async ($, on) => {
   const w = world(on)
