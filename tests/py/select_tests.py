@@ -36,7 +36,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-sys.dont_write_bytecode = True   # 명령행으로 돌릴 때 tests/py 아래에 __pycache__를 남기지 않는다
+if __name__ == "__main__":
+    # 명령행으로 돌릴 때만 tests/py 아래에 __pycache__를 남기지 않는다(import하는 쪽의 설정은 건드리지 않는다)
+    sys.dont_write_bytecode = True
 
 from test_imports import import_graph, imported_names  # noqa: E402  그래프는 층 시험과 같은 것을 쓴다
 

@@ -119,6 +119,19 @@ def test_command_line_prints_one_path_per_line():
     assert proc.stderr.splitlines() == [UNMATCHED_LINE.format(ABSENT)]
 
 
+def test_import_leaves_dont_write_bytecode_unchanged(tmp_path):
+    # 새 인터프리터에서 import만 한다. test_imports가 가져오는 conftest가 값을 True로 바꾸므로, 먼저 가져온 뒤 False로 돌려 두고
+    # select_tests를 가져와도 그대로인지 본다(바이트코드는 tmp_path로 보낸다)
+    code = ("import sys; sys.path.insert(0, sys.argv[1]); import test_imports; sys.dont_write_bytecode = False; "
+            "import select_tests; print(sys.dont_write_bytecode)")
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONDONTWRITEBYTECODE"}
+    env["PYTHONPYCACHEPREFIX"] = str(tmp_path)
+    proc = subprocess.run([sys.executable, "-c", code, str(TOOL.parent)], capture_output=True, text=True,
+                          encoding="utf-8", cwd=ROOT, timeout=120, env=env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert proc.stdout.strip() == "False"
+
+
 def test_run_ends_with_pytest_exit_code(tmp_path, capfd, monkeypatch):
     # --run은 병렬 pytest를 띄운다: 그 python에 pytest-xdist가 있어야 한다(test-rules ⑥)
     assert importlib.util.find_spec("xdist"), (
