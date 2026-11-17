@@ -119,7 +119,13 @@ async function refresh($: EngineInterface): Promise<void> {
     }
     const last = prev.result
     const idle = last !== null && last.run === null && last.workdir === root && last.session === (sid || null)
-    if (idle && !(await $.fs.exists(`${root}/_workspace`))) return
+    if (idle && !(await $.fs.exists(`${root}/_workspace`))) {
+      // 쉼 상태는 판정을 돌리지 않지만, 도구 호출 훅이 적은 실패 줄은 여기서 지운다(돌지 않으면 그 줄이 계속 남는다).
+      if (!prev.error.startsWith(TOOL_CALL_FAILED)) return
+      const at = await $.clock.now()
+      await update($, judgmentRef, s => ({ ...EMPTY, ...s, error: '', at }))
+      return
+    }
 
     const argv = ['python', '-B', `${$.plugin.root}/scripts/board_dash.py`, root]
     if (sid) argv.push('--session', sid)
