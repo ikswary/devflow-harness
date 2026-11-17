@@ -35,7 +35,7 @@ devflow-harness를 고칠 때 따르는 원칙과 그 근거다. 근거는 두 �
 | 갈래 | 무엇을 | 이 저장소의 장치 | 언제 |
 |---|---|---|---|
 | 구조 회귀 | 문서 크기, 읽는 양, 등록표 정합, 층 구조, 판본 | `tests/py`의 정합 시험 | 바꿀 때마다 |
-| 스크립트 동작 | 상태 전이, 화면, 판정 읽기 | `tests/py` 단위 시험 | 바꿀 때마다(닿는 것), 커밋 전(전체: `python -m pytest -q -p no:cacheprovider -n auto`) |
+| 스크립트 동작 | 상태 전이, 화면, 판정 읽기 | `tests/py` 단위 시험 | 바꿀 때마다(닿는 것: `python tests/py/select_tests.py --run`), 커밋 전(전체: `python -m pytest -q -p no:cacheprovider -n auto`) |
 | 플러그인 꼴 | manifest, 경로, 훅 | `claude plugin validate --strict .` | 판을 낼 때 |
 | 항상 켜진 비용 | 이름·설명 토큰 | `claude plugin details devflow-harness` | 판을 낼 때(값을 CHANGELOG에) |
 | 행동 회귀 | 사람이 판단 재료를 받는가 | 목적 시험(작성자→판정→화면→결과를 모르는 승인자, 정답지 대조) | 판을 낼 때, 모델이 바뀔 때 |
