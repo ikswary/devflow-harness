@@ -8,6 +8,7 @@
 - ⑤ 시험이 물려받는 환경.
 kind마다 도는 검사는 등록표 `kinds.FACT_CHECKS`가 정하고, 돌지 않는 검사는 절에 `돌리지 않음`을 쓴다.
 """
+import re
 import subprocess
 
 import pytest
@@ -332,3 +333,40 @@ def test_host_names_are_not_identifiers():
     """목적 시험 T004: `cdn.example.com`의 끝 마디 `com`이 식별자로 뽑혀 생산처 없음 256곳이 되었다."""
     names = judge_facts.identifiers("`cdn.example.com`, `img.gabia.co.kr`, `ctx.app`, `media.getUrl()`")
     assert "com" not in names and "kr" not in names and "app" in names and "getUrl" in names
+
+
+# 설계 4.5절(R5): 이름이 아닌 꼴은 NOT_IDENTIFIER_FORMS 한 곳. 끝 마디 목록은 일곱 개 그대로(D9, T002 답 1가)
+FORM_SAMPLES = [("cdn.example.com", "호스트 이름"), ("api.my-site.app", "마디 꼴"), ("x.9lives.dev", "마디 꼴"),
+                ("src/a.ts", "파일 이름"), ("T001", "번호 꼴"), ("AC7", "번호 꼴")]
+NAME_SAMPLES = [("`screen.build`", ["build"]), ("`os.path`", ["path"]), ("`item_key()`", ["item_key"]),
+                ("`logger.info`", ["info"]), ("`req.app`", ["app"]), ("ERR_LIMIT_X", ["ERR_LIMIT_X"])]
+
+
+def test_tlds_stay_the_seven_end_labels():
+    assert set(judge_facts.TLDS) == {"com", "net", "org", "kr", "io", "jp", "cloud"} and len(judge_facts.TLDS) == 7
+
+
+def test_not_identifier_forms_are_one_table():
+    assert [name for name, _ in judge_facts.NOT_IDENTIFIER_FORMS] == ["파일 이름", "호스트 이름", "마디 꼴", "번호 꼴"]
+    for text, form in FORM_SAMPLES:
+        assert judge_facts.not_identifier_form(text) == form, text
+    for text, _ in NAME_SAMPLES:
+        assert judge_facts.not_identifier_form(text.strip("`")) is None, text
+
+
+@pytest.mark.parametrize("text", ["`cdn.example.com`", "`api.my-site.app`", "`x.9lives.dev`"])
+def test_form_samples_give_no_names(text):
+    assert judge_facts.identifiers(text) == []
+
+
+@pytest.mark.parametrize("text, names", NAME_SAMPLES)
+def test_dotted_and_called_names_stay_names(text, names):
+    assert judge_facts.identifiers(text) == names
+
+
+def test_identifiers_filter_through_the_table(monkeypatch):
+    """표에 꼴을 더하면 identifiers가 그 꼴을 더는 줍지 않는다(거르는 곳이 표 하나)."""
+    assert judge_facts.identifiers("`screen.build`, `fetch_order()`") == ["build", "fetch_order"]
+    monkeypatch.setattr(judge_facts, "NOT_IDENTIFIER_FORMS",
+                        judge_facts.NOT_IDENTIFIER_FORMS + (("시험 꼴", re.compile(r"^screen\.")),))
+    assert judge_facts.identifiers("`screen.build`, `fetch_order()`") == ["fetch_order"]

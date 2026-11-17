@@ -44,9 +44,19 @@ SECTIONS = {"producer": "식별자의 생산처", "tests": "바뀐 동작의 기
 TICK = re.compile(r"`([^`\n]{1,120})`")
 BARE_CODE = re.compile(r"(?<![A-Za-z0-9_`])([A-Z][A-Z0-9]*_[A-Z0-9_]*[A-Z0-9])(?![A-Za-z0-9_`])")
 NAME = re.compile(r"^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:\(\))?$")
-FILE_NAME = re.compile(r"\.{}$".format(plain_text.EXT))
-# 호스트 이름(`cdn.example.com`)은 식별자가 아니다. 끝 마디 `com`을 이름으로 뽑아 생산처 없음 256곳이 되었다(목적 시험 T004)
-HOST_NAME = re.compile(r"^(?:[a-z0-9-]+\.)+(?:com|net|org|kr|io|jp|cloud)$")
+# 호스트 이름의 끝 마디. 넓히면 `logger.info`, `req.app` 같은 코드 이름까지 빠진다(설계 D9, T002 답 1가)
+TLDS = ("com", "net", "org", "kr", "io", "jp", "cloud")
+# 이름 꼴에 맞아도 식별자가 아닌 꼴(이름, 정규식). 백틱 글 전체와 끝 마디로 줄인 이름 양쪽에 대 본다(`not_identifier_form`).
+# 마디 꼴은 지금도 NAME이 맞지 않아 걸러지는 글이다. 줍는 결과는 바꾸지 않고 왜 거르는지를 이 표에서 읽게 한다
+NOT_IDENTIFIER_FORMS = (
+    ("파일 이름", re.compile(r"\.{}$".format(plain_text.EXT))),
+    # `cdn.example.com`의 끝 마디 `com`을 이름으로 뽑아 생산처 없음 256곳이 되었다(목적 시험 T004)
+    ("호스트 이름", re.compile(r"^(?:[a-z0-9-]+\.)+(?:{})$".format("|".join(TLDS)))),
+    # 하이픈이 든 마디나 숫자로 시작하는 마디(`api.my-site.app`, `x.9lives.dev`). 코드 식별자는 이런 마디를 갖지 않는다
+    ("마디 꼴", re.compile(r"^(?=(?:[^.]*\.)*(?:\d|[^.]*-))(?:[a-z0-9-]+\.)+[a-z0-9-]+$")),
+    # task·번호 꼴(`T001`, `AC7`)
+    ("번호 꼴", re.compile(r"^(?:T\d+|[A-Z]{1,4}\d+)$")),
+)
 # 이름 꼴이지만 식별자가 아닌 것: 일반 약어, task·번호 꼴, 저장소 폴더 이름
 NOT_NAMES = {"JSON", "URL", "URI", "HTTP", "HTTPS", "HEAD", "API", "UUID", "HTML", "CSS", "SQL", "YAML", "TOML", "UTF", "CLI",
              "PR", "CI", "CD", "DNS", "TLS", "SSL", "JWT", "CORS", "CSV", "PDF", "PNG", "SVG", "XML", "README", "TODO",
@@ -56,7 +66,11 @@ NOT_NAMES |= {"for", "if", "else", "while", "do", "return", "new", "this", "self
               "class", "async", "await", "import", "from", "export", "const", "let", "var", "function", "try", "catch",
               "throw", "raise", "then", "map", "filter", "length", "get", "set", "has", "push", "join", "split", "test",
               "run", "main", "init", "env", "log", "json", "text"}
-NUMBERED = re.compile(r"^(?:T\d+|[A-Z]{1,4}\d+)$")
+
+
+def not_identifier_form(text):
+    """`NOT_IDENTIFIER_FORMS`에서 `text`가 맞는 첫 꼴의 이름. 맞는 꼴이 없으면 None."""
+    return next((name for name, form in NOT_IDENTIFIER_FORMS if form.search(text)), None)
 
 
 def _looks_like_identifier(name):
@@ -71,11 +85,12 @@ def identifiers(text):
     for _, how, raw in sorted(spans):
         called = False
         if how == "tick":
-            if not NAME.match(raw) or (FILE_NAME.search(raw) and not raw.endswith("()")) or HOST_NAME.match(raw):
+            if not NAME.match(raw) or not_identifier_form(raw):
                 continue
             called = raw.endswith("()") or "." in raw   # 호출 꼴과 점으로 이은 이름은 소문자 한 낱말이어도 이름이다
             raw = (raw[:-2] if raw.endswith("()") else raw).split(".")[-1]
-        if raw in found or raw in NOT_NAMES or NUMBERED.match(raw) or len(raw) < 3 or not re.search(r"[A-Za-z]", raw):
+        if (raw in found or raw in NOT_NAMES or not_identifier_form(raw) or len(raw) < 3
+                or not re.search(r"[A-Za-z]", raw)):
             continue
         if (called and len(raw) >= 3) or _looks_like_identifier(raw):
             found.append(raw)
