@@ -141,6 +141,29 @@ def test_code_copy_is_one_commit_without_workspace(prepared):
     assert prepared["proc"].stdout.splitlines()[-1] == "준비됨: {}".format(prepared["run"])
 
 
+def test_outer_git_repo_vars_do_not_reach_snapshot(tmp_path, monkeypatch):
+    # git 훅 안처럼 바깥 저장소를 가리키는 GIT_INDEX_FILE·GIT_DIR가 잡혀 있어도 바깥 색인은 그대로이고
+    # 시험용 코드 사본의 커밋에 사본의 파일이 든다
+    for name in load_setup().GIT_REPO_VARS:   # 이 시험 자체가 훅 안에서 돌아도 바깥 저장소를 tmp_path에 짓는다
+        monkeypatch.delenv(name, raising=False)
+    outer = tmp_path / "outer"
+    write(outer / "keep.txt", "바깥 파일\n")
+    git(outer, "init", "-q")
+    git(outer, "add", "keep.txt")
+    before = git(outer, "ls-files", "--stage")
+    data = fake_data(tmp_path)
+    out = tmp_path / "out"
+    monkeypatch.setenv("GIT_INDEX_FILE", str(outer / ".git" / "index"))
+    monkeypatch.setenv("GIT_DIR", str(outer / ".git"))
+    proc = run_setup(data, out)
+    monkeypatch.undo()   # 아래 확인용 git은 변수 없이 부른다
+    assert proc.returncode == 0, proc.output
+    assert git(outer, "ls-files", "--stage") == before
+    assert before.split()[-1] == "keep.txt"   # 양성 대조: 바깥 색인을 실제로 읽었음
+    code = out / TARGET / "code"
+    assert git(code, "ls-tree", "-r", "--name-only", "HEAD").split() == ["app.txt"]
+
+
 def test_rerun_replaces_folder_with_marker(prepared):
     stray = prepared["out"] / TARGET / "stray.txt"
     stray.write_text("남은 것\n", encoding="utf-8")

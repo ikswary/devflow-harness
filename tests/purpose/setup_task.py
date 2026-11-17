@@ -45,6 +45,10 @@ RESET_KEYS = (("status", "진행"), ("retry", "0"), ("judge_started", ""), ("app
               ("n_decide", "0"), ("n_todo", "0"), ("n_notify", "0"), ("n_unverified", "0"), ("n_children", "0"),
               ("asked_at", ""), ("card_open", ""))
 RUN_SECTIONS = ("요청 원문", "이번 실행의 값")
+# 바깥 git(훅 안, git commit 도중에 도는 pytest)이 잡아 둔 저장소 지정 변수. 물려받으면 `-C`로 준 코드 사본이 아니라
+# 그 변수가 가리키는 저장소의 색인·객체에 쓰므로 git 하위 프로세스에는 넘기지 않는다
+GIT_REPO_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+                 "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX")
 
 
 class Refuse(Exception):
@@ -171,15 +175,21 @@ def write_run_md(run, source_run_md, code, version):
             code, base_branch, version, secs["요청 원문"].strip(), secs["이번 실행의 값"].strip()))
 
 
+def git_env():
+    """git 하위 프로세스의 환경: 지금 환경에서 저장소 지정 변수(`GIT_REPO_VARS`)를 뺀 것."""
+    return {k: v for k, v in os.environ.items() if k.upper() not in GIT_REPO_VARS}
+
+
 def snapshot(code):
     git = ["git", "-C", code, "-c", "user.name=purpose", "-c", "user.email=purpose@test", "-c", "core.autocrlf=false",
            "-c", "commit.gpgsign=false"]
-    subprocess.run(git + ["init", "-q"], check=True)
+    env = git_env()
+    subprocess.run(git + ["init", "-q"], check=True, env=env)
     with open(os.path.join(code, ".git", "info", "exclude"), "a", encoding="utf-8") as f:
         f.write("\n_workspace/\n")
-    subprocess.run(git + ["add", "-A"], check=True, capture_output=True)
+    subprocess.run(git + ["add", "-A"], check=True, capture_output=True, env=env)
     # 자료의 코드 사본이 비어 있어도 커밋 하나를 만든다(실행 폴더는 _workspace/라 빠짐)
-    subprocess.run(git + ["commit", "-q", "--allow-empty", "-m", "sandbox snapshot"], check=True)
+    subprocess.run(git + ["commit", "-q", "--allow-empty", "-m", "sandbox snapshot"], check=True, env=env)
 
 
 def setup(args):
