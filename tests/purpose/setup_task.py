@@ -74,8 +74,9 @@ def harness_version():
 
 def out_refusal(out, root=ROOT):
     """`--out`을 거부할 까닭(없으면 None). 이 저장소 안이면 `_workspace/` 아래만 받는다."""
-    out = os.path.normcase(os.path.abspath(out))
-    root = os.path.normcase(os.path.abspath(root))
+    # realpath로 연결점·심볼릭 링크·8.3 짧은 이름을 풀어 저장소 안 판단이 표기에 흔들리지 않게 한다
+    out = os.path.normcase(os.path.realpath(out))
+    root = os.path.normcase(os.path.realpath(root))
     try:
         inside = os.path.commonpath([out, root]) == root
     except ValueError:   # 드라이브가 다름

@@ -185,6 +185,36 @@ def test_out_rule_accepts_workspace_and_outside(tmp_path):
     assert module.out_refusal(str(tmp_path)) is None
 
 
+def _make_link(link, target):
+    """디렉터리 연결(Windows는 연결점, 그 밖은 심볼릭 링크). 만들 수 없으면 None을 돌려준다."""
+    if os.name == "nt":
+        proc = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
+        return link if proc.returncode == 0 else None
+    try:
+        os.symlink(str(target), str(link), target_is_directory=True)
+    except OSError:
+        return None
+    return link
+
+
+def test_out_rule_resolves_links_into_repo(tmp_path):
+    module = load_setup()
+    link = _make_link(tmp_path / "repo-link", ROOT)
+    if link is None:
+        pytest.skip("디렉터리 연결을 만들 수 없음")
+    try:
+        # 저장소를 가리키는 연결을 거쳐도 _workspace/ 밖이면 거부, 안이면 허용
+        assert module.out_refusal(str(link / "tests" / "x")) is not None
+        assert module.out_refusal(str(link / "_workspace" / "purpose")) is None
+        # root가 연결 표기로 와도 같은 판단
+        assert module.out_refusal(str(ROOT / "tests" / "x"), root=str(link)) is not None
+    finally:
+        if os.name == "nt":
+            os.rmdir(str(link))   # 연결점만 지우고 대상은 남긴다
+        else:
+            os.unlink(str(link))
+
+
 def test_refuses_data_not_in_shape(tmp_path):
     data = fake_data(tmp_path)
     shutil.rmtree(data / TARGET / "prior-run")
