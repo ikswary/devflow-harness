@@ -273,8 +273,18 @@ def join_items(head, its):
 
 
 def item_key(text):
-    m = KEY_RE.search(text)
-    return m.group(1) + m.group(2) if m else None
+    """「통과 못 한 기준」 항목 머리 줄의 열쇠(`기준3`·`변이1`): devflow_lib.item_key의 첫 번호. 머리가 꼴 표에 없으면 None."""
+    key = devflow_lib.item_key(text)
+    return key[0] + str(key[1][0]) if key else None
+
+
+def cell_key(cell):
+    """판정 표 첫 칸(기준 칸)의 열쇠: 칸 글에서 처음 나온 `기준|변이 n`, 숫자만이면 `기준{n}`, 그 밖은 None.
+    항목 머리가 아니라 칸이라 item_key의 꼴 표를 쓰지 않는다(설계 harness-tests 4.4절)."""
+    m = KEY_RE.search(cell)
+    if m:
+        return m.group(1) + m.group(2)
+    return "기준" + cell if cell.isdigit() else None
 
 
 def main_run_resolved(task_dir):
@@ -299,7 +309,7 @@ def unresolved_failed(text, resolved):
     keep, dropped = [], 0
     for it in its:
         body = "\n".join(it)
-        k = item_key(body)
+        k = item_key(it[0])   # 항목 머리 줄만(설명 속 번호는 열쇠가 아니다)
         if k and k in resolved and "판정불가" in body:
             dropped += 1
             continue
@@ -316,7 +326,7 @@ def table_blocks(table, resolved, allow_target=False):
         if allow_target and devflow_lib.table_tag(line) == "대상":
             continue
         first = line.strip().strip("|").split("|")[0].strip()
-        k = item_key(first) or ("기준" + first if first.isdigit() else None)
+        k = cell_key(first)
         if "| 실패" not in line and k and k in resolved:
             continue
         return True
@@ -395,7 +405,7 @@ def table_targets(table, known):
         if devflow_lib.table_tag(line) != "대상":
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        k = item_key(cells[0]) or ("기준" + cells[0] if cells[0].isdigit() else cells[0])
+        k = cell_key(cells[0]) or cells[0]
         if k not in known:
             out.append("- [판정불가 대상] {}: {}(판정 표)".format(k.replace("기준", "기준 ").replace("변이", "변이 "), cells[-1]))
     return out

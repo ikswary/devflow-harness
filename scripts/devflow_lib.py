@@ -2031,6 +2031,36 @@ def decide_cell(task_dir):
 # 글 가운데 우연히 든 "대상:"이나 실패와 섞인 항목은 꼬리표 없음(승인으로)으로 본다.
 ITEM_TAG_RE = re.compile(r"^-\s*(?:기준|변이)\s*\d+\s*:\s*판정불가\s+(" + "|".join(kinds.UNDECIDED_TAGS) + r")\s*:")
 ITEM_KEY_RE = re.compile(r"(?:기준|변이)\s*\d+")
+
+# 「통과 못 한 기준」 항목 머리의 꼴 표(설계 harness-tests 4.4절). 번호는 항목 머리에서만 읽고 설명 속 `기준 n`은 읽지
+# 않는다(목적 시험 T051 `- 기준 성질(…): … 기준 3`, 2회차 T004 `- 기준 6: … 기준 2(…)`). 이름이 `변이`로 시작하면
+# 변이 번호, 그 밖은 기준 번호다. 표에 없는 머리(`- 기준 성질(…)`, `- AC-V-3:`, `- 블록 기준 4(…)`)는 번호가 없다.
+ITEM_HEADS = (
+    ("기준 번호", re.compile(r"^-\s*기준\s*(\d+)\s*[:：.)]")),          # - 기준 3: / 3. / 3) / 3：
+    ("기준 괄호", re.compile(r"^-\s*기준\s*(\d+)\s*[(（「]")),          # - 기준 3(… / 3 (… / 3 「…
+    ("기준 범위", re.compile(r"^-\s*기준\s*(\d+)\s*[-~]\s*(\d+)(?=[\s:：.)(（「]|$)")),   # - 기준 8-10: / 8~10 …
+    ("머리·판정 기준", re.compile(r"^-\s*(?:머리|판정)\s+기준\s*(\d+)(?=[\s:：.)(（「]|$)")),   # - 머리 기준 2 … / - 판정 기준 2 …
+    ("번호만", re.compile(r"^-\s*(\d+)[.)](?!\d)")),                    # - 3. … / - 3) …
+    ("변이 번호", re.compile(r"^-\s*변이\s*(\d+)\s*[:：]")),             # - 변이 1: …
+)
+
+
+def item_key(line):
+    """「통과 못 한 기준」 항목 머리 줄의 (`기준`|`변이`, 번호 목록). 머리가 ITEM_HEADS에 없으면 None.
+    여러 줄을 받으면 첫 줄만 본다. 범위(`기준 8-10`)는 앞 번호가 뒤 번호보다 크면 번호가 없다."""
+    lines = (line or "").strip().splitlines()
+    first = lines[0].strip() if lines else ""
+    for name, rx in ITEM_HEADS:
+        m = rx.match(first)
+        if not m:
+            continue
+        nums = [int(x) for x in m.groups()]
+        if len(nums) == 2:
+            if nums[0] > nums[1]:
+                return None
+            nums = list(range(nums[0], nums[1] + 1))
+        return ("변이" if name.startswith("변이") else "기준"), nums
+    return None
 BASELINE_FAIL_RE = re.compile(r"원래(?:부터)?\s*실패\w*")   # 기준선 없음 이유의 "원래부터 실패"만 실패 판정이 아니다
 
 

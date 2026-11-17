@@ -795,15 +795,9 @@ def reuse_check(tasks, t, rec, now):
     return found[:2] if found else None
 
 
-FAIL_NO = re.compile(r"기준\s*(\d+)")
-LEAD_NO = re.compile(r"^-\s*(\d+)[.)\s]")
-# `- 기준 성질(writer 2절): …`처럼 번호 없는 기준으로 시작하는 항목은 설명 속 `기준 3`을 번호로 읽지 않는다(목적 시험 T051)
-NAMED_CRITERION = re.compile(r"^-\s*기준\s+(?!\d)")
-# `- 기준 6: … 탐침 정의의 기준 2(…)를 통과할 수 없고`처럼 설명이 다른 문서의 기준을 말해도 항목 자신의 번호만 읽는다(목적 시험 2회차 T004)
-OWN_CRITERION = re.compile(r"^-\s*기준\s*(\d+)\s*[:：.)]")
-
-
 def failed_numbers(paths):
+    """판정 파일 「통과 못 한 기준」의 기준 번호(정렬)와 번호 없는 항목 글. 번호는 항목 머리에서만 읽는다
+    (devflow_lib.item_key). `변이` 항목과 꼴 표에 없는 머리는 번호 없는 항목이다."""
     nums, loose = set(), []
     for p in paths:
         if not os.path.isfile(p):
@@ -813,10 +807,9 @@ def failed_numbers(paths):
             s = line.strip()
             if not s.startswith("- ") or devflow_lib.EMPTY_ITEM.match(s):
                 continue
-            own = OWN_CRITERION.match(s)
-            found = [] if NAMED_CRITERION.match(s) else [own.group(1)] if own else (FAIL_NO.findall(s) or LEAD_NO.findall(s))
-            if found:
-                nums.update(int(x) for x in found)
+            key = devflow_lib.item_key(s)
+            if key and key[0] == "기준":
+                nums.update(key[1])
             else:
                 loose.append(s[2:][:120])
     return sorted(nums), loose
