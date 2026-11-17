@@ -1409,6 +1409,7 @@ PREMISE_ANSWER = re.compile(r"(?:^|(?<=[\s,/(]))전\s*(\d+)\s*:?\s*({})(?=$|[\s.
     "|".join(re.escape(v) for v in sorted(PREMISE_VALUES + PREMISE_DROP, key=len, reverse=True))))
 PREMISE_SNIPPET = 20   # 답 줄에 함께 남기는 전제 문장의 앞 글자 수(다시 쓴 결과의 같은 번호가 다른 전제면 답을 잇지 않는다)
 PREMISE_TEXTS = "전제 문장:"
+PREMISE_CAP = 3   # 「전제」 줄 상한(formats/screen-cells.md 「전제와 정한 것」 "셋 이내"). 넘는 줄부터 꼴 문제
 
 
 def cells_of(t):
@@ -1485,6 +1486,8 @@ def premise_rows(text):
                 row["n"], "/".join(PREMISE_VALUES), row["answer"] or "없음")
         elif not row["blocking"] and not (row["assume"] or row["deadline"]):
             row["problem"] = "「전제」 전{} 줄은 막아 세우지 않는데 `모르면:`(가정)도 `기한:`도 없음".format(row["n"])
+        elif len(out) >= PREMISE_CAP:
+            row["problem"] = "「전제」가 셋을 넘음(전{}. screen-cells 「전제와 정한 것」)".format(row["n"])
         seen.add(row["n"])
         out.append(row)
     return out

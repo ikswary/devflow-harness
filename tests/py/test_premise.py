@@ -54,8 +54,34 @@ def test_row_problems():
     rows = lib.premise_rows("- 전1 계정 | 답: 됨/안 됨\n- 번호 없는 줄 | 막아 세움: 예\n- 전2 모름 | 막아 세움: 아니오\n"
                             "- 전3 x | 막아 세움: 예 | 답: 있음/없음\n- 전4 y | 막아 세움: 예 | 답: {됨/안 됨/지금 해 보겠음 또는 예/아니오}\n"
                             "- 전5 z | 막아 세움: 아니오 | 모르면: a\n- 전5 w | 막아 세움: 아니오 | 모르면: b\n- 전0 v | 막아 세움: 아니오 | 모르면: c\n")
-    # 막아 세움 없음, 번호 없음, 모르면 없음, 답 꼴 밖, 견본 그대로, (정상), 번호 겹침, 번호 0
-    assert [bool(r["problem"]) for r in rows] == [True, True, True, True, True, False, True, True]
+    # 막아 세움 없음, 번호 없음, 모르면 없음, 답 꼴 밖, 견본 그대로, 셋을 넘음(꼴은 정상), 번호 겹침, 번호 0
+    assert [bool(r["problem"]) for r in rows] == [True, True, True, True, True, True, True, True]
+    assert "셋을 넘음" in rows[5]["problem"] and "전5" in rows[5]["problem"]
+
+
+FOURTH = "- 전4 사진 크기 제한이 있나요 | 막아 세움: 아니오 | 모르면: 제한 없음으로 가정\n"
+
+
+def test_fourth_premise_is_over_the_cap():
+    """「전제」는 셋 이내(formats/screen-cells.md). 넷째 줄부터 꼴 문제, 셋이면 없음."""
+    assert lib.PREMISE_CAP == 3
+    rows = lib.premise_rows(PREMISES + FOURTH)
+    assert [r["n"] for r in rows] == [1, 2, 3, 4]
+    assert [r["problem"] for r in rows[:3]] == ["", "", ""]
+    assert rows[3]["problem"] == "「전제」가 셋을 넘음(전4. screen-cells 「전제와 정한 것」)"
+    assert all(not r["problem"] for r in lib.premise_rows(PREMISES))
+
+
+def test_fourth_premise_warns_on_the_screen(run_dir):
+    run_dir.task("T001", "설계", kind="design", block="설계", status="승인대기", **V130)
+    run_dir.result("T001", result(PREMISES + FOURTH))
+    judged(run_dir)
+    out = run_script("screen", run_dir.path, "T001").stdout
+    warn = [l for l in out.splitlines() if l.startswith("! 정한 것·전제의 꼴")]
+    assert len(warn) == 1 and "셋을 넘음(전4." in warn[0]
+    run_dir.result("T001", result(PREMISES))
+    out = run_script("screen", run_dir.path, "T001").stdout
+    assert "! 정한 것·전제의 꼴" not in out and "[전제 전1]" in out   # 같은 화면, 셋이면 경고 없음
 
 
 def test_blocking_premise_is_asked_first(run_dir):
