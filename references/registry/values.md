@@ -13,6 +13,7 @@
 - `STAGE_JUDGES`: `merge` 실행승인 = 없음, `merge` 결과승인 = 없음, `wrap-up` 실행승인 = read+run, `wrap-up` 결과승인 = read+run, `deploy-exec` 직전확인 = 없음, `deploy-exec` 결과승인 = 없음, `deploy-exec` 넣기승인 = read
 - `JUDGE_FILES`: `read` = `judge.md`, `run` = `judge-run.md`
 - `CELLS`: `정해 주실 것`, `하실 일·허용 요청`, `알릴 것`, `답하신 것의 반영`, `확인 안 된 것`, `건수만`
+- `CELLS_V130`(1.3.0부터 시작한 task): `전제`, `정해 주실 것`, `하실 일·허용 요청`, `알릴 것`, `정한 것`, `확인 안 된 것`, `건수만`
 - `COUNT_CELLS`: `정해 주실 것` = `n_decide`, `하실 일·허용 요청` = `n_todo`, `알릴 것` = `n_notify`, `확인 안 된 것` = `n_unverified`
 - `UNDECIDED_TAGS`: `환경`, `지시`, `대상`
 - `FLOW_ROLES`: `feature`, `fixes`, `integration`, `deploy`

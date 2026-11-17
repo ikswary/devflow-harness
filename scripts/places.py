@@ -879,7 +879,8 @@ def completion_block(run_dir, t):
         unmeasured = []
         if collect(run_dir, t["id"], unmeasured) or unmeasured:
             why.append("코드 확인 곳이 있거나 신호를 재지 못했는데 `screen.py … --places`를 돌리지 않음")
-    rows = waiting(plist)
+    # 1.3.0(정할 것 U5): 곳마다 답하는 카드를 없앴다. 곳 목록은 펼침이고, 사람이 볼 곳은 판정자가 「짚음」으로 묻는다
+    rows = [] if devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V130) else waiting(plist)
     if rows:
         why.append("지금 답 없는 코드 확인 곳이 있음: {} (`보류`는 받는다)".format(", ".join(p["key"] for p in rows)))
     objected = devflow_lib.open_objection(t, devflow_lib.load_tasks(run_dir))
@@ -905,8 +906,8 @@ def _single_value(text):
     """조각 하나의 (값 이름, 글), 꼴이 어긋나면 None. 글이 `:`와 공백뿐이면 빈 글이다."""
     text = text.strip()
     piece = devflow_lib._answer_piece(text)
-    if "task" in piece or "objection" in piece or "except" in piece or "items" in piece:
-        return None
+    if "task" in piece or "objection" in piece or "except" in piece or "items" in piece or "premise" in piece or "redo" in piece:
+        return None   # 전제·경계 답(1.3.0)은 카드의 답이 아니다. 앞붙임이 말없이 떨어지지 않게 되묻는다
     piece = devflow_lib._answer_settled(piece, ANSWER_NAMES, ANSWER_TEXT)
     if piece is None:
         return None

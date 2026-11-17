@@ -120,6 +120,10 @@ def snapshot_sources(run_dir, t):
             missing.append(rel)
         for f in found:
             add(f)
+    # 정본을 처음 쓰는 설계는 「건드릴 파일」에 구현이 고칠 코드 경로만 있어 정본이 사본에서 빠졌다(목적 시험 2회차 T004).
+    # 결과 「본문」의 `정본:` 줄로 그 task가 쓴 정본을 더한다
+    for rel in devflow_lib.written_canon(run_dir, t):
+        add(rel.replace("\\", "/"))
     revised = task_rel + "/revised"
     if os.path.isdir(os.path.join(run_dir, revised)):
         for f in _files_under(run_dir, revised):

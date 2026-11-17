@@ -497,6 +497,8 @@ DESIGN_COPY = "design-copy"
 JUDGMENT_TAG = re.compile(r"\[(종류|위치|따름|설계)\s*:\s*(.*?)\](?=\s*(?:\[(?:종류|위치|따름|설계)\s*:|$))")
 JUDGMENT_PLACE = re.compile(r"^[^,]+:\d+(?:-\d+)?$")
 JUDGMENT_NONE = re.compile(r"^- 없음(?:\s*\(.*\))?\s*$")
+RULES_V130 = "1.3.0"   # 이 판본부터 시작한 task에만 판정 전 사실 검사(facts.md)와 판정 파일 「짚음」·「주장-출처 대조」를 요구한다
+FACTS_FILE = kinds.FACTS_FILE
 RULES_V120 = "1.2.0"   # 이 판본(1.2.0-dev.n 포함)부터 시작한 task에만 판단 기록·코드 확인 규칙을 적용한다
 CODE_CHECK_ORIGIN = "코드 확인"   # 곳 답의 승인 기록 지점(`코드 확인 {키}`)과 그 답으로 만든 수정의 origin에 든다
 
@@ -839,6 +841,154 @@ def _judge_header_loose(line):
     return None, None
 
 
+# ---------------------------------------------------------------------------
+# 판정 파일 「짚음」·「주장-출처 대조」(1.3.0, 7판 규칙 4.2·5.1·5.3). 꼴은 references/formats/judge-file.md
+POINT_SECTION, CLAIM_SECTION = "짚음", "주장-출처 대조"
+POINT_ASK, POINT_FIX, POINT_KEEP = "물을 것", "하네스가 고칠 것", "그대로 둠"
+POINT_BRANCHES = (POINT_ASK, POINT_FIX, POINT_KEEP)
+# 하네스가 고칠 것은 이 다섯으로 한정한다. 그 밖이거나 까닭에 (a)~(d)가 있으면 물을 것으로 올린다
+HARNESS_FIX_KINDS = ("문서 어긋남", "셈 잘못", "빠진 줄", "인용 줄 번호", "이유 문장")
+ASK_MARK = re.compile(r"\([a-d]\)")
+CLAIM_VERDICTS = ("맞음", "어긋남", "인용 없음")
+POINT_NOW_CAP = 2   # task 하나의 즉시 질문 상한(정할 것 U6)
+# 즉시 질문의 차례(5.3): 범위·비용·밖 > 보안 > 어긋남 > 그 밖
+# 까닭 칸의 성질 이름만 본다(짚은 글과 (a)의 "범위가 다르다"는 세지 않는다)
+POINT_RANKS = ((re.compile(r"(?<![가-힣])(?:범위|비용)(?![가-힣])|(?<!그 )(?<![가-힣])밖(?![가-힣])"), 0),
+               (re.compile(r"(?<![가-힣])보안(?![가-힣])"), 1), (re.compile(r"어긋남"), 2))
+POINT_FIELDS = ("갈래", "까닭", "길", "결과", "추천", "깨짐", "근거", "인용", "대조")
+FIELD_START = re.compile(r" \| (?:{}):".format("|".join(POINT_FIELDS)))
+CLAIM_POINT = "주장-출처"   # 「주장-출처 대조」의 어긋남·인용 없음을 옮긴 짚음의 까닭 머리
+
+
+def _split_fields(body, names):
+    """`글 | 이름: 값 | …`의 (글, {이름: 값}, 이름 없는 칸 목록). 글은 첫 이름 칸 앞까지라 글 안의 ` | `를 자르지 않는다.
+    이름 없는 칸은 `대조` 뒤면 끝 칸(메모)이고, 그 밖이면 앞 이름 칸의 값에 붙인다."""
+    m = re.search(r" \| (?:{}):".format("|".join(re.escape(n) for n in names)), body)
+    if not m:
+        return body.strip(), {}, []
+    text, rest = body[:m.start()].strip(), body[m.start() + 3:]
+    named, loose, last = {}, [], None
+    for part in rest.split(" | "):
+        name, colon, value = part.partition(":")
+        if colon and name.strip() in names:
+            last = name.strip()
+            named[last] = value.strip()
+        elif last and last != "대조":
+            named[last] += " | " + part.strip()
+        else:
+            loose.append(part.strip())
+    return text, named, loose
+
+
+def _fields(line):
+    """짚음·주장-출처 대조 한 줄 `- 글 | 이름: 값 | …`. 빈 끝 칸(`| 대조: 맞음 |`)은 뗀다(목적 시험 T051)."""
+    return _split_fields(re.sub(r"\s*\|\s*$", "", line.strip()[2:]), POINT_FIELDS)
+
+
+def _judge_lines(t, name):
+    """절의 항목 줄. 두 칸 이상 들여 쓴 줄은 앞 항목에 붙인다. `- 없음`은 이름 칸이 없는 줄만이다."""
+    path = os.path.join(t["_dir"], kinds.JUDGE_FILES["read"])
+    if not os.path.isfile(path):
+        return None
+    body = sections(read_text(path), level=2).get(name)
+    if body is None:
+        return None
+    out = []
+    for raw in body.splitlines():
+        line = raw.rstrip()
+        if line.startswith("- "):
+            out.append(line)
+        elif out and line.startswith("  ") and line.strip():
+            out[-1] += " " + line.strip().lstrip("- ")
+    return [l for l in out if not (EMPTY_ITEM.match(l) and not FIELD_START.search(l))]
+
+
+def point_rank(p):
+    return next((rank for rx, rank in POINT_RANKS if rx.search(p.get("why", ""))), 3)
+
+
+def judge_points(t):
+    """「짚음」 줄 [{text, branch, why, breaks, breaks_text, basis, moved, problem}]. 하네스 몫 밖의 「하네스가 고칠 것」은
+    물을 것으로 옮기고 moved에 까닭을 적는다. 갈래를 읽지 못한 줄은 problem에 적는다."""
+    out = []
+    for line in _judge_lines(t, POINT_SECTION) or []:
+        text, f, _ = _fields(line)
+        branch, why = f.get("갈래", ""), f.get("까닭", "")
+        breaks_raw = f.get("깨짐", "없음")
+        p = {"text": text, "branch": branch, "why": why, "ways": f.get("길", ""), "effects": f.get("결과", ""),
+             "recommend": f.get("추천", ""), "breaks": breaks_raw.startswith("있음"),
+             "breaks_text": breaks_raw[2:].strip() if breaks_raw.startswith("있음") else "", "basis": f.get("근거", ""),
+             "moved": "", "problem": ""}
+        if branch not in POINT_BRANCHES:
+            p["problem"] = "「짚음」 줄의 갈래를 읽지 못함({}): {}".format(branch or "갈래 칸 없음", text[:40])
+        elif p["breaks"] and not p["breaks_text"]:
+            p["problem"] = "「짚음」 줄의 `깨짐: 있음` 뒤에 조건이 없음: {}".format(text[:40])
+        elif branch == POINT_ASK and "(a)" in why and len(set(re.findall(r"\(([가-힣])\)", p["ways"]))) < 2:
+            p["problem"] = "「짚음」 줄의 까닭이 (a)(고치는 길이 둘 이상)인데 `길: (가) … / (나) …`가 없음: {}".format(text[:40])
+        elif branch == POINT_ASK and len(set(re.findall(r"\(([가-힣])\)", p["ways"]))) >= 2 and not p["recommend"]:
+            # 7판 질문은 추천을 달았고 승인자가 그대로 골랐다. 짚음 질문에 추천이 없자 반대 길을 골랐다(목적 시험 T051, J21)
+            p["problem"] = "「짚음」 줄의 `길`이 둘 이상인데 `추천: (가) {{이유}}`가 없음: {}".format(text[:40])
+        elif branch == POINT_FIX and (ASK_MARK.search(why) or not any(k in why for k in HARNESS_FIX_KINDS)):
+            p["branch"], p["moved"] = POINT_ASK, "하네스가 고칠 것의 다섯 종류 밖({})".format(why or "까닭 없음")
+        out.append(p)
+    return out
+
+
+def point_places(points, cap=POINT_NOW_CAP):
+    """짚음의 화면 자리: now(즉시 질문, 깨지는 조건이 있는 물을 것을 차례대로 cap개), report(경계·묶음 보고의 물을 것),
+    fix(하네스가 고칠 것), keep(그대로 둠)."""
+    places = {"now": [], "report": [], "fix": [], "keep": []}
+    breaking = sorted((p for p in points if p["branch"] == POINT_ASK and p["breaks"]), key=point_rank)
+    now = breaking[:cap]
+    for p in points:
+        if p.get("problem"):
+            continue
+        if p["branch"] == POINT_FIX:
+            places["fix"].append(p)
+        elif p["branch"] == POINT_KEEP:
+            places["keep"].append(p)
+        elif not any(p is q for q in now):
+            places["report"].append(p)
+    places["now"] = now
+    return places
+
+
+def claim_rows(t):
+    """「주장-출처 대조」 줄 [{claim, cite, verdict, note}]."""
+    out = []
+    for line in _judge_lines(t, CLAIM_SECTION) or []:
+        claim, f, loose = _fields(line)
+        out.append({"claim": claim, "cite": f.get("인용", ""), "verdict": f.get("대조", ""), "note": " | ".join(loose)})
+    return out
+
+
+def point_problems(t):
+    """1.3.0부터 시작한 task의 judge.md 두 절과 사실 파일 문제 목록."""
+    if not version_at_least(t.get("started_version"), RULES_V130):
+        return []
+    path = os.path.join(t["_dir"], kinds.JUDGE_FILES["read"])
+    if not os.path.isfile(path):
+        return []
+    out = []
+    for name in (POINT_SECTION, CLAIM_SECTION):
+        if _judge_lines(t, name) is None:
+            out.append("judge.md 「{}」 절 없음(references/formats/judge-file.md)".format(name))
+    points = judge_points(t)
+    out += [p["problem"] for p in points if p["problem"]]
+    rows = claim_rows(t)
+    bad = [r for r in rows if r["verdict"] not in CLAIM_VERDICTS]
+    if bad:
+        out.append("「주장-출처 대조」 줄의 대조 값을 읽지 못함: {}".format(bad[0]["claim"][:40]))
+    off = [r for r in rows if r["verdict"] in ("어긋남", "인용 없음")]
+    moved = [p for p in points if p["why"].startswith(CLAIM_POINT)]
+    if len(moved) < len(off):
+        out.append("「주장-출처 대조」의 어긋남·인용 없음 {}줄인데 까닭이 `{} …`인 짚음이 {}줄".format(len(off), CLAIM_POINT, len(moved)))
+    if t.get("kind") in kinds.FACT_CHECKS and not os.path.isfile(os.path.join(t["_dir"], FACTS_FILE)):
+        out.append("{0} 없음(판정 전에 `python scripts/judge_facts.py {{실행 폴더}} tasks\\{1}\\task.md`로 뽑고 판정을 다시 띄운다)"
+                   .format(FACTS_FILE, t.get("id", "")))
+    return out
+
+
 def judges_present(t, stage=None):
     """(있음 여부, 이유). 새 task는 필요한 판정 파일이 모두 있고 첫 줄 판정자가 그 역할이어야 한다.
     옛 task는 판정 파일이 하나라도 있으면 된다. stage는 STAGE kind가 묻는 단계(required_judges)."""
@@ -874,6 +1024,7 @@ def judges_present(t, stage=None):
             and judge_header(os.path.join(d, kinds.JUDGE_FILES["run"]))[1] is not None \
             and judge_header(os.path.join(d, kinds.JUDGE_FILES["read"]))[1] < judge_header(os.path.join(d, kinds.JUDGE_FILES["run"]))[1]:
         missing.append("읽기 판정이 실행 판정보다 앞섬(새 전·후를 「이 흐름이 한 일」과 대조하도록 읽기 판정을 다시 띄운다)")
+    missing.extend(point_problems(t))
     if not missing:
         missing.extend(judge_run_contract_problems(t))
     return (not missing), "; ".join(missing)
@@ -1112,6 +1263,19 @@ _ANSWER_OBJECTION = re.compile(r"^이의\s+(\d+)$")
 _ANSWER_REST = re.compile(r"^나머지\s+(\S.*)$")
 _ANSWER_EXCEPT = re.compile(r"^(\d+)\s*빼고\s+(\S.*)$")
 _ANSWER_ITEM = re.compile(r"^(\d+)[.)]?\s+(\S.*)$")
+# 1.3.0 새 화면의 답(구현 설계 2절 A): 즉시 질문 `1가`, 전제 질문 `전1 됨`, 경계 보고 `진행, 단 …`·`결정 n 다시`
+_ANSWER_ITEM_TIGHT = re.compile(r"^(\d+)([가-힣])$")
+_ANSWER_TIGHT_RUN = re.compile(r"^\d+\s*[가-힣](?:\s+\d+\s*[가-힣])+$")   # `1가 2가`, `1 가 2 나`: 공백으로 이은 즉시 질문 답
+_ANSWER_RUN_ITEM = re.compile(r"\d+\s*[가-힣]")
+_ANSWER_PREMISE = re.compile(r"^전(\d+)\s+(\S.*)$")
+_ANSWER_REDO = re.compile(r"^결정\s*(\d+)\s*다시$")
+_ANSWER_PROGRESS = re.compile(r"^진행,\s*단\s+(\S.*)$", re.S)
+_ANSWER_PROGRESS_TAIL = re.compile(r"^\s*단\s+\S")   # `진행, 단 …`의 쉼표 뒤. 조건 글은 그 줄 끝까지다
+_ANSWER_SLASH = re.compile(r"\s*(?<!\S)/(?!\S)\s*")   # 홀로 선 `/`(`a/b`는 글)
+# `/` 왼쪽이 이 꼴일 때만 나눈다. 글을 받는 답(`판단 안 됨 구조 / 흐름`)의 글은 나누지 않는다
+_SLASH_ITEM = r"(?:\d+\s*[가-힣](?![가-힣])|\d+\s+(?:확인 먼저|펼쳐)|전\d+\s+[^/,]+?)"
+_ANSWER_SLASH_HEAD = re.compile(r"^(?:{0}(?:\s*,\s*|\s+))*{0}$|^(?:결정\s*\d+\s*다시|진행|멈춤)$".format(_SLASH_ITEM))
+_ANSWER_EMPTY_SLASH = "/"   # 빈 칸을 둔 `/`(`1가 / `)는 꼴이 아니다. 이 조각은 어떤 화면의 값도 아니어서 되물음이 된다
 
 
 def _answer_piece(text):
@@ -1126,6 +1290,18 @@ def _answer_piece(text):
             return {"task": task, "value": many.group(1),
                     "items": [CIRCLED.index(c) + 1 for c in many.group(2) if c in CIRCLED]}
         return {"task": task, "value": rest}
+    m = _ANSWER_PREMISE.match(text)
+    if m:
+        return {"premise": int(m.group(1)), "value": m.group(2)}
+    m = _ANSWER_REDO.match(text)
+    if m:
+        return {"redo": int(m.group(1))}
+    m = _ANSWER_PROGRESS.match(text)
+    if m:
+        return {"value": "진행", "text": m.group(1)}
+    m = _ANSWER_ITEM_TIGHT.match(text)
+    if m:
+        return {"item": int(m.group(1)), "value": m.group(2)}
     m = _ANSWER_OBJECTION.match(text)
     if m:
         return {"objection": int(m.group(1))}
@@ -1155,19 +1331,47 @@ def _answer_settled(piece, allowed, with_text):
     return None
 
 
+def _slash_segments(line):
+    """줄을 홀로 선 `/`로 나눈다. 왼쪽 조각이 새 답 꼴(`_ANSWER_SLASH_HEAD`)일 때만 자르고, 아니면 나머지를 한 조각으로 둔다.
+    빈 칸이 생기면(`1가 / `, `/ 진행`) 그 자리에 꼴이 아닌 조각을 둔다."""
+    parts, pending = [], line
+    while True:
+        m = _ANSWER_SLASH.search(pending)
+        if not m:
+            break
+        head = pending[:m.start()].strip()
+        if not head:
+            return parts + [_ANSWER_EMPTY_SLASH]
+        if not _ANSWER_SLASH_HEAD.match(head):
+            break
+        parts.append(head)
+        pending = pending[m.end():]
+    if parts and not pending.strip():
+        return parts + [_ANSWER_EMPTY_SLASH]
+    return parts + [pending]
+
+
 def _answer_pieces(text):
-    """줄바꿈과 쉼표로 나눈다. 조각에 `:`가 나오면 그 줄의 나머지는 글이므로 나누지 않는다."""
+    """줄바꿈, 홀로 선 `/`, 쉼표로 나눈다. 조각에 `:`가 나오면 그 줄의 나머지는 글이므로 나누지 않고, `진행, 단 …`의 조건 글도
+    나누지 않는다. `1가 2가`처럼 공백으로 이은 즉시 질문 답은 하나씩 나눈다."""
     out = []
     for line in (text or "").split("\n"):
-        pending = line
-        while pending:
-            head, comma, tail = pending.partition(",")
-            if ":" in head or not comma:
-                out.append(pending)
-                break
-            out.append(head)
-            pending = tail
-    return [p.strip() for p in out if p.strip()]
+        for segment in _slash_segments(line):
+            pending = segment
+            while pending:
+                head, comma, tail = pending.partition(",")
+                if ":" in head or not comma or (head.strip() == "진행" and _ANSWER_PROGRESS_TAIL.match(tail)):
+                    out.append(pending)
+                    break
+                out.append(head)
+                pending = tail
+    pieces = []
+    for piece in (p.strip() for p in out):
+        if _ANSWER_TIGHT_RUN.match(piece):
+            pieces.extend(_ANSWER_RUN_ITEM.findall(piece))
+        elif piece:
+            pieces.append(piece)
+    return pieces
 
 
 def parse_answer(text, allowed, with_text=(), own_task=None):
@@ -1184,6 +1388,204 @@ def parse_answer(text, allowed, with_text=(), own_task=None):
     return parsed if parsed and all(parsed) else None
 
 
+# ---------------------------------------------------------------------------
+# 결과 파일 「정한 것」·「전제」(1.3.0, 구현 설계 2절 C, 7판 규칙 3.1·4.2). 꼴은 references/formats/result-file.md
+# 결정 하나는 칸 하나다: 사용자 결정과 앞 답을 바꾸는 결정(↺)은 「정해 주실 것」, 앞 답을 옮긴 결정(◇)과 담당이 근거로 정한
+# 결정(✔)은 「정한 것」, 알릴 결정은 「알릴 것」, 관례 결정은 「건수만」, 사용자만 아는 사실과 막아 세우는 외부 일은 「전제」
+PREMISE_CELL, DECIDED_CELL, OLD_ANSWERED_CELL = "전제", "정한 것", "답하신 것의 반영"
+DECIDED_MARKS = ("◇", "↺", "✔")
+DECIDED_FIELDS = ("앞 답", "바뀌는 앞 답", "버림")
+PREMISE_FIELDS = ("막아 세움", "답", "기대는 것", "모르면", "기한")
+CHANGED_ANSWER = "바뀌는 앞 답:"   # 「정해 주실 것」 항목이 앞 답을 바꿀 때 붙이는 칸(↺)
+CHANGED_PROPERTY = "앞 판단과 다름"
+SOURCE_QUOTE = re.compile(r"(\d{4}-\d{2}-\d{2})\s*(?:\"([^\"]+)\"|“([^”]+)”|「([^」]+)」|'([^']+)')")
+PREMISE_HEAD = re.compile(r"^전(\d+)\s+(.+)$")
+PREMISE_OK = ("됨", "예")
+PREMISE_NO = ("안 됨", "아니오")
+PREMISE_LATER = ("지금 해 보겠음", "지금 확인해 보겠음")
+PREMISE_DROP = ("철회", "대체")   # 방향을 다시 정해 그 전제가 더는 필요 없음(사람의 답으로만)
+PREMISE_VALUES = PREMISE_OK + PREMISE_NO + PREMISE_LATER
+PREMISE_ANSWER = re.compile(r"(?:^|(?<=[\s,/(]))전\s*(\d+)\s*:?\s*({})(?=$|[\s.,)(/])".format(
+    "|".join(re.escape(v) for v in sorted(PREMISE_VALUES + PREMISE_DROP, key=len, reverse=True))))
+PREMISE_SNIPPET = 20   # 답 줄에 함께 남기는 전제 문장의 앞 글자 수(다시 쓴 결과의 같은 번호가 다른 전제면 답을 잇지 않는다)
+PREMISE_TEXTS = "전제 문장:"
+
+
+def cells_of(t):
+    """그 task가 쓰는 승인 화면 칸. 1.3.0부터 시작한 task는 「전제」·「정한 것」이 든 새 칸이다."""
+    return kinds.CELLS_V130 if version_at_least(t.get("started_version"), RULES_V130) else kinds.CELLS
+
+
+def answered_cell(t):
+    """사람의 답을 옮긴 줄이 가는 칸(1.3.0부터 「정한 것」)."""
+    return DECIDED_CELL if version_at_least(t.get("started_version"), RULES_V130) else OLD_ANSWERED_CELL
+
+
+def _cell_lines(text):
+    """칸 글의 항목 줄(들여 쓴 줄은 앞 항목에 붙임, `- 없음` 뺌)."""
+    out = []
+    for raw in (text or "").splitlines():
+        line = raw.rstrip()
+        if line.startswith("- "):
+            out.append(line)
+        elif out and line.startswith("  ") and line.strip():
+            out[-1] += " " + line.strip()
+    return [l for l in out if not EMPTY_ITEM.match(l)]
+
+
+def _source(text):
+    m = SOURCE_QUOTE.search(text or "")
+    return (m.group(1), next(g for g in m.groups()[1:] if g)) if m else ("", "")
+
+
+def decided_rows(text):
+    """「정한 것」 줄 [{line, mark, text, date, quote, dropped, problem, warning}]. ◇는 `앞 답:`에 날짜와 원문(곧은 따옴표·「」)이
+    있어야 하고, ↺는 이 칸이 아니라 「정해 주실 것」에 선택지와 함께 쓴다(답이 없는 사용자 결정이다). 기호가 없으면 problem.
+    ✔는 `버림:`이 없으면 warning(관례를 따라 버린 길이 없는 결정은 「건수만」이다)."""
+    out = []
+    for line in _cell_lines(text):
+        body = line[2:].strip()
+        mark = body[:1] if body[:1] in DECIDED_MARKS else ""
+        rest, f, _ = _split_fields(body[1:].strip() if mark else body, DECIDED_FIELDS)
+        date, quote = _source(f.get("앞 답" if mark == "◇" else "바뀌는 앞 답", ""))
+        row = {"line": line, "mark": mark, "text": rest, "date": date, "quote": quote, "dropped": f.get("버림", ""),
+               "problem": "", "warning": ""}
+        if not mark:
+            row["problem"] = "「정한 것」 줄에 ◇/✔ 기호가 없음: {}".format(rest[:40])
+        elif mark == "◇" and not date:
+            row["problem"] = "「정한 것」 ◇ 줄에 `앞 답: {{날짜}} \"{{원문}}\"`이 없음: {}".format(rest[:40])
+        elif mark == "↺":
+            row["problem"] = "↺(앞 답을 바꾸는 결정)는 「정한 것」이 아니라 「정해 주실 것」에 선택지와 `{} {{날짜}} \"{{원문}}\"`을 달아 쓴다: {}".format(
+                CHANGED_ANSWER, rest[:40])
+        elif mark == "✔" and not row["dropped"]:
+            row["warning"] = "버린 길 없음"
+        out.append(row)
+    return out
+
+
+def premise_rows(text):
+    """「전제」 줄 [{line, n, text, blocking, answer, depends, assume, deadline, problem}]."""
+    out, seen = [], set()
+    for line in _cell_lines(text):
+        rest, f, _ = _split_fields(line[2:].strip(), PREMISE_FIELDS)
+        m = PREMISE_HEAD.match(rest)
+        block = f.get("막아 세움", "")
+        row = {"line": line, "n": int(m.group(1)) if m else 0, "text": m.group(2).strip() if m else rest,
+               "blocking": block == "예", "answer": f.get("답", ""), "depends": f.get("기대는 것", ""),
+               "assume": f.get("모르면", ""), "deadline": f.get("기한", ""), "problem": ""}
+        forms = [v.strip() for v in row["answer"].split("/") if v.strip()]
+        if not m or row["n"] < 1:
+            row["problem"] = "「전제」 줄이 `전{{n}}`(1부터)으로 시작하지 않음: {}".format(rest[:40])
+        elif row["n"] in seen:
+            row["problem"] = "「전제」 전{} 번호가 두 번 나옴".format(row["n"])
+        elif block not in ("예", "아니오"):
+            row["problem"] = "「전제」 전{} 줄에 `막아 세움: 예/아니오`가 없음".format(row["n"])
+        elif row["blocking"] and (not forms or not set(forms) <= set(PREMISE_VALUES) or not set(forms) & set(PREMISE_OK)):
+            row["problem"] = "「전제」 전{} 줄의 `답:`은 {} 가운데서 고른다(지금: {})".format(
+                row["n"], "/".join(PREMISE_VALUES), row["answer"] or "없음")
+        elif not row["blocking"] and not (row["assume"] or row["deadline"]):
+            row["problem"] = "「전제」 전{} 줄은 막아 세우지 않는데 `모르면:`(가정)도 `기한:`도 없음".format(row["n"])
+        seen.add(row["n"])
+        out.append(row)
+    return out
+
+
+def changed_decision_problems(text):
+    """「정해 주실 것」 항목 가운데 `[성질: 앞 판단과 다름]`인데 `바뀌는 앞 답:`(날짜와 원문)이 없는 것."""
+    out = []
+    for line in _cell_lines(text):
+        if CHANGED_PROPERTY in " ".join(PROPERTY_MARK.findall(line)) and not _source(line.split(CHANGED_ANSWER, 1)[-1])[0]:
+            out.append("「정해 주실 것」의 앞 판단과 다른 항목에 `{} {{날짜}} \"{{원문}}\"`이 없음: {}".format(CHANGED_ANSWER, line[2:42]))
+    return out
+
+
+def source_problems(screen_cells):
+    """「정한 것」·「전제」의 꼴 문제와 앞 판단과 다른 결정의 출처 문제(1.3.0부터 시작한 task). 화면에 경고로 보이고 알림을 막는다."""
+    out = ["「{}」 칸을 `- ` 줄 꼴로 읽지 못함(번호·표·문단)".format(cell) for cell in (PREMISE_CELL, DECIDED_CELL)
+           if unparsed_cell(screen_cells.get(cell, ""))]
+    rows = decided_rows(screen_cells.get(DECIDED_CELL, "")) + premise_rows(screen_cells.get(PREMISE_CELL, ""))
+    return out + [r["problem"] for r in rows if r["problem"]] + changed_decision_problems(screen_cells.get("정해 주실 것", ""))
+
+
+def premise_record_tail(t, text):
+    """전제 답을 적는 승인 기록 줄 끝에 붙일 `| 전제 문장: 1=…; 2=…`(답한 번호의 지금 전제 문장 앞부분). 답이 없으면 ""."""
+    numbers = sorted({int(n) for n, _ in PREMISE_ANSWER.findall(text or "")})
+    if not numbers or not version_at_least(t.get("started_version"), RULES_V130):
+        return ""
+    rows = {r["n"]: r for r in premise_rows(result_cells(t).get(PREMISE_CELL, "") if result_cells(t) else "")}
+    parts = ["{}={}".format(n, rows[n]["text"][:PREMISE_SNIPPET].replace("|", "/").replace(";", ",")) for n in numbers if n in rows]
+    return " | {} {}".format(PREMISE_TEXTS, "; ".join(parts)) if parts else ""
+
+
+def premise_answers(t):
+    """「승인 기록」의 답에서 전제 답 {번호: (됨/안 됨/지금 해 보겠음/철회, 그때 전제 문장 앞부분)}. 뒤의 답이 앞의 답을 덮는다.
+    `원문: "…"`의 따옴표 안과 결정 칸만 본다(`원문 메시지:`는 다른 task의 답이 섞이므로 보지 않는다). 다른 task 이름을 앞에 붙인
+    조각은 빼고, 이 task 이름을 붙인 조각은 이름을 떼고 읽는다."""
+    found, own = {}, str(t.get("id", ""))
+    for line in t.get("_sections", {}).get("승인 기록", "").splitlines():
+        if not line.strip().startswith("- "):
+            continue
+        core = record_core(line.strip())
+        fields = record_fields(core)
+        snippets = {}
+        for field in fields:
+            if field.startswith(PREMISE_TEXTS):
+                for part in field[len(PREMISE_TEXTS):].split(";"):
+                    n, _, snip = part.strip().partition("=")
+                    if n.strip().isdigit():
+                        snippets[int(n)] = snip.strip()
+        for text in [record_quote(core) or ""] + fields[2:3]:
+            for piece in _answer_pieces(text):
+                m = _ANSWER_TASK.match(piece)
+                if m:
+                    if m.group(1) != own:
+                        continue
+                    piece = m.group(2)
+                for n, value in PREMISE_ANSWER.findall(piece):
+                    n = int(n)
+                    state = ("됨" if value in PREMISE_OK else "안 됨" if value in PREMISE_NO
+                             else "철회" if value in PREMISE_DROP else "지금 해 보겠음")
+                    found[n] = (state, snippets.get(n, ""))
+    return found
+
+
+def premise_open(t):
+    """막아 세우는 전제 가운데 아직 풀리지 않은 것 [(번호, 상태)]. 됨·예·철회면 풀린다. 상태는 답 없음 / 지금 해 보겠음 / 안 됨 /
+    답 없음(전제가 바뀜): 답할 때 남긴 전제 문장과 지금 문장이 다르면 그 답을 잇지 않는다(다시 쓴 결과의 번호가 바뀐 경우)."""
+    if not version_at_least(t.get("started_version"), RULES_V130) or not t.get("_dir"):
+        return []
+    cells = result_cells(t)
+    if not cells:
+        return []
+    answers = premise_answers(t)
+    out = []
+    for r in premise_rows(cells.get(PREMISE_CELL, "")):
+        if not (r["blocking"] and r["n"]):
+            continue
+        state, snippet = answers.get(r["n"], ("답 없음", ""))
+        if snippet and not r["text"].replace("|", "/").replace(";", ",").startswith(snippet):
+            state = "답 없음(전제가 바뀜)"
+        if state not in ("됨", "철회"):
+            out.append((r["n"], state))
+    return out
+
+
+def premise_waits(tasks, t):
+    """t가 시작하기 전에 기다리는 앞 task의 전제 [(task id, 번호, 상태)]. 부모 고리와 `depends_on`을 함께 따라간다
+    (설계는 인프라 결정에 `depends_on`으로만 묶인다)."""
+    out, seen, stack = [], {t.get("id", "")}, [t]
+    while stack:
+        cur = stack.pop()
+        for ref in [cur.get("parent", "")] + list(cur.get("depends_on", []) or []):
+            if not ref or ref in seen or ref not in tasks:
+                continue
+            seen.add(ref)
+            other = tasks[ref]
+            out += [(ref, n, state) for n, state in premise_open(other)]
+            stack.append(other)
+    return sorted(out)
+
+
 HANDED_POINT = "하실 일 넘김"   # 넘김 답의 지점. 승인 줄이 아니라 명령을 얼리지도, 화면을 닫지도 않는다
 
 
@@ -1198,6 +1600,8 @@ def approval_line(line):
     point, decision = f[1], (f[2] if len(f) > 2 else "")
     if point in ("알림", "점검 확인", HANDED_POINT, "L4 확인", "실물 확인") or point.startswith(("되물음",) + PARTIAL_POINTS):
         return False
+    if decision == "진행" or re.match(r"진행,\s*단\s+\S|진행\s*[(:]", decision):
+        return True   # 1.3.0 경계 보고의 승인. `진행, 단 …`의 조건 글에 `보류`가 있어도 승인이므로 낱말 검사보다 앞에 둔다
     if any(w in decision for w in ("보류", "거절", "되돌림")):
         return False
     if point == "승인" or decision == "승인" or re.match(r"승인\s*[(:]", decision):
@@ -1299,6 +1703,10 @@ def record_check(t):
                 times[name] = when
                 if os.path.getmtime(p) > when + MTIME_SLACK:
                     out.append(("R3", "{}가 첫 줄의 판정 시각 뒤에 바뀜".format(name), [], os.path.getmtime(p)))
+        facts = os.path.join(d, FACTS_FILE)
+        if version_at_least(t.get("started_version"), RULES_V130) and times and os.path.isfile(facts) \
+                and os.path.getmtime(facts) > max(times.values()) + MTIME_SLACK:
+            out.append(("R3", "{}가 그것을 읽은 판정 뒤에 바뀜".format(FACTS_FILE), [], os.path.getmtime(facts)))
         readers = [times["judge.md"]] if "judge.md" in times else []
         if kind in kinds.READBACK_KINDS and "judge-run.md" in times:
             readers.append(times["judge-run.md"])
@@ -2223,7 +2631,8 @@ PROPERTY_MARK = re.compile(r"\[성질\s*[:：]\s*([^\]]*)\]")
 DERIVED_CELLS = ("정해 주실 것", "알릴 것", "확인 안 된 것")   # 성질이 붙는 칸(설계 5.2절)
 ADDABLE_PROPERTIES = ("범위", "밖", "비용", "위험")   # 판정자가 `성질 더함:`으로 더하는 값
 MOVED_CELLS = ("알릴 것", "확인 안 된 것")   # 옮겨 오는 줄의 칸(설계 5.3절 7). 결정과 「하실 일」은 옮겨 와도 사람에게 간다
-ANSWER_CRITERION = "「답하신 것의 반영」이 이 원문의 요구를 빠짐없이, 넘치지 않게 옮겼다"
+ANSWER_CRITERION = "「정한 것」(1.3.0 전에 시작한 task는 「답하신 것의 반영」)이 이 원문의 요구를 빠짐없이, 넘치지 않게 옮겼다"
+OLD_ANSWER_CRITERION = "「답하신 것의 반영」이 이 원문의 요구를 빠짐없이, 넘치지 않게 옮겼다"   # 1.3.0 전에 만든 task의 판정 기준
 MOVED_ITEM = re.compile(r"^- \[T\d+\]")
 
 
@@ -2242,7 +2651,8 @@ def has_risk_mark(section_text):
 
 def answer_is_judged(t):
     """사용자 답을 옮긴 task의 판정 기준에 그 옮김을 보는 줄이 있는가(`task_set.py new --from-answer`가 넣는다)."""
-    return ANSWER_CRITERION in t.get("_sections", {}).get("판정 기준", "")
+    criteria = t.get("_sections", {}).get("판정 기준", "")
+    return ANSWER_CRITERION in criteria or OLD_ANSWER_CRITERION in criteria
 
 
 def next_criterion(text, sentence):

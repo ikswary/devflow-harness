@@ -10,6 +10,8 @@
 | `slots.py` | 작업 칸 수가 2 이상일 때 칸 열기, 칸 커밋 넣기, 넣은 뒤 확인(`slots.md`) |
 | `decisions.py` | 재개 때 결정 요약(`{실행 폴더} --brief`). 전문은 `decisions.md`에서 시각으로 찾는다 |
 | `machine_check.py` | 등록표 `needs_touch_files`인 task의 기계 조건(종료 코드 3이면 읽기 판정) |
+| `judge_facts.py` | 판정 전 사실 검사(1.3.0). `task_set.py --status 자체검증`이 부르고 `facts.md`를 쓴다. 빠졌을 때만 손으로 돌린다 |
+| `report.py`·`run_position.py`·`plain_text.py` | 1.3.0 화면(알림 한 줄·즉시 질문·경계 보고, 머리 칸, 사람의 말 검사). `screen.py`가 부른다 |
 | `eol_setup.py` | 새 실행의 프로젝트 설정 단계(0절 3의 2 「줄 끝 고정」). 점검만, 또는 `.gitattributes` 쓰기와 줄 끝 정리를 스테이징까지(커밋은 메인) |
 | `board.py --ascii` / `board_ascii.py --watch {초}` | 진행 상황 그림. 사용자가 보자고 할 때만 메인이 찍는다(`--watch`는 사용자가 따로 띄워 두는 것) |
 | `visual.py` | 승인을 물을 때. 정본의 표·와이어프레임 경로를 「보는 자료」로 낸다(줄 수는 「이번 실행의 값」 `보는 자료 줄 수`). `--wrap-review`는 실행 전체 요약을 쓴다. `--sheet`는 브라우저 한 장 `sheet.html`을 만든다(`한 장 없음: …`이면 그 줄을 보이고 그대로 묻는다). `{실행 폴더} --run`은 실행 지도를 터미널과 `run-map.md`로 낸다. `--sheet-sent`·`--sheet-failed`는 한 장을 올린 결과를 남긴다(`sheet-upload.md`). 그 밖의 Artifact는 사용자가 보자고 할 때만 쓰고, 승인 자료를 손으로 쓴 페이지로 올리지 않으며, 발행 전에 "이름·주소·일부 비밀 꼴은 못 가립니다"를 보이며, 그때 HTML 이스케이프는 메인이 맡는다. `--run --flow {흐름}`은 그 자리 한 줄이다 |

@@ -384,3 +384,18 @@ def test_documented_rejudge_command_reports_changed_revision_and_same_files(run_
         "- design/plan.md | 같음",
         "- tasks/T001/revised/design/plan.md | 바뀜 +2 -1",
     ]
+
+
+def test_first_design_snapshot_includes_the_canon_named_in_the_result(run_dir):
+    """목적 시험 2회차 T004: 정본을 처음 쓰는 설계는 「건드릴 파일」에 구현이 고칠 코드 경로만 있어 정본이 사본에서 빠졌다."""
+    run = run_dir.path
+    canon = write(run / "design" / "first.md", "# 설계\n- 하나\n")
+    run_dir.task("T001", "첫 설계", kind="design", status="자체검증", sections={"건드릴 파일": "- src/a.ts"})
+    result = run_dir.result("T001", "# T001 결과\n\n## 승인 화면\n### 알릴 것\n- 없음\n\n## 본문\n정본: design/first.md\n")
+    judge = run_dir.judge("T001", judge_text("rjudge", "T001"))
+    age(canon, result)
+    r = run_script("task_set", run_dir, "T001", "--status", "진행", "--archive-judge")
+    assert r.returncode == 0, r.output
+    snap = run_dir.task_dir("T001") / "before.r1"
+    assert (snap / "files" / "design" / "first.md").read_bytes() == canon.read_bytes()
+    assert any(x.startswith("- design/first.md | ") for x in manifest_section(snap, "파일"))

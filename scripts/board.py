@@ -70,7 +70,8 @@ def is_ready(tasks, t, holds=None):
         if wrap and devflow_lib.settled(tasks[ref], tasks, holds):
             continue
         return False
-    return True
+    # 1.3.0 막아 세우는 전제(7판 규칙 3.1): 앞 task의 전제에 긍정 답이 오기 전에는 시작하지 않는다(task_set.py가 거부한다)
+    return not devflow_lib.premise_waits(tasks, t)
 
 
 def find_cycles(tasks):

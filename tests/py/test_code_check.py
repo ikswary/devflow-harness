@@ -868,3 +868,13 @@ def test_leaving_the_wait_adds_no_key_to_an_old_task(run_dir):
 
 def test_wrap_up_summary_is_empty_without_places(run_dir):
     assert places.run_left(str(run_dir.path)) == {"count": 0, "where": [], "problems": []}
+
+
+def test_v130_flow_check_needs_no_place_answers_but_keeps_test_removals(run_dir, repo):
+    # 1.3.0(정할 것 U5): 곳마다 답하는 카드를 없앴다. 시험 끄기·삭제의 답은 그대로 받는다
+    with_off_line(run_dir, repo, ["보안", "구조"])
+    head = run_dir.task_dir(FV) / "task.md"
+    text = head.read_text(encoding="utf-8")
+    head.write_text(re.sub(r"(?m)^started_version:.*$", "started_version: 1.3.0", text), encoding="utf-8")
+    why = places.completion_block(str(run_dir.path), run_dir.tasks()[FV])
+    assert "지금 답 없는 코드 확인 곳" not in why and "답 없는 시험 끄기·삭제" in why

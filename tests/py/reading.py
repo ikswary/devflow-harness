@@ -30,6 +30,7 @@ WRITER = "references/roles/writer.md"
 WRITER_ONLY = "references/roles/writer-only.md"   # 작성자만(5.10)
 AGENT_ROLE = "references/roles/agent.md"
 JUDGE_ROLE = "references/roles/judge.md"
+JUDGE_POINTS = "references/roles/judge-points.md"   # 1.3.0 읽기 판정자만(짚음·주장-출처 대조)
 CASE = "{경우}"
 CASE_EXCLUDE = ("main-order.md", "run-check.md", "flow-review.md")   # flow-review.md는 흐름별 검증만 읽는다
 FLOW_REVIEW = "references/kinds/verify/flow-review*.md"   # 경우 파일처럼 모듈이 가리키므로 「읽을 것」 대조에서 뺀다(`*`가 그 표지다)
@@ -156,7 +157,7 @@ def _new_writer(actor):
 
 
 def _new_read_judge(kind, target=None):
-    files = (WRITER, JUDGE_ROLE) + _formats_for("read-judge") + _module(definition_of(kind)) + ((FLOW_REVIEW,) if kind == "flow-verify" else ())
+    files = (WRITER, JUDGE_ROLE, JUDGE_POINTS) + _formats_for("read-judge") + _module(definition_of(kind)) + ((FLOW_REVIEW,) if kind == "flow-verify" else ())
     if target:
         files += _module(target)   # change는 대상 모듈과 그 경우 파일도
     for p in _READ_JUDGE_PRACTICES.get(kind, ()):
@@ -182,73 +183,81 @@ NEW_READS["main"] = frozenset((ENTRY, "references/main/*.md", CONTRACT, FORMATS,
                               + ("references/kinds/*/main-order.md",) + _practice_files("project-recon"))
 
 # ---------------------------------------------------------------------------
-# BASELINE: 행위자마다 읽는 양의 상한(바이트). 문서를 고쳐 이 값을 넘으면 시험이 실패한다.
+# BASELINE: 행위자마다 판을 낼 때 잰 읽는 양(바이트). 한도는 limit()(BASELINE × (1 + GROWTH))이고 넘으면 시험이 실패한다.
 
 BASELINE = {
-    "requirements-writer:question": 32165,
-    "requirements-writer:req-overview": 37209,
-    "requirements-writer:brief": 43580,
-    "requirements-writer:req-detail": 37507,
-    "requirements-writer:change:req-overview": 39251,
-    "requirements-writer:change:req-detail": 39549,
-    "requirements-writer:change:brief": 43557,
-    "cause-writer:root-cause": 48494,
-    "cause-writer:question": 46754,
-    "design-writer:design": 55214,
-    "design-writer:ui-design": 55933,
-    "design-writer:change:design": 59694,
-    "design-writer:change:ui-design": 60413,
-    "design-writer:question": 42802,
-    "code-writer:implementation": 54645,
-    "code-writer:fix": 54645,
-    "code-writer:fe-implementation": 58737,
-    "code-writer:be-implementation": 50187,
-    "code-writer:probe": 38176,
-    "verify-writer:flow-verify": 47398,
-    "verify-writer:full-verify": 47398,
-    "verify-writer:reverify": 47398,
-    "release-writer:wrap-up": 41637,
-    "release-writer:deploy-plan": 50122,
-    "release-writer:deploy-exec": 47793,
-    "infra-writer:infra-design": 39126,
-    "infra-writer:probe": 35814,
-    "infra-writer:change:infra-design": 40651,
-    "read-judge:question": 33056,
-    "read-judge:req-overview": 35055,
-    "read-judge:req-detail": 35353,
-    "read-judge:brief": 39361,
-    "read-judge:ui-design": 40296,
-    "read-judge:change:req-overview": 39535,
-    "read-judge:change:req-detail": 39833,
-    "read-judge:change:brief": 43841,
-    "read-judge:change:design": 50347,
-    "read-judge:change:ui-design": 44776,
-    "read-judge:design": 51164,
-    "read-judge:implementation": 45220,
-    "read-judge:fix": 45220,
-    "read-judge:root-cause": 40492,
-    "read-judge:flow-verify": 47504,
-    "read-judge:full-verify": 47504,
-    "read-judge:reverify": 47504,
-    "read-judge:merge": 37916,
-    "read-judge:wrap-up": 37212,
-    "read-judge:deploy-plan": 46348,
-    "read-judge:deploy-exec": 43368,
-    "read-judge:infra-design": 35580,
-    "read-judge:change:infra-design": 39179,
-    "read-judge:probe": 32270,
-    "read-judge:fe-implementation": 43797,
-    "read-judge:be-implementation": 43107,
-    "run-judge:implementation": 31302,
-    "run-judge:fix": 31302,
-    "run-judge:root-cause": 30136,
-    "run-judge:merge": 30136,
-    "run-judge:wrap-up": 30822,
-    "run-judge:deploy-exec": 31840,
-    "run-judge:fe-implementation": 31616,
-    "run-judge:be-implementation": 31616,
-    "run-judge:flow-verify": 37647,
+    "requirements-writer:question": 41971,
+    "requirements-writer:req-overview": 45788,
+    "requirements-writer:brief": 50196,
+    "requirements-writer:req-detail": 47290,
+    "requirements-writer:change:req-overview": 48643,
+    "requirements-writer:change:req-detail": 50145,
+    "requirements-writer:change:brief": 52568,
+    "cause-writer:root-cause": 56797,
+    "cause-writer:question": 55375,
+    "design-writer:design": 70980,
+    "design-writer:ui-design": 66120,
+    "design-writer:change:design": 76123,
+    "design-writer:change:ui-design": 71263,
+    "design-writer:question": 50880,
+    "code-writer:implementation": 67126,
+    "code-writer:fix": 67126,
+    "code-writer:fe-implementation": 75932,
+    "code-writer:be-implementation": 66477,
+    "code-writer:probe": 49095,
+    "verify-writer:flow-verify": 60786,
+    "verify-writer:full-verify": 57647,
+    "verify-writer:reverify": 57647,
+    "release-writer:wrap-up": 49417,
+    "release-writer:deploy-plan": 66709,
+    "release-writer:deploy-exec": 50365,
+    "infra-writer:infra-design": 47446,
+    "infra-writer:probe": 46731,
+    "infra-writer:change:infra-design": 49226,
+    "read-judge:question": 49676,
+    "read-judge:req-overview": 51205,
+    "read-judge:req-detail": 52707,
+    "read-judge:brief": 55130,
+    "read-judge:ui-design": 57688,
+    "read-judge:change:req-overview": 56348,
+    "read-judge:change:req-detail": 57850,
+    "read-judge:change:brief": 60273,
+    "read-judge:change:design": 74919,
+    "read-judge:change:ui-design": 62831,
+    "read-judge:design": 76912,
+    "read-judge:implementation": 68013,
+    "read-judge:fix": 68013,
+    "read-judge:root-cause": 58234,
+    "read-judge:flow-verify": 69253,
+    "read-judge:full-verify": 66114,
+    "read-judge:reverify": 66114,
+    "read-judge:merge": 51085,
+    "read-judge:wrap-up": 53453,
+    "read-judge:deploy-plan": 70745,
+    "read-judge:deploy-exec": 54401,
+    "read-judge:infra-design": 51871,
+    "read-judge:change:infra-design": 55725,
+    "read-judge:probe": 51156,
+    "read-judge:fe-implementation": 68302,
+    "read-judge:be-implementation": 67364,
+    "run-judge:implementation": 38266,
+    "run-judge:fix": 38266,
+    "run-judge:root-cause": 37100,
+    "run-judge:merge": 37100,
+    "run-judge:wrap-up": 38044,
+    "run-judge:deploy-exec": 38877,
+    "run-judge:fe-implementation": 38266,
+    "run-judge:be-implementation": 38266,
+    "run-judge:flow-verify": 41233,
 }
+# 한 판 안에서 행마다 늘 수 있는 몫. 판을 낼 때(maintain.md) 기준선을 그때 값으로 다시 잡는다.
+# 2026-11-17 1.3.0에서 다시 잡음(사용자 결정 "다시 잡고 증가율로"): 그 전 기준선은 2026-10-30 값에 멈춰 63행이 모두
+# 보류(여유 0)였고, 1바이트에 수십 행을 다시 적어야 해서 규칙을 예산 밖 문서로 밀어내는 압력이 되었다.
+GROWTH = 0.05
+
+
+def limit(actor):
+    return int(BASELINE[actor] * (1 + GROWTH))
 
 # ---------------------------------------------------------------------------
 # 읽는 양
@@ -302,7 +311,7 @@ def main(argv):
     out = []
     for actor, base in BASELINE.items():
         now = row_bytes(actor)
-        out.append("{} {} {}{}".format(actor, base, now, " 넘음" if now > base else ""))
+        out.append("{} {} {}{}".format(actor, limit(actor), now, " 넘음" if now > limit(actor) else ""))
     sys.stdout.buffer.write(("\n".join(out) + "\n").encode("utf-8"))
     sys.stdout.buffer.flush()
     return 0

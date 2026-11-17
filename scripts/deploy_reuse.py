@@ -1295,9 +1295,13 @@ def compose_text(t, d, items, own, extras):
         + ["- 배포 뒤 적을 문서: " + (own["배포 뒤 적을 문서"].strip() or "없음")] + as_items(own.get("알릴 것", ""))
     grounds = ["- {}: {}({})".format(x["id"], ", ".join(sorted(x["evidence"])) if x["basis"] == BASIS_FILES else "근거 파일 " + x["basis"], x["mode"])
                for x in items if x["kind"] == CMD and x["status"] != REMOVED]
+    answered = devflow_lib.answered_cell(t)   # 1.3.0부터 「정한 것」, 「전제」가 맨 앞
     out = ["# {} 배포 계획: {}({}) 결과".format(tid, env, commit[:7]), "", "## 승인 화면", "### 리뷰 자료"] + material
+    if answered == devflow_lib.DECIDED_CELL:
+        out += ["", "### " + devflow_lib.PREMISE_CELL, cell(as_items(own.get(devflow_lib.PREMISE_CELL, "")))]
     out += ["", "### 정해 주실 것"] + decide_lines
-    out += ["", "### 하실 일·허용 요청", cell(todo), "", "### 알릴 것", cell(notify), "", "### 답하신 것의 반영", cell(as_items(own.get("답하신 것의 반영", ""))),
+    out += ["", "### 하실 일·허용 요청", cell(todo), "", "### 알릴 것", cell(notify), "", "### " + answered,
+            cell(as_items(own.get(answered, ""))),
             "", "### 확인 안 된 것", cell(as_items(own.get("확인 안 된 것", ""))), "", "### 건수만",
             "- 명령 {}줄, 항목 {}, 이번 실행 몫 {}".format(len(all_lines), sum(1 for x in items if x["status"] != REMOVED), mine_count(own, extras)), ""]
     out += ["## 결정 지도", "- 이 task가 내린 결정: 다시 쓴 항목과 이번 실행 몫(작성자), 재사용 항목은 {} 절차서(저장 커밋 {})와 기계 판정.".format(env, d["saved_commit"][:7]), "",

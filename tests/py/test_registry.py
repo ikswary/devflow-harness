@@ -429,6 +429,7 @@ def test_6a_detects_upper_layer_paths():
 KIND_EXCEPTIONS = [
     # E4: formats의 꼴 안 한 마디
     ("references/formats/prompt.md", "화면 설계는 「건드릴 파일」의 ui 정본과 와이어프레임", "E4"),
+    ("references/formats/prompt.md", "배포 실행은 배포 계획 task 폴더의 facts.md", "E4"),
     ("references/formats/result-file.md", "(기획·요구사항·화면 설계·설계·원인 분석. 결정 목록", "E4"),
     ("references/formats/result-file.md", "- kind: implementation", "E4"),
     ("references/formats/result-file.md", "(원인 분석의 수정안, 검증의 「묻는다」 지적, 설계의 배포 선택지)", "E4"),

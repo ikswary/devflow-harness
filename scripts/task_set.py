@@ -240,6 +240,12 @@ def check_transition(run_dir, t, old, new, ctx):
         defs = devflow_lib.agent_def_problems()
         if defs:
             return "판정자 정의 설치 불일치: {} — 두 판정자 정의와 DEF_VERSION_MIN을 함께 설치한 뒤 시작한다".format("; ".join(defs))
+        if t.get("parent") or t.get("depends_on"):
+            waits = devflow_lib.premise_waits(devflow_lib.load_tasks(run_dir), t)
+            if waits:
+                # 막아 세우는 전제(7판 규칙 3.1): 긍정 답이 오기 전에는 그 방향의 일을 시작하지 않는다
+                return "막아 세우는 전제의 답을 기다림: {} — 답이 오면 `task_set.py {{실행 폴더}} {{그 task}} --record \"전제|전n 됨|원문\"`, " \
+                       "안 됨이면 방향을 다시 정한 뒤 `--record \"전제|전n 철회|원문\"`(사람의 답으로만)".format(", ".join("{} 전{}({})".format(a, n, st) for a, n, st in waits))
         return None
     if pair == ("진행", "자체검증"):
         problems = devflow_lib.judgment_problems(t)
@@ -251,7 +257,10 @@ def check_transition(run_dir, t, old, new, ctx):
     if pair == ("자체검증", "완료"):
         if not rec or point not in ("알림", "승인"):
             return "자체검증→완료는 --record \"알림|…\"(또는 승인)와 함께"
-        if kind not in kinds.NOTIFY_KINDS and kind not in kinds.STAGE_KINDS and not devflow_lib.prior_approval(t):
+        # 1.3.0은 경계 사이 kind(등록표 boundary between)가 알림 후보다. 화면(screen.notify_status)과 같은 갈래(목적 시험 뒤 진단)
+        between = (devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V130)
+                   and kind in kinds.BETWEEN_KINDS and kind not in kinds.NEVER_NOTIFY_KINDS)
+        if kind not in kinds.NOTIFY_KINDS and kind not in kinds.STAGE_KINDS and not between and not devflow_lib.prior_approval(t):
             return "{}는 알림으로 지나가지 않는다(승인대기로)".format(kind)
         if kinds.notify_policy(kind) == "findings" and not devflow_lib.prior_approval(t) \
                 and not devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V120):
@@ -267,7 +276,7 @@ def check_transition(run_dir, t, old, new, ctx):
             if "error" not in b and (b["risky"] or b["counts"]["n_decide"] or b["counts"]["n_todo"]):
                 return "알림 불가: 앞 승인 뒤의 결과에 사람 몫이 있다(정해 주실 것, 하실 일, 성질 `위험`)"
         # 탐침은 실행승인 답이 승인 기록에 있어도 기록 단계의 알림 조건(탐침 기록 표)을 본다
-        if kind == "probe" or (devflow_lib.is_new_task(t) and kind in kinds.NOTIFY_KINDS
+        if kind == "probe" or (devflow_lib.is_new_task(t) and (kind in kinds.NOTIFY_KINDS or between)
                                and kind not in kinds.STAGE_KINDS and not devflow_lib.prior_approval(t)):
             import screen
             ok, msg = screen.notify_status(run_dir, t["id"])
@@ -788,6 +797,10 @@ def reuse_check(tasks, t, rec, now):
 
 FAIL_NO = re.compile(r"기준\s*(\d+)")
 LEAD_NO = re.compile(r"^-\s*(\d+)[.)\s]")
+# `- 기준 성질(writer 2절): …`처럼 번호 없는 기준으로 시작하는 항목은 설명 속 `기준 3`을 번호로 읽지 않는다(목적 시험 T051)
+NAMED_CRITERION = re.compile(r"^-\s*기준\s+(?!\d)")
+# `- 기준 6: … 탐침 정의의 기준 2(…)를 통과할 수 없고`처럼 설명이 다른 문서의 기준을 말해도 항목 자신의 번호만 읽는다(목적 시험 2회차 T004)
+OWN_CRITERION = re.compile(r"^-\s*기준\s*(\d+)\s*[:：.)]")
 
 
 def failed_numbers(paths):
@@ -800,7 +813,8 @@ def failed_numbers(paths):
             s = line.strip()
             if not s.startswith("- ") or devflow_lib.EMPTY_ITEM.match(s):
                 continue
-            found = FAIL_NO.findall(s) or LEAD_NO.findall(s)
+            own = OWN_CRITERION.match(s)
+            found = [] if NAMED_CRITERION.match(s) else [own.group(1)] if own else (FAIL_NO.findall(s) or LEAD_NO.findall(s))
             if found:
                 nums.update(int(x) for x in found)
             else:
@@ -863,6 +877,9 @@ def archive_judge(run_dir, t, doc, undecided=False):
         dst = name.replace(".md", ".r{}.md".format(n))
         os.replace(os.path.join(d, name), os.path.join(d, dst))
         moved.append(dst)
+    facts = os.path.join(d, kinds.FACTS_FILE)
+    if os.path.isfile(facts):   # 보관한 판정이 대조한 사실. 원본은 남긴다(판정불가 보관은 자체검증 전이 없이 다시 판정한다)
+        shutil.copy2(facts, os.path.join(d, kinds.FACTS_FILE.replace(".md", ".r{}.md".format(n))))
     snap = make_snapshot(run_dir, t, n)   # 판정 파일을 옮긴 뒤, 「재시도 범위」를 쓰기 전
     if doc.get("judge_started"):
         doc.set("judge_started", "")   # 보관한 판정의 판정자는 끝났다. 다음 판정자를 띄울 때 다시 찍는다
@@ -1393,6 +1410,20 @@ def run_machine_check(run_dir, t, *extra):
     return str(out.returncode)
 
 
+def run_judge_facts(run_dir, t):
+    """판정 전 사실 검사(1.3.0). 코드 폴더를 못 찾으면 judge_facts.py가 run.md `project`를 쓴다. 실패해도 전이는 막지 않는다."""
+    folder = code_dir(run_dir, t)
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        out = subprocess.run([sys.executable, os.path.join(here, "judge_facts.py"), run_dir, t["_path"]]
+                             + (["--code-dir", folder] if folder else []), capture_output=True, text=True, encoding="utf-8",
+                             errors="replace", timeout=600)
+    except subprocess.TimeoutExpired:
+        print("! 미리 뽑은 사실: 600초 안에 끝나지 않음(facts.md 없음. 판정 전에 judge_facts.py를 따로 돌린다)")
+        return
+    print((out.stdout or "").rstrip() or "! 미리 뽑은 사실을 쓰지 못함: {}".format((out.stderr or "").strip()[-200:]))
+
+
 # ---------------------------------------------------------------- 명령
 
 def answer_time(t):
@@ -1878,6 +1909,9 @@ def main(argv):
                         doc.set("machine_check", rc)
                 elif measured:   # 값은 기계 조건의 결과만 덮는다. 시험 변화는 그래도 잰다
                     run_machine_check(run_dir, t, "--measure-only")
+            if new == "자체검증" and t.get("kind") in kinds.FACT_CHECKS \
+                    and devflow_lib.version_at_least(doc.get("started_version"), devflow_lib.RULES_V130):
+                run_judge_facts(run_dir, t)
             if new == "승인대기":
                 doc.set("approval_requested", stamp)
             if new == kinds.DONE:
@@ -1924,7 +1958,9 @@ def main(argv):
                                 before=["승인 기록"])
                 journal(run_dir, "재사용 답", tid, "{} (같은 원문: {} {})".format(why_reuse, *reused))
             else:
-                doc.append_line("승인 기록", record_line(rec) + tail)
+                # 1.3.0 전제 답에는 그때 전제 문장을 함께 남긴다(다시 쓴 결과의 같은 번호가 다른 전제면 답을 잇지 않는다)
+                premise_tail = devflow_lib.premise_record_tail(t, " ".join(x for x in rec[1:] if x))
+                doc.append_line("승인 기록", record_line(rec) + premise_tail + tail)
             if place_key and str(doc.get("card_open") or "").strip() == place_key:
                 doc.set("card_open", "")
             asked_at = str(t.get("asked_at", "") or "").strip()

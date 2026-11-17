@@ -10,6 +10,7 @@
 | 2. 실행 폴더 | `references/formats/run-folder.md` |
 | 3. 머리 파일 `task.md` | `references/formats/task-file.md` |
 | 4. 결과 파일 `result.md` (작성자) | `references/formats/result-file.md` |
+| 4. 결과 파일 — 승인 화면 칸의 원천(1.3.0, 작성자·읽기 판정자) | `references/formats/screen-cells.md` |
 | 5. 판정 파일 `judge.md` (읽기 판정) | `references/formats/judge-file.md` |
 | 5. 판정 파일 — 실행 판정 몫 `judge-run.md` | `references/formats/judge-run-file.md` |
 | 6. 그 밖의 파일 | `references/formats/run-files.md` |

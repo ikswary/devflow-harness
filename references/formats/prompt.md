@@ -12,6 +12,7 @@ task 정의: {등록표 `definition` 칸의 정의 파일 경로}
 정찰: {절대 경로}\recon.md
 (코드 task) 코드 폴더: {절대 경로} / 흐름 규약: {절대 경로}\conventions.md
 결과를 쓸 곳: {task 폴더}\result.md
+실행 위치: {(1.3.0, 경계 보고 kind) `python scripts/run_position.py {실행 폴더}` 출력. `늘어남:` 줄이 있으면 screen-cells 「늘어남 질문」}
 이번 지시에만 있는 것: {없으면 "없음". 「이번 실행의 값」 한 승인의 결정 수 상한이 0이 아니면 `한 승인의 결정 수 상한: {n}`}
 ```
 
@@ -23,6 +24,7 @@ task 정의: {등록표 `definition` 칸의 정의 파일 경로}
 task 정의: {등록표 `definition` 칸의 정의 파일 경로} (전체), …\references\roles\writer.md
 원 산출물: {정본의 절 / 코드 폴더와 변경 범위 / 테스트 파일 / 로그. 화면 설계는 「건드릴 파일」의 ui 정본과 와이어프레임, 대조 원천으로 기획 「화면 흐름」·상세 정본·개요 「용어」·ui\rules.md}
 작성자 결과: {task 폴더}\result.md  ← 판정을 마친 뒤 대조용으로만 연다
+미리 뽑은 사실: {task 폴더}\facts.md  ← (1.3.0부터 시작한 task, 파일이 있으면) 판정 전에 데이터로 읽는다
 판정을 쓸 곳: {task 폴더}\judge.md
 ```
 
@@ -34,6 +36,7 @@ task 정의: {등록표 `definition` 칸의 정의 파일 경로} (전체), …\
 정찰(명령과 기준선): {절대 경로}\recon.md
 돌릴 것: {빌드, 관련 테스트 명령}
 변이 확인: {task 폴더}\result.md 「변이 확인 지시」 절
+미리 뽑은 사실: {task 폴더}\facts.md  ← (있으면. 배포 실행은 배포 계획 task 폴더의 facts.md)
 전·후 명령: (전·후를 돌릴 때) `screen.py --flow-commands` 출력
 판정을 쓸 곳: {task 폴더}\judge-run.md
 로그를 쓸 곳: {task 폴더}\logs\

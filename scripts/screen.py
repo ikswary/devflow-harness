@@ -8,7 +8,7 @@
 - 판정자의 「칸 분류 확인」대로 항목을 옮긴다(formats.md 5절의 줄 형식).
 - `main-run.md`에 같은 기준의 "직접 실행 … 통과"가 있는 판정불가는 세지 않고 「건수만」에 "메인 직접 실행 n"으로 둔다.
 - 기록 점검(devflow_lib.record_check): 이 task의 걸림은 「정해 주실 것」 맨 위, 끝난 task의 걸림과 표 밖 전이는 「알릴 것」.
-- 판정 기준 정정: 사용자 답이 출처면 「답하신 것의 반영」, 작성자·판정자가 출처면 「정해 주실 것」.
+- 판정 기준 정정: 사용자 답이 출처면 「답하신 것의 반영」(1.3.0부터 「정한 것」의 ◇), 작성자·판정자가 출처면 「정해 주실 것」.
 - 판정불가 꼬리표(SKILL.md 2절 표): `대상:`은 「확인 안 된 것」으로 옮겨 알림을 막지 않는다. `대상: 기준선 없음 {명령}`은
   decisions.md에 "기준선 질문 {명령}"이 없으면 「정해 주실 것」에 기준선 질문 한 항목을 더한다. `환경:`은 머리 줄에 센다.
 - 마무리·합치기: 보류와 보류에 막힌 task를 「알릴 것」에 "[보류로 남김]"으로(합치기는 그 흐름의 것만).
@@ -80,6 +80,8 @@ import devflow_lib
 import flow_review
 import kinds
 import places
+import report
+import run_position
 
 # 알림 정책은 등록표: 사람이 판단할 칸(정해 주실 것·하실 일)만 보고 알림을 정하는 종류 `kinds.NOTIFY_BY_DECIDE_KINDS`
 # (1.2.0 앞에 시작한 변경 task는 사용자 답이 계기가 아닐 때만. 지운 번호 글자만 맞춘 변경을 승인으로 올려 사용자가
@@ -206,7 +208,7 @@ def count_claims(screen_cells, criterion, facts):
     if not facts:
         return []
     units = []
-    for cell in kinds.CELLS:
+    for cell in kinds.ALL_CELLS:
         head, its = items(screen_cells.get(cell, ""))
         units += [(cell, "\n".join(head))] + [(cell, "\n".join(it)) for it in its]
     units.append(("나눈 기준", criterion or ""))
@@ -358,7 +360,7 @@ def apply_moves(screen, judge_top):
         if "→" not in line:
             continue   # 옮길 것이 아닌 설명 줄(옛 판정의 37%에 있었다). 알림을 막지 않는다
         m = MOVE_RE.match(line)
-        if not m or m.group(1) not in kinds.CELLS or m.group(2) not in kinds.CELLS:
+        if not m or m.group(1) not in kinds.MOVABLE_CELLS or m.group(2) not in kinds.MOVABLE_CELLS:
             failed.append(line)
             continue
         src, dst, prefix = m.group(1), m.group(2), m.group(3).strip().strip("\"'`「」")
@@ -550,6 +552,174 @@ def own_cell_items(cell, text, v120):
     return devflow_lib.without_moved_items(text) if v120 and cell in devflow_lib.MOVED_CELLS else text
 
 
+MAP_SECTION = "결정 지도"
+MAP_KEY = re.compile(r"^-\s*`?([A-Z]{1,3}-?\d+)`?")
+
+
+def map_changed_up(screen, t):
+    """「결정 지도」에서 `[성질: 앞 판단과 다름]`인 결정이 승인 화면(정해 주실 것·알릴 것·정한 것)에 그 번호로 없으면 ↺ 질문으로 올리고 꼴 문제를 돌려준다.
+    목적 시험 2회차 T051: `--skip-db` 없앰(DG-9, 10-29 답과 다름)이 결정 지도에만 표시되고 화면에서는 알릴 것 문구 한 줄로 지나갔다."""
+    path = os.path.join(t.get("_dir") or "", "result.md")
+    if not os.path.isfile(path):
+        return []
+    body = devflow_lib.sections(devflow_lib.read_text(path), level=2).get(MAP_SECTION, "")
+    # 질문으로 묻거나, 앞 답과 다르지 않은 까닭을 그 번호로 「알릴 것」·「정한 것」에 적었으면 다룬 것이다
+    asked = "\n".join(screen.get(c, "") for c in ("정해 주실 것", "알릴 것", devflow_lib.DECIDED_CELL))
+    up, out = [], []
+    for line in body.splitlines():
+        if not line.startswith("- ") or devflow_lib.CHANGED_PROPERTY not in " ".join(devflow_lib.PROPERTY_MARK.findall(line)):
+            continue
+        m = MAP_KEY.match(line)
+        if not m or re.search(r"(?<![\w-]){}(?!\d)".format(re.escape(m.group(1))), asked):
+            continue
+        up.append("- [앞 결정을 바꿈] " + line[2:].strip())
+        out.append("「결정 지도」의 앞 판단과 다른 결정 {}이 「정해 주실 것」에 없어 ↺ 질문으로 올림(`{} {{날짜}} \"{{원문}}\"`과 함께 "
+                   "「정해 주실 것」에 쓴다)".format(m.group(1), devflow_lib.CHANGED_ANSWER))
+    if up:
+        add_items(screen, "정해 주실 것", up, top=True)
+    return out
+
+
+def decided_and_premises(screen, t):
+    """1.3.0부터 시작한 task의 「정한 것」·「전제」를 화면 칸에 옮기고 꼴 문제를 돌려준다(구현 설계 2절 C, 7판 규칙 3.1·4.2).
+    ↺(앞에서 정하신 것을 바꿈)는 「정한 것」에서 빼 「정해 주실 것」 맨 위로, 긍정 답이 없는 막아 세우는 전제는 그 위에 `[전제 전n]`로,
+    막아 세우지 않는 기한 있는 일은 「알릴 것」에 `[기한]`으로 둔다."""
+    if not devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V130):
+        return []
+    problems = devflow_lib.source_problems(screen)
+    cell = devflow_lib.DECIDED_CELL
+    changed = [r for r in devflow_lib.decided_rows(screen.get(cell, "")) if r["mark"] == "↺"]
+    if changed:
+        head, its = items(screen.get(cell, ""))
+        keep = [it for it in its if not it[0][2:].lstrip().startswith("↺")]
+        screen[cell] = join_items(head, keep) if keep else "- 없음"
+        add_items(screen, "정해 주실 것", ['- [앞 결정을 바꿈] {} ({} "{}"과 다름)'.format(r["text"], r["date"], r["quote"])
+                                       if r["date"] else "- [앞 결정을 바꿈] " + r["text"] for r in changed], top=True)
+    # 앞 판단과 다른 결정을 「알릴 것」·「확인 안 된 것」에 두면 묻지 않고 지나갔다(6판 --skip-db, 목적 시험 2회차 T051 DG-9).
+    # 칸 규칙(screen-cells)대로 ↺ 질문으로 올리고, 앞 답의 날짜·원문이 없으면 꼴 문제로 둔다
+    for cell_name in ("알릴 것", "확인 안 된 것"):
+        head, its = items(screen.get(cell_name, ""))
+        up = [it for it in its if devflow_lib.CHANGED_PROPERTY in devflow_lib.item_properties("\n".join(it))]
+        if not up:
+            continue
+        rest = [it for it in its if it not in up]
+        screen[cell_name] = join_items(head, rest) if rest else "- 없음"
+        add_items(screen, "정해 주실 것", ["\n".join(["- [앞 결정을 바꿈] " + it[0][2:].strip()] + it[1:]) for it in up], top=True)
+        problems += ["「{}」의 앞 판단과 다른 항목을 ↺ 질문으로 올림. `{} {{날짜}} \"{{원문}}\"`이 없음: {}".format(
+            cell_name, devflow_lib.CHANGED_ANSWER, it[0][2:42]) for it in up
+            if not devflow_lib._source("\n".join(it).split(devflow_lib.CHANGED_ANSWER, 1)[-1])[0]]
+    problems += map_changed_up(screen, t)
+    open_ = dict(devflow_lib.premise_open(t))
+    rows = devflow_lib.premise_rows(screen.get(devflow_lib.PREMISE_CELL, ""))
+    asks = []
+    for r in rows:
+        if r["blocking"] and r["n"] in open_:
+            forms = " / ".join("전{} {}".format(r["n"], v.strip()) for v in r["answer"].split("/") if v.strip())
+            state = "" if open_[r["n"]] == "답 없음" else " (앞 답: {})".format(open_[r["n"]])
+            asks.append("- [전제 전{}] {}{} (답: {})".format(r["n"], r["text"], state, forms))
+    add_items(screen, "정해 주실 것", asks, top=True)
+    add_items(screen, "알릴 것", ["- [기한] {}: {}".format(r["deadline"], r["text"]) for r in rows if not r["blocking"] and r["n"] and r["deadline"]])
+    answers = devflow_lib.premise_answers(t)
+    add_items(screen, "정해 주실 것", ["- [가정] 전{} {} — 답이 없으면 「{}」로 진행합니다 (답: 전{} 예 / 전{} 아니오)".format(
+        r["n"], r["text"], r["assume"], r["n"], r["n"]) for r in rows
+        if not r["blocking"] and r["n"] and r["assume"] and not r["deadline"] and r["n"] not in answers])
+    return problems
+
+
+REASON_WORDS = (("(a)", "고치는 길이 둘 이상"), ("(b)", "사람이 보는 문구나 동작이 바뀜"), ("(c)", "원인이 코드에 있음"),
+                ("(d)", "앞에서 정하신 것과 다름"))
+
+
+def point_reason(why):
+    """판정자 까닭의 (a)~(d) 표지를 사람의 말로."""
+    for mark, words in REASON_WORDS:
+        why = why.replace(mark, words)
+    return why
+
+
+def point_item(p, head="[독립 확인이 짚음]", source=""):
+    """짚음 하나를 질문 항목으로. 고치는 길이 있으면 첫 줄에 선택지로, 까닭·깨지는 조건은 하위 줄로."""
+    first = "- {} {}".format(head, p["text"]) + (": " + p["ways"] if p.get("ways") else "")
+    subs = ["  독립 확인: " + point_reason(p["why"])]
+    if p.get("effects"):
+        subs.append("  고르면: " + p["effects"])
+    if p.get("recommend"):
+        subs.append("  추천 " + p["recommend"])
+    if p["breaks"]:
+        subs.append("  깨지는 조건: " + p["breaks_text"])
+    if source:
+        subs.append("  앞 일: " + source)
+    if not p.get("ways"):
+        subs.append("  (예: 고침 / 아니오: 그대로 둠)")
+    return "\n".join([first] + subs)
+
+
+def carried_points(tasks, t):
+    """앞 경계 보고(같은 실행에서 사람이 승인한 경계 kind) 뒤에 끝난 경계 사이 task의 「다음 경계에서 물음」 짚음 [(task, 짚음)].
+    승인 방식(알림·즉시 질문)과 상관없이 옮긴다."""
+    marks = [str(o.get("approved", "")) for o in tasks.values()
+             if o is not t and o.get("kind") in kinds.BOUNDARY_KINDS and str(o.get("approval_mode", "")).strip() == "승인"]
+    after = max(marks) if marks else ""
+    out = []
+    for o in tasks.values():
+        if o is t or o.get("kind") not in kinds.BETWEEN_KINDS or o.get("status") != kinds.DONE or str(o.get("approved", "")) <= after:
+            continue
+        if not devflow_lib.version_at_least(o.get("started_version"), devflow_lib.RULES_V130):
+            continue
+        places = devflow_lib.point_places([p for p in devflow_lib.judge_points(o) if not p["problem"]])
+        out += [(o, p) for p in places["report"]]
+    return out
+
+
+def growth_question(run_dir, tasks, t, screen=None):
+    """원인 하나가 처음 계획보다 크면 "붙일까요, 뗄까요?"(7판 규칙 4.2). 앞 경계에서 답하셨으면(decisions.md `[방향]`에 그 원인) 묻지 않는다."""
+    big = run_position.big_growth(tasks)
+    if not big:
+        return []
+    cause, n, first = big
+    if any(cause in line for line in run_position.directions(run_dir)):
+        return []
+    if any(line.startswith("- " + report.GROWTH_LABEL) for line in (screen or {}).get("정해 주실 것", "").splitlines()):
+        return []   # 작성자가 재료(선택지마다 원래 요청이 어떻게 나가는지)를 붙여 썼다
+    return ["- {} 늘어난 일을 이번 실행에 붙일지 따로 뗄지: (가) 이번 실행에 붙임 / (나) 따로 뗌\n"
+            "  {} +{}개가 처음 계획 {}개보다 큽니다\n  {}".format(report.GROWTH_LABEL, cause, n, first, report.GROWTH_FALLBACK)]
+
+
+ASKING_PROPERTIES = ("범위", "비용", "밖", "위험")   # 경계 사이 task를 알림으로 보내지 않는 성질
+
+
+def points_to_cells(screen, t, tasks=None, run_dir=None):
+    """1.3.0 판정자의 「짚음」을 화면 칸에 둔다(7판 규칙 4.2·5.3, 구현 설계 2절 D). 경계 사이 task는 깨지는 조건이 있는 물을 것을
+    차례대로 두 개까지 「정해 주실 것」(즉시 질문)에, 나머지 물을 것은 「알릴 것」 `[다음 경계에서 물음]`에 둔다. 경계 보고는 물을 것을 모두
+    묻는다. 하네스가 고칠 것은 「알릴 것」, 그대로 둠은 「정한 것」 ✔다."""
+    if not devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V130):
+        return
+    points = [p for p in devflow_lib.judge_points(t) if not p["problem"]]
+    between = t.get("kind") in kinds.BETWEEN_KINDS
+    b_tasks = tasks or {}
+    if not between and run_dir:
+        add_items(screen, "정해 주실 것", growth_question(run_dir, b_tasks, t, screen))
+    if not points and (between or not b_tasks):
+        return
+    places = devflow_lib.point_places(points, cap=devflow_lib.POINT_NOW_CAP if between else len(points))
+    asks = places["now"] if between else places["now"] + places["report"]
+
+    add_items(screen, "정해 주실 것", [point_item(p) for p in asks], top=True)
+    if between:
+        add_items(screen, "알릴 것", ["- [다음 경계에서 물음] {} (까닭: {})".format(p["text"], p["why"]) for p in places["report"]])
+    add_items(screen, "알릴 것", ["- [하네스가 고칠 것] {} (까닭: {})".format(p["text"], point_reason(p["why"])) for p in places["fix"]])
+    if not between:
+        add_items(screen, "정해 주실 것", [point_item(p, "[앞 일에서 짚음]", o.get("title", "")) for o, p in carried_points(b_tasks, t)])
+    add_items(screen, devflow_lib.DECIDED_CELL, ["- ✔ {} (그대로 둠: {})".format(p["text"], p["why"]) for p in places["keep"]])
+
+
+def decided_lines(t, lines):
+    """스크립트가 「정한 것」에 더하는 줄(사람의 답을 옮긴 것)에 ◇를 붙인다. 옛 칸이면 그대로."""
+    if devflow_lib.answered_cell(t) != devflow_lib.DECIDED_CELL:
+        return lines
+    return ["- ◇ " + line[2:] if line.startswith("- ") and not line[2:].startswith("◇") else line for line in lines]
+
+
 def build(run_dir, tid, tasks=None):
     """화면 재료를 계산한다. 출력 없이 dict를 돌려준다(task_set.py가 알림 조건을 볼 때도 쓴다)."""
     tasks = tasks or devflow_lib.load_tasks(run_dir)
@@ -562,7 +732,7 @@ def build(run_dir, tid, tasks=None):
     result_text = devflow_lib.read_text(result_md)
     top = devflow_lib.sections(result_text, level=2)
     screen = devflow_lib.sections(top.get("승인 화면", ""), level=3)
-    missing = [c for c in kinds.CELLS if c not in screen]
+    missing = [c for c in devflow_lib.cells_of(t) if c not in screen]
 
     judge_top = {}
     judge_md = os.path.join(t["_dir"], "judge.md")
@@ -586,6 +756,8 @@ def build(run_dir, tid, tasks=None):
             if cell in screen:
                 screen[cell] = delegation.mark_derived(screen[cell], cell == "정해 주실 것")
     claim_cells = dict(screen)   # 주장은 작성자가 쓰고 판정자가 옮긴 칸에서만 뽑는다(아래에서 스크립트가 더하는 줄은 보지 않는다)
+    sources = decided_and_premises(screen, t)
+    points_to_cells(screen, t, tasks, run_dir)
 
     resolved = main_run_resolved(t["_dir"])
     read_failed, by_read = unresolved_failed(judge_top.get("통과 못 한 기준", ""), resolved)
@@ -628,12 +800,13 @@ def build(run_dir, tid, tasks=None):
         else:
             decide_amend.append("- [판정 기준 정정] 판정 전에 판정 기준을 고쳤습니다({}){}".format(line, body))
     add_items(screen, "정해 주실 것", decide_amend, top=True)
-    add_items(screen, "답하신 것의 반영", answer_amend)
+    add_items(screen, devflow_lib.answered_cell(t), decided_lines(t, answer_amend))
 
     review = devflow_lib.flow_review_rules(t)
     if review:
         add_items(screen, "확인 안 된 것", flow_review.unverified_items(t))
-        add_items(screen, "답하신 것의 반영", flow_review.answered_items(tasks, t, screen.get("답하신 것의 반영", "")))
+        answered = devflow_lib.answered_cell(t)
+        add_items(screen, answered, decided_lines(t, flow_review.answered_items(tasks, t, screen.get(answered, ""))))
 
     # 다른 task의 걸림(notes)은 이 task의 알림 판단에 넣지 않는다. 화면과 알림 줄에는 함께 보인다
     v120 = devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V120)
@@ -654,7 +827,7 @@ def build(run_dir, tid, tasks=None):
         or not judges_ok or bool(resource_wait) \
         or (bool(move_failed) and devflow_lib.is_new_task(t))
     judgment = devflow_lib.judgment_problems(t)
-    blocked = blocked or bool(judgment)
+    blocked = blocked or bool(judgment) or bool(sources)
     code_task = t.get("kind") in kinds.AUTO_DEPEND_KINDS
     judged = sum(counts.values())
     commit_hint = []
@@ -685,6 +858,12 @@ def build(run_dir, tid, tasks=None):
         notify_ok = counts["n_decide"] == 0 and counts["n_todo"] == 0 and not blocked and not user_answer
     else:
         notify_ok = judged == 0 and not blocked
+    between = devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V130) and t.get("kind") in kinds.BETWEEN_KINDS
+    if between and not findings:
+        # 1.3.0 경계 사이(7판 규칙 4.1): 물을 것(정해 주실 것·하실 일, 즉시 질문으로 올린 짚음)이 없으면 알림 한 줄.
+        # 알릴 것·확인 안 된 것은 펼침과 다음 경계 보고로 간다. 다만 범위·비용·밖·위험에 닿는 항목은 사람이 본다(7판 규칙 3.2)
+        touched = devflow_lib.item_properties(screen.get("알릴 것", "") + "\n" + screen.get("확인 안 된 것", "")) & set(ASKING_PROPERTIES)
+        notify_ok = counts["n_decide"] == 0 and counts["n_todo"] == 0 and not blocked and not user_answer and not touched
     # 1.1.0부터 시작한 코드 task는 「건드릴 파일」이 인프라 경로에 들면 알림으로 지나가지 않는다(작업 트리는 보지 않음)
     infra_paths = devflow_lib.touched_in_paths(t, "인프라", devflow_lib.DEFAULT_INFRA_PATTERNS if v120 else ()) \
         if (code_task or v120) and devflow_lib.uses_domain_rules(t) else []
@@ -696,6 +875,7 @@ def build(run_dir, tid, tasks=None):
     notify_kind = t.get("kind") in kinds.NOTIFY_KINDS and t.get("kind") not in kinds.NEVER_NOTIFY_KINDS \
         and (contract not in ASKING_CONTRACTS or moved_only or (kinds.notify_policy(t.get("kind")) == "all_cells" and judged == 0)) \
         and (v120 or not findings)
+    notify_kind = notify_kind or (between and t.get("kind") not in kinds.NEVER_NOTIFY_KINDS)
     if v120 and facts and design_screen(t):
         add_items(screen, "건수만", ["- 자식 행 {}, 판정 통과 뒤 코드를 볼 task {}".format(
             facts["rows"] - facts["backlog"], security_tasks(run_dir, spawn_children.parse_children(result_text)[1]))])
@@ -710,7 +890,7 @@ def build(run_dir, tid, tasks=None):
         "code_task": code_task, "user_answer": user_answer, "judged": judged, "notes": notes, "identity": identity, "env_n": env_n, "commit_hint": commit_hint,
         "facts": facts, "claims": claims, "judges_ok": judges_ok, "judges_why": judges_why,
         "resource_wait": resource_wait, "infra_paths": infra_paths, "probe_block": probe_why,
-        "risky": risky, "contract": contract, "v120": v120, "judgment": judgment, "review": review,
+        "risky": risky, "contract": contract, "v120": v120, "judgment": judgment, "sources": sources, "review": review,
         "behavior": flow_review.behavior_body(tasks, t) if review else [],
         "paths_note": paths_note(run_dir, tasks, tid) if devflow_lib.uses_domain_rules(t) else "",
         "n_decide_claim": devflow_lib.item_count(claim_cells.get("정해 주실 것", "")),
@@ -857,7 +1037,7 @@ def moved_revision_lines(tasks, t):
         if any(str(a.get("approved", "")) > at and str(a.get("approval_requested", "")) > at
                and str(a.get("approval_mode", "")).strip() != "알림" for a in tasks.values()):
             continue
-        _, its = items(_approval_cells(o).get("답하신 것의 반영", ""))
+        _, its = items(_approval_cells(o).get(devflow_lib.answered_cell(o), ""))
         line = its[0][0][2:].strip() if its else o.get("title", "")
         out.append("- [{}] 설계 고친 판(답만 옮김): {}".format(o["id"], line))
     return out
@@ -933,6 +1113,9 @@ ASKING_CONTRACTS = ("scope", "approach")   # 설계 5.1절. 네 칸이 모두 �
 FIXED_ANSWERS = ("승인", "고칠 것이 있음", "나눠서 다시", "보류", "남김")
 ANSWERS_WITH_TEXT = ("고칠 것이 있음",)
 ITEM_LINE = re.compile(r"^- \[(\d+)\] (.*)$")
+NEW_SCREEN_ANSWER = re.compile(r"^답  (?:진행 / |질문의 답 / )", re.M)   # report.py가 그린 화면의 답 줄
+NEW_ANSWERS = ("진행", "멈춤", "확인 먼저", "펼쳐", "예", "아니오")
+DECIDED_LINE = re.compile(r"^ (\d+) ([◇✔].*)$", re.M)   # 경계 보고 「정한 것」 줄
 CHOICE_LETTER = re.compile(r"\(([가-힣])\)")
 
 
@@ -954,7 +1137,7 @@ def shown_items(shown):
         if line.startswith("counts:"):
             break
         if line.startswith("■ "):
-            in_cell, current = line[2:].split(" (")[0] in kinds.CELLS + (kinds.FLOW_BEHAVIOR_CELL,), None
+            in_cell, current = line[2:].split(" (")[0] in kinds.ALL_CELLS + (kinds.FLOW_BEHAVIOR_CELL,), None
             continue
         mark = ITEM_LINE.match(line) if in_cell else None
         if mark:
@@ -975,18 +1158,50 @@ def _answer_targets(piece):
     return [] if number is None else [number]
 
 
-def _answer_value_fits(piece, items):
-    """일반 화면의 값 규칙. 숫자 값은 받지 않고, 글자는 그 항목의 선택지일 때만, `남김`은 일괄이나 항목 지정에서만 받는다."""
+def _answer_value_fits(piece, items, new_screen=False):
+    """일반 화면의 값 규칙. 숫자 값은 받지 않고, 글자는 그 항목의 선택지일 때만, `남김`은 일괄이나 항목 지정에서만 받는다.
+    새 화면은 선택지를 첫 줄에서만 보고, `예`·`아니오`는 선택지 글자가 없는 질문에만, `확인 먼저`·`펼쳐`는 어느 질문에나 받는다."""
     value = piece.get("value")
     if value is None:
         return True
     if value.isdigit():
         return False
+    targets = [piece["item"]] if "item" in piece else piece.get("items", [])
+    if new_screen and targets and value in ("예", "아니오"):
+        return all(not CHOICE_LETTER.search(items[n].split("\n")[0]) for n in targets)
+    if new_screen and targets and value in ("확인 먼저", "펼쳐"):
+        return True
     bare = value.strip("()")
     if len(bare) == 1:
-        targets = [piece["item"]] if "item" in piece else piece.get("items", [])
-        return bool(targets) and all("({})".format(bare) in items[n] for n in targets)
+        first = (lambda n: items[n].split("\n")[0]) if new_screen else (lambda n: items[n])
+        return bool(targets) and all("({})".format(bare) in first(n) for n in targets)
     return value != "남김" or "rest" in piece or "item" in piece or "items" in piece
+
+
+def _new_answers_fit(plain, items, premises):
+    """새 화면의 `진행`: 질문마다 답(선택지·예·아니오, 전제 답)이 있어야 한다. `확인 먼저`·`펼쳐`만 받은 질문이 있으면 `진행`은 되묻는다.
+    `진행, 단 …`의 조건 글에 질문의 답 꼴이 섞이면(`진행`이 맨 뒤가 아님) 되묻는다."""
+    go = [p for p in plain if p.get("value") == "진행" and not _answer_targets(p)]
+    if not go:
+        return True
+    if any(re.search(r"(?:^|[\s,])(?:\d+\s*[가-힣](?![가-힣])|전\d+\s)", p.get("text", "")) for p in go):
+        return False
+    answered = {n for p in plain for n in _answer_targets(p) if p.get("value") not in ("확인 먼저", "펼쳐")}
+    answered_premises = {p["premise"] for p in premises}
+    for n, body in items.items():
+        m = re.match(r"\[(?:전제|가정\]) 전(\d+)", body) or re.match(r"\[가정\] 전(\d+)", body)
+        if m:
+            if int(m.group(1)) not in answered_premises:
+                return False
+        elif n not in answered:
+            return False
+    return True
+
+
+def _progress_conflict(own):
+    """`진행`과 `멈춤`이 함께 오면 부딪침. `진행, 단 …` 앞에 답하지 않은 질문은 메인이 되묻는다(조건 글은 줄 끝까지다)."""
+    values = {p.get("value") for p in own if not _answer_targets(p) and "redo" not in p and "premise" not in p}
+    return {"진행", "멈춤"} <= values
 
 
 def _answers_conflict(own):
@@ -998,6 +1213,7 @@ def _answers_conflict(own):
 
 
 ANSWERED_NUMBER = re.compile(r"(?<![A-Za-z0-9_-])(\d+)(?=번|[\s:.,)]|$)")   # 답 줄 칸의 항목 번호. `T002`, `3개`는 아니다
+TIGHT_ANSWERED = re.compile(r"(?<![A-Za-z0-9_-])(\d+)([가-힣])(?![가-힣])")   # 붙여 쓴 `1가`(1.3.0)
 
 
 def decide_items(shown):
@@ -1029,6 +1245,9 @@ def unchosen_items(t, shown, lines):
         if fields[1:2] and fields[1].startswith("되물음"):
             continue
         numbers = {int(n) for n in ANSWERED_NUMBER.findall(cells)} & set(items)
+        # 붙여 쓴 `1가`는 그 글자가 그 항목의 선택지일 때만 고른 것이다(`3개`는 아님)
+        numbers |= {int(n) for n, letter in TIGHT_ANSWERED.findall(cells)
+                    if int(n) in items and "({})".format(letter) in items[int(n)]}
         chosen |= numbers
         if not numbers:   # 번호 없는 글자는 그 글자를 가진 항목이 하나로 정해질 때만 닫는다
             fits = {n for letter in CHOICE_LETTER.findall(cells) for n, body in items.items()
@@ -1040,20 +1259,46 @@ def unchosen_items(t, shown, lines):
 def resolve_answer(shown, tid, text):
     """답 원문을 남긴 화면으로 푼 줄 목록, 풀지 못하면 None(메인이 되묻는다). 맨 숫자는 일반 화면에서 뜻이 갈리므로 풀지 않는다."""
     items = shown_items(shown)
-    letters = sorted({c for body in items.values() for c in CHOICE_LETTER.findall(body)})
-    allowed = FIXED_ANSWERS + tuple(letters) + tuple("({})".format(c) for c in letters)
+    new_screen = NEW_SCREEN_ANSWER.search(shown) is not None
+    # 새 화면은 선택지 글자를 항목 첫 줄에서만 읽는다(인용한 앞 답 속 `(다)`는 선택지가 아니다)
+    letters = sorted({c for body in items.values() for c in CHOICE_LETTER.findall(body.split("\n")[0] if new_screen else body)})
+    allowed = FIXED_ANSWERS + tuple(letters) + tuple("({})".format(c) for c in letters) + devflow_lib.PREMISE_VALUES
+    if new_screen:
+        allowed += NEW_ANSWERS   # 1.3.0 화면(report.py): 진행·멈춤과 질문마다 확인 먼저·펼쳐·예·아니오
     parsed = devflow_lib.parse_answer(text, allowed, ANSWERS_WITH_TEXT, own_task=tid)
     if parsed is None:
         return None
     own = [p for p in parsed if "raw" not in p]
-    if any("number" in p or not set(_answer_targets(p)) <= set(items) or not _answer_value_fits(p, items) for p in own):
+    premises = [p for p in own if "premise" in p]
+    if premises:
+        # 1.3.0 화면의 전제 답(`전1 됨`): 그 화면에 그 번호의 전제가 있고 값이 답 꼴이어야 한다
+        shown_premises = {int(a or b) for a, b in re.findall(r"\[전제 전(\d+)\]|\[가정\] 전(\d+)", shown)}
+        if any(p["premise"] not in shown_premises or not devflow_lib.PREMISE_ANSWER.match("전{} {}".format(p["premise"], p["value"]))
+               for p in premises):
+            return None
+        own = [p for p in own if "premise" not in p]
+    decided = {int(n): body for n, body in DECIDED_LINE.findall(shown)} if new_screen else {}
+    if any("redo" in p and p["redo"] not in decided for p in own):   # `결정 n 다시`는 그 화면의 「정한 것」 번호만
         return None
-    if _answers_conflict(own):
+    if any(p.get("value") in NEW_ANSWERS and not new_screen for p in own):
+        return None
+    plain = [p for p in own if "redo" not in p]
+    if new_screen and not _new_answers_fit(plain, items, premises):
+        return None
+    if any("number" in p or not set(_answer_targets(p)) <= set(items) or not _answer_value_fits(p, items, new_screen) for p in plain):
+        return None
+    if _answers_conflict(plain) or (new_screen and _progress_conflict(own)):
         return None
     lines = []
     for piece in parsed:
         if "raw" in piece:
             lines.append("다른 task: {} | {}".format(piece["task"], piece["raw"]))
+            continue
+        if "premise" in piece:   # 메인이 `task_set.py … --record "전제|전{n} {값}|{원문}"`으로 적는다
+            lines.append("전제: 전{} {}".format(piece["premise"], piece["value"]))
+            continue
+        if "redo" in piece:
+            lines.append("결정 {} 다시: {}".format(piece["redo"], decided[piece["redo"]].strip()[:SUMMARY_CHARS]))
             continue
         value = piece.get("value", "") + (" : " + piece["text"] if "text" in piece else "")
         number = next(iter(_answer_targets(piece)), None)
@@ -1431,7 +1676,7 @@ def see_values(b):
                            if line.startswith("- ") and devflow_lib.PROPERTY_MARK.search(line)),
                 children=facts.get("rows", 0) - facts.get("backlog", 0), options=len(facts.get("options", {})),
                 viewpoints=facts.get("live_kinds", {}).get("full-verify", 0), judgments=devflow_lib.item_count(judgments),
-                answered=devflow_lib.item_count(b["screen"].get("답하신 것의 반영", "")))
+                answered=devflow_lib.item_count(b["screen"].get(devflow_lib.answered_cell(b["t"]), "")))
 
 
 def see_rows(t):
@@ -1488,7 +1733,7 @@ def material_parts(material, default):
     """리뷰 자료의 (제목, 본문 줄). 첫 줄이 제목이면 화면 제목으로 올려 제목이 두 번 나오지 않게 한다. 칸 이름은 제목으로 올리지 않는다."""
     lines = material.strip().splitlines()
     head = MATERIAL_HEADING.match(lines[0]) if lines else None
-    if head and head.group(1) not in kinds.CELLS:
+    if head and head.group(1) not in kinds.ALL_CELLS:
         return head.group(1), lines[1:]
     return default, lines
 
@@ -1525,7 +1770,13 @@ def cell_blocks(b):
     t, screen, numbered = b["t"], b["screen"], b["v120"]
     others = len(b["notes"])
     extra = " (+다른 task 기록 점검 {})".format(others) if others else ""
-    order = kinds.DESIGN_SCREEN_CELLS if numbered and design_screen(t) else kinds.CELLS
+    v130 = devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V130)
+    if numbered and design_screen(t):
+        order = kinds.DESIGN_SCREEN_CELLS_V130 if v130 else kinds.DESIGN_SCREEN_CELLS
+    else:
+        order = devflow_lib.cells_of(t)
+    # 「전제」는 화면 칸으로 보이지 않는다: 막아 세우는 것은 「정해 주실 것」, 가정·기한은 「알릴 것」으로 옮겨 사람의 말로 보인다
+    order = tuple(c for c in order if c != devflow_lib.PREMISE_CELL)
     next_item, out = 1, []
     if b.get("behavior"):
         body, next_item = number_items("\n".join(b["behavior"]), next_item)
@@ -1544,7 +1795,7 @@ def cell_blocks(b):
             if numbered and text.strip() in ("", "- 없음") and cell not in b["missing"]:
                 continue   # 값이 없는 칸은 제목도 싣지 않는다(설계 7.6절)
             lead, its = items(text)
-            if numbered and (cell == "건수만" or (cell == "답하신 것의 반영" and len(its) > 1)):
+            if numbered and (cell == "건수만" or (cell == devflow_lib.OLD_ANSWERED_CELL and len(its) > 1)):
                 # 칸 하나를 줄 하나로 합친다. 정할 항목이 아니라 번호를 달지 않고, 글은 줄이지 않는다
                 out.append((one_line_cell(cell, lead, its), ""))
                 continue
@@ -1629,19 +1880,30 @@ def sheet_line(t):
     return "한 장: " + Path(os.path.abspath(sheet)).as_uri()
 
 
-def show(argv):
-    if len(argv) < 3:
-        print(__doc__)
-        return 2
-    run_dir, tid = argv[1], argv[2]
-    b = build(run_dir, tid)
-    if "error" in b:
-        print(b["error"])
-        return 2
+def review_extra(run_dir, b):
+    """1.3.0 흐름별 검증 경계 보고에 덧붙일 줄(7판 규칙 4.3): 만든 것, 시험 변화(답할 것), 코드 확인 곳의 펼침."""
+    t, tasks, out = b["t"], b["tasks"], []
+    if b["behavior"]:
+        shown = b["behavior"][:REVIEW_SHOWN]
+        out += ["만든 것"] + [" - " + report.summary(line[2:] if line.startswith("- ") else line) for line in shown]
+        if len(b["behavior"]) > len(shown):
+            out.append(" … 외 {} → 펼쳐".format(len(b["behavior"]) - len(shown)))
+    n_test, test_lines = test_change_lines(run_dir, t, tasks)
+    if test_lines:
+        out += ["■ 시험 변화 (답할 것 {})".format(n_test)] + test_lines
+    plist = places.read(run_dir, t["id"])
+    if plist:
+        out.append("펼침: 코드 확인 곳 {}곳 → {}".format(len(plist), places.path_of(run_dir, t["id"])))
+    return out + ([""] if out else [])
+
+
+REVIEW_SHOWN = 8   # 경계 보고에 싣는 만든 것 줄
+
+
+def old_human(run_dir, tid, b, waiting):
+    """1.3.0 전에 시작한 task와 단계 kind의 사람 몫 화면(머리, 칸, 만들 task, 질문 줄). 메인 몫 줄을 돌려준다."""
     t, screen, counts, failed, kids = b["t"], b["screen"], b["counts"], b["failed"], b["kids"]
     tasks = b["tasks"]
-    waiting = len(board.queue(b["tasks"]))
-
     print("[{} {}] {}".format(t.get("kind", ""), tid, t.get("title", "")))
     others = len(b["notes"])
     extra = " (+다른 task 기록 점검 {})".format(others) if others else ""
@@ -1752,6 +2014,33 @@ def show(argv):
     elif numbered and design_screen(t) and not b["notify_ok"]:
         print()
         print("질문: {} — 승인 / 고칠 것이 있음 / 나눠서 다시 / 보류".format(decides_of(t)))
+    return main_lines
+
+
+def show(argv):
+    if len(argv) < 3:
+        print(__doc__)
+        return 2
+    run_dir, tid = argv[1], argv[2]
+    b = build(run_dir, tid)
+    if "error" in b:
+        print(b["error"])
+        return 2
+    t, screen, counts, failed, kids = b["t"], b["screen"], b["counts"], b["failed"], b["kids"]
+    tasks = b["tasks"]
+    waiting = len(board.queue(b["tasks"]))
+
+    numbered = b["v120"]
+    lines = report.render(run_dir, b, review_extra(run_dir, b) if report.applies(b) and b["review"] else None)
+    if lines is not None:
+        # 1.3.0 사람에게 가는 꼴(구현 설계 2절 D): 경계 보고, 즉시 질문, 알림 한 줄. 메인 몫 줄은 아래에 그대로
+        print("\n".join(lines))
+        signal_lines, method_line, main_text = main_summary(t, b["judge_top"])
+        if main_text is not None:
+            devflow_lib.write_text(os.path.join(t["_dir"], "screen-main.md"), main_text)
+        main_lines = signal_lines + ([method_line] if method_line else []) + report.warnings(lines)
+    else:
+        main_lines = old_human(run_dir, tid, b, waiting)
     corrections = devflow_lib.unchanged_corrections(_text_of(os.path.join(t["_dir"], "judge.md"))) if numbered else []
     if corrections:
         print()
@@ -1762,8 +2051,11 @@ def show(argv):
     if b["judgment"]:
         print()
         print("! 판단 기록(작성자에게 고치게 한다. 그 전에는 알림 불가): " + " / ".join(b["judgment"]))
+    if b.get("sources"):
+        print()
+        print("! 정한 것·전제의 꼴(작성자에게 고치게 한다. 그 전에는 알림 불가): " + " / ".join(b["sources"]))
     if numbered:
-        unknown = [name for name in screen if name not in kinds.CELLS and name != REVIEW_MATERIAL]
+        unknown = [name for name in screen if name not in devflow_lib.cells_of(b["t"]) and name != REVIEW_MATERIAL]
         if unknown:
             print()
             print("! 「승인 화면」의 모르는 절: {} (사람에게 보이지 않는다. 자료 안의 제목은 `####`로 쓴다)".format(", ".join(unknown)))

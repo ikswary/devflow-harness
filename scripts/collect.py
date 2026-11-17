@@ -1433,7 +1433,44 @@ def approval_measure(run_dir, tasks):
     """1.2.0 칸(설계 10절과 11.1절의 경계 표). 정책과 규약 칸은 1.3.0이다."""
     return answers_lines(tasks) + [reading_line(tasks), flow_reading_line(tasks), wrap_review_line(tasks), missing_material_line(tasks), masked_line(tasks)] \
         + code_check_measure(run_dir, tasks) + [hidden_judgment_line(tasks), flow_stamp_line(tasks), before_after_line(tasks), notified_line(tasks), delegation_line(run_dir, tasks), sheet_upload_line(run_dir)]         + contract_lines(tasks) + [design_approval_line(tasks), boundary_line(run_dir, tasks), sheet_layer_line(tasks), test_change_measure_line(tasks),
-                                   design_root_line(tasks), stall_more_line()] + slot_line(run_dir, tasks)
+                                   design_root_line(tasks), stall_more_line()] + slot_line(run_dir, tasks) + [v130_line(tasks)]
+
+
+RECOMMENDED = re.compile(r"\(([가-힣])\)[^(]*?←\s*추천")
+
+
+def v130_line(tasks):
+    """1.3.0 사람에게 간 것(구현 설계 2절 D): 경계 보고·즉시 질문·알림 수, 질문 수와 질문 하나의 평균 글자 수, 추천대로 답한 수.
+    남긴 화면(screen-shown.md)과 승인 기록에서 센다."""
+    import plain_text
+    import report
+    import screen
+    new = [t for t in tasks.values() if devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V130)]
+    if not new:
+        return "- 1.3.0 화면: 1.3.0부터 시작한 task 없음"
+    forms = {"경계 보고": 0, "즉시 질문": 0, "알림": 0}
+    asked, chars, recommended, answered = 0, 0, 0, 0
+    for t in new:
+        if str(t.get("approval_mode", "")).strip() == "알림":
+            forms["알림"] += 1
+        path = os.path.join(t["_dir"], "screen-shown.md")
+        if not os.path.isfile(path):
+            continue
+        shown = devflow_lib.read_text(path)
+        forms["경계 보고" if report.NO_ASK in shown else "즉시 질문"] += 1
+        items = screen.shown_items(shown)
+        asked += len(items)
+        chars += sum(plain_text.count(body) for body in items.values())
+        picks = {n: m.group(1) for n, body in items.items() for m in [RECOMMENDED.search(body)] if m}
+        for line in devflow_lib.record_lines(t):
+            quote = devflow_lib.record_quote(line) or ""
+            for n, letter in re.findall(r"(?<!\d)(\d+)\s*([가-힣])(?![가-힣])", quote):
+                if int(n) in picks:
+                    answered += 1
+                    recommended += picks[int(n)] == letter
+    mean = chars // asked if asked else 0
+    return "- 1.3.0 화면: 경계 보고 {경계 보고} · 즉시 질문 {즉시 질문} · 알림 {알림}; 질문 {q}개(평균 {c}자); 추천대로 답함 {r}/{a}".format(
+        q=asked, c=mean, r=recommended, a=answered, **forms)
 
 
 def write_risk_accepted(run_dir, out_dir, tasks):

@@ -377,7 +377,7 @@ def answered_items(tasks, t, written):
     out = []
     for o in places.check_tasks(tasks, t["id"]):
         cells = devflow_lib.result_cells(o) or {}
-        for line in cells.get("답하신 것의 반영", "").splitlines():
+        for line in cells.get(devflow_lib.answered_cell(o), "").splitlines():
             if line.startswith("- ") and not devflow_lib.EMPTY_ITEM.match(line) and line[2:].strip() not in written:
                 out.append("- [{}] {}".format(o["id"], line[2:].strip()))
     # 검증 작성자가 같은 말로 적은 줄만 건수로 접는다. 다루지 않은 줄은 사람이 볼 내용이다
@@ -389,7 +389,7 @@ def answered_items(tasks, t, written):
     for line in same:
         tid = line[3:].split("]", 1)[0]
         tally[tid] = tally.get(tid, 0) + 1
-    return ["- 코드 task가 옮긴 같은 답 {}건: {}(각 task 결과 「답하신 것의 반영」)".format(len(same), ", ".join("{} {}".format(k, n) for k, n in tally.items()))] \
+    return ["- 코드 task가 옮긴 같은 답 {}건: {}(각 task 결과 「{}」)".format(len(same), ", ".join("{} {}".format(k, n) for k, n in tally.items()), devflow_lib.answered_cell(t))] \
         + [line for line in out if line not in same]
 
 

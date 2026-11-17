@@ -18,9 +18,9 @@ description: "개발 작업을 task 단위로 흐르게 하는 새 개발 하네
 
 ## 구성
 - 에이전트 9의 모델은 `references/registry/agents.md`, 맡는 kind는 `references/registry/kinds.md`의 `writers`에 있고, 부르는 이름은 `devflow-harness:{에이전트}`다. code-writer는 충돌 해결도, release-writer는 배포의 기록을 쓰는 뒤 절반도 맡는다. read-judge는 읽고 대조하는 판정, run-judge는 빌드·테스트·변이 확인의 독립 실행과 배포 뒤 확인을 한다.
-- 띄울 때 모델을 바꾸는 경우: code-writer는 난이도 `단순`이면 `model: "sonnet"`. `fable`은 사용자가 「이번 실행의 값」 `fable로 띄울 역할`에 적은 역할에만 쓴다(비용이 커서 기본으로 쓰지 않는다).
-- **실행 모드**: 서브에이전트 위임. task마다 수명이 짧은 에이전트를 백그라운드로 띄운다(`Agent(subagent_type, name: "{역할 줄임}-{task id}", prompt)`). 에이전트는 task 하나만 맡고 끝난다. 실행 중인 에이전트에 정정 메시지를 보내지 않는다(반환은 마지막 출력이다). task 파일을 고친 뒤 새로 띄우거나, 끝난 뒤 그 산출물을 고치는 task(코드면 코드를 고치는 task)로 만든다.
-- 다른 에이전트는 메인만 띄운다. 사용자에게 묻는 것도 메인만 한다(`AskUserQuestion`).
+- 띄울 때 모델을 바꾸는 경우: code-writer는 난이도 `단순`이면 `model: "sonnet"`. `fable`은 사용자가 「이번 실행의 값」 `fable로 띄울 역할`에 적은 역할에만 쓴다.
+- **실행 모드**: 서브에이전트 위임. task마다 수명이 짧은 에이전트를 백그라운드로 띄운다(`Agent(subagent_type, name: "{역할 줄임}-{task id}", prompt)`). 에이전트는 task 하나만 맡고 끝난다. 실행 중인 에이전트에 정정 메시지를 보내지 않는다. task 파일을 고친 뒤 새로 띄우거나, 끝난 뒤 그 산출물을 고치는 task(코드면 코드를 고치는 task)로 만든다.
+- 다른 에이전트는 메인만 띄운다. 사용자에게 묻는 것도 메인만 한다.
 
 ## 단계 파일
 메인은 그 때에 아래 파일을 통째로 읽는다. 단계 파일끼리는 "n절"로 부르고 이 표로 찾는다.
@@ -32,6 +32,7 @@ description: "개발 작업을 task 단위로 흐르게 하는 새 개발 하네
 | 1. 루프 | `references/main/loop.md` | 늘 |
 | 2. 자체 검증 | `references/main/selfcheck.md` | 작성자 반환 뒤 판정할 때 |
 | 3. 승인과 알림 | `references/main/approval.md`, `references/main/sheet-upload.md` | 알리거나 승인을 물을 때, 답을 받은 턴 |
+| 3. 승인 — 옛 화면 | `references/main/approval-old.md` | 옛 화면을 물을 때 |
 | 3. 승인 — 위임과 답의 표지 | `references/main/delegation.md` | 위임 원문, `위임` 행 |
 | 3. 승인 — 사용자 할 일 대기 | `references/main/waiting-user.md` | 「하실 일」을 넘길 때, 했다는 답 |
 | 4. 자식 만들기 | `references/main/children.md` | 자식을 만들 때 |

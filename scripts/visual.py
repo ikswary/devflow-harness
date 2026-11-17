@@ -56,6 +56,7 @@ import kinds
 import md_html
 import places
 import project_docs
+import report
 import screen
 
 # 원천의 종류(kind 이름과 겹치지 않는 낱말. 엔진 코드의 kind 문자열은 engine_hooks가 있는 kind만, 시험 1(d))
@@ -436,6 +437,11 @@ def _head_blocks(run_dir, t, safe):
         return out
     if "error" not in b and screen.material_missing(b):
         out.append("<p>{}</p>".format(html.escape(safe(screen.MATERIAL_MISSING))))
+    if "error" not in b and report.applies(b):
+        # 1.3.0(구현 설계 2절 D): 한 장도 터미널과 같은 차례와 묶음이다. 같은 줄을 그대로 싣는다
+        lines = report.render(run_dir, b, screen.review_extra(run_dir, b) if b["review"] else None) or []
+        out.append('<pre class="report">{}</pre>'.format(html.escape(safe("\n".join(lines)))))
+        return out
     out += ["<p>{}</p>".format(html.escape(safe(line))) for line in (screen.head_lines(b)[:1] if "error" not in b else [])]
     cells = screen.cell_blocks(b) if "error" not in b else []
     if not any(any(screen.ITEM_LINE.match(line) for line in body.splitlines()) if body else True for _, body in cells):

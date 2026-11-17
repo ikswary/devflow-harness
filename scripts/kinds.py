@@ -34,6 +34,7 @@ class Kind(NamedTuple):
     children: tuple             # 허용 자식 kind
     engine_hooks: tuple         # 엔진 코드에 이 kind만의 분기가 있는 자리의 이름
     review: str = ""            # 리뷰 계약(설계 4.3절). 빈 값은 고치는 정본에 따른다
+    boundary: str = ""          # 1.3.0 사람에게 가는 꼴: report(경계 보고) / between(경계 사이: 알림 한 줄, 물을 것만 즉시 질문) / stage(단계 kind의 명령 승인)
 
 
 class Agent(NamedTuple):
@@ -148,7 +149,23 @@ _REVIEW = {"question": "scope", "brief": "scope", "req-overview": "scope", "req-
            "probe": "command", "implementation": "behavior", "fe-implementation": "behavior", "be-implementation": "behavior",
            "fix": "behavior", "flow-verify": "behavior+risk", "reverify": "risk", "merge": "command", "full-verify": "risk",
            "wrap-up": "command+run", "deploy-plan": "command", "deploy-exec": "command"}
-KINDS = {name: k._replace(review=_REVIEW.get(name, "")) for name, k in KINDS.items()}
+# 경계(7판 규칙 4.1, 정할 것 U4): 요구사항→설계, 원인 분석→수정, 설계→구현, 검증→마무리, 배포 계획. 구현→검증은 설계 하나의
+# 구현이 모두 끝날 때의 묶음 보고(flow_review)이고 구현 task 자체는 경계 사이다. 단계 kind는 명령 승인(7판 4.4)을 단계마다 묻는다
+_BOUNDARY = {"question": "report", "req-overview": "report", "brief": "report", "req-detail": "report",
+             "root-cause": "report", "design": "report", "flow-verify": "report", "deploy-plan": "report",
+             "probe": "stage", "merge": "stage", "wrap-up": "stage", "deploy-exec": "stage"}
+KINDS = {name: k._replace(review=_REVIEW.get(name, ""), boundary=_BOUNDARY.get(name, "between")) for name, k in KINDS.items()}
+BOUNDARY_KINDS = frozenset(n for n, k in KINDS.items() if k.boundary == "report")
+BETWEEN_KINDS = frozenset(n for n, k in KINDS.items() if k.boundary == "between")
+# 경계 보고 머리 칸(run_position.py): 처음 계획을 정하는 계획 task, 늘어난 task의 원인 이름(사람의 말), 배포 횟수를 세는 kind
+FIRST_PLAN_KINDS = ("req-overview", "design", "root-cause")
+GROWTH_CAUSES = {"fix": "확인에서 나온 수정", "reverify": "확인에서 나온 수정", "full-verify": "전체를 다시 보는 관점",
+                 "root-cause": "원인을 찾는 일", "change": "문서 고침", "probe": "직접 해 보는 확인"}
+DEPLOY_EXEC_KINDS = ("deploy-exec",)
+# 경계 보고 머리의 경계 이름(사람의 말, 7판 규칙 4.1)
+BOUNDARY_LABELS = {"question": "요구사항 → 설계", "req-overview": "요구사항 → 설계", "brief": "요구사항 → 설계",
+                   "req-detail": "요구사항 → 설계", "root-cause": "원인 찾기 → 고치기", "design": "설계 → 만들기",
+                   "flow-verify": "다시 확인 → 마무리", "deploy-plan": "배포"}
 
 # 사람이 정하는 것(설계 7.6절). 화면 머리 `정하는 것:` 줄이다
 DECIDES = {"question": "이 선택지 가운데 무엇인가", "req-overview": "이 범위와 묶음 나눔이 원하는 일의 경계인가",
@@ -194,6 +211,7 @@ WRITTEN_CANON = {"req-overview": "spec/overview", "brief": "spec/brief", "req-de
                  "infra-design": "design/infra", "design": "design/"}
 # 설계 승인 화면의 칸 차례(설계 7.2절). 번호는 이 차례로 매긴다
 DESIGN_SCREEN_CELLS = ("확인 안 된 것", "정해 주실 것", "하실 일·허용 요청", "알릴 것", "답하신 것의 반영", "건수만")
+DESIGN_SCREEN_CELLS_V130 = ("전제", "확인 안 된 것", "정해 주실 것", "하실 일·허용 요청", "알릴 것", "정한 것", "건수만")
 
 _WRITER_TOOLS = ("Read", "Grep", "Glob", "Bash", "Write", "Edit")
 AGENTS = {
@@ -230,7 +248,22 @@ STAGE_JUDGES = {
     ("deploy-exec", "직전확인"): (), ("deploy-exec", "결과승인"): (), ("deploy-exec", "넣기승인"): ("read",),
 }
 JUDGE_FILES = {"read": "judge.md", "run": "judge-run.md"}
+FACTS_FILE = "facts.md"   # 판정 전 사실 검사(judge_facts.py)가 task 폴더에 쓰는 파일(1.3.0)
+# 판정 전 사실 검사가 kind마다 도는 검사(구현 설계 2절 B, 7판 규칙 5.2). 이름은 judge_facts.SECTIONS의 키다.
+# 코드 이름을 근거로 드는 kind만 둔다: 식별자의 생산처는 모두, 기존 시험·물려받는 환경은 코드·배포 계획,
+# 배포 값·설정 꼴은 배포 계획과 인프라 결정, 보안 신호는 코드 kind. 사실은 진행→자체검증 전이 때 뽑으므로
+# 자체검증을 거치지 않는 단계 kind(STAGE_KINDS: 배포 실행 등)는 넣지 않는다(배포 실행은 승인된 배포 계획의 사실을 따른다)
+_CODE_FACTS = ("producer", "tests", "env", "security")
+FACT_CHECKS = {"implementation": _CODE_FACTS, "fe-implementation": _CODE_FACTS, "be-implementation": _CODE_FACTS,
+               "fix": _CODE_FACTS, "design": ("producer",), "root-cause": ("producer",), "req-overview": ("producer",),
+               "change": ("producer",), "infra-design": ("producer", "deploy", "config"),
+               "deploy-plan": ("producer", "tests", "deploy", "config", "env")}
 CELLS = ("정해 주실 것", "하실 일·허용 요청", "알릴 것", "답하신 것의 반영", "확인 안 된 것", "건수만")
+# 1.3.0부터 시작한 task의 칸(구현 설계 2절 C): 「전제」를 맨 앞에 두고, 「정한 것」(◇/↺/✔)이 「답하신 것의 반영」을 대신한다
+CELLS_V130 = ("전제", "정해 주실 것", "하실 일·허용 요청", "알릴 것", "정한 것", "확인 안 된 것", "건수만")
+ALL_CELLS = tuple(dict.fromkeys(CELLS + CELLS_V130))   # 칸 이름인지만 볼 때(화면 줄 읽기)
+# 판정자가 「칸 분류 확인」으로 옮길 수 있는 칸. 「전제」·「정한 것」은 기호·번호가 있어야 하므로 옮겨 넣지 않는다
+MOVABLE_CELLS = tuple(c for c in ALL_CELLS if c not in ("전제", "정한 것"))
 FLOW_BEHAVIOR_CELL = "구현이 정한 동작"   # 흐름 리뷰의 번호 붙은 동작 문장(설계 7.1절). 작성자가 쓰지 않고 스크립트가 낸다
 COUNT_CELLS = {"정해 주실 것": "n_decide", "하실 일·허용 요청": "n_todo", "알릴 것": "n_notify",
                "확인 안 된 것": "n_unverified"}
@@ -241,7 +274,7 @@ JUDGMENT_KINDS = ("구조", "데이터", "트랜잭션", "오류", "외부호출
 
 # 판본 칸
 RULES = 2
-DEF_VERSION_MIN = "2026-11-07-a15"   # 판정자 정의의 판 표지 `def-version:`의 최소값
+DEF_VERSION_MIN = "2026-11-17-c1"   # 판정자 정의의 판 표지 `def-version:`의 최소값
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -381,12 +414,12 @@ EDGES = frozenset({(p, c) for p, k in KINDS.items() for c in k.children} | {("ch
 # formats 파일: (파일 이름, 형식 목차 `references/core/formats.md`의 절 번호), 절 차례. 파일은 `FORMATS_DIR/{이름}.md`.
 # 한 절을 두 파일로 나눈 곳(5절)이 있다
 FORMATS_DIR = "references/formats"
-FORMAT_FILES = (("names", 1), ("run-folder", 2), ("task-file", 3), ("result-file", 4), ("judge-file", 5),
+FORMAT_FILES = (("names", 1), ("run-folder", 2), ("task-file", 3), ("result-file", 4), ("screen-cells", 4), ("judge-file", 5),
                 ("judge-run-file", 5), ("run-files", 6), ("prompt", 7), ("return", 8))
 # 독자별 formats 파일. writer = 작성자 에이전트 7
 FORMATS_READERS = {
-    "writer": ("task-file", "result-file", "return"),
-    "read-judge": ("task-file", "judge-file", "return"),
+    "writer": ("task-file", "result-file", "screen-cells", "return"),
+    "read-judge": ("task-file", "screen-cells", "judge-file", "return"),
     "run-judge": ("judge-file", "judge-run-file", "return"),
     "main": tuple(name for name, _ in FORMAT_FILES),
 }
@@ -491,6 +524,7 @@ def render_sections():
                                              for (k, s), v in STAGE_JUDGES.items()),
             "- `JUDGE_FILES`: " + ", ".join("`{}` = `{}`".format(r, f) for r, f in JUDGE_FILES.items()),
             "- `CELLS`: " + _join(CELLS),
+            "- `CELLS_V130`(1.3.0부터 시작한 task): " + _join(CELLS_V130),
             "- `COUNT_CELLS`: " + ", ".join("`{}` = `{}`".format(c, n) for c, n in COUNT_CELLS.items()),
             "- `UNDECIDED_TAGS`: " + _join(UNDECIDED_TAGS),
             "- `FLOW_ROLES`: " + _join(FLOW_ROLES),

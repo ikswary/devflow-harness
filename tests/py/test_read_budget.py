@@ -1,8 +1,8 @@
 """읽는 양과 선언 대조 시험.
 
-- 읽는 양: `reading.BASELINE`의 행위자마다 `reading.row_bytes`(독자 파일의 바이트 합, 경우 파일은 모두 셈) ≤ 상한.
-  `PENDING_OVER`(행위자, 상한, 그때 값, 사유)에 든 행은 "그때 값 이하"만 단언한다. 규칙을 지우지 않고는 상한 안으로
-  맞출 수 없을 때 넣고, 맞춘 뒤 목록에서 뺀다.
+- 읽는 양: `reading.BASELINE`의 행위자마다 `reading.row_bytes`(독자 파일의 바이트 합, 경우 파일은 모두 셈) ≤
+  `reading.limit`(판을 낼 때의 값 × (1 + GROWTH)). 판을 낼 때 기준선을 다시 잡는다. `PENDING_OVER`(행위자, 상한,
+  그때 값, 사유)는 한 판 안에서 한도를 넘겨야 할 때만 넣는다.
 - 선언 대조: 에이전트 정의 「읽을 것」의 경로(formats 파일 포함)와 kind 모듈 「먼저 읽을 것」의 방법 문서 경로를 합친 것이
   `reading.NEW_READS`의 그 행위자 항목 가운데 경로 하나를 가리키는 것과 같다. 견주지 않는 것: 자기 정의 파일(시스템
   프롬프트), kind 모듈 파일(「맡은 kind 모듈」로만 적음), 패턴 항목(`*`·`{경우}`), 아직 없는 `run-check.md`(「있으면」).
@@ -17,75 +17,8 @@ import kinds
 import reading
 from conftest import ROOT
 
-# (행위자, 상한, 그때 값, 사유). 평소 빈 목록
-_V104_NOTE = "1.0.4 판정자 규칙(묶기 J2·TR-B3, 절 이름 TR-R3, 반환 20줄 P-09)을 정의 본문에, 확인할 수 없는 기준의 꼴(N2)을 contract.md에 둠. 2026-10-30 사용자 결정: 상한 때문에 규칙을 지우거나 옮기지 않음. 설계 이유 괄호는 지운 상태"
-_V110_NOTE = "1.1.0 설계 정의의 자식 kind·행 규칙 경우 파일·겹침 규칙과 머리 파일의 탐침 단계·변경 대상. 설계 문서 5.10: 줄일 곳을 찾지 못해 사용자 결정(T006)으로 보류. 줄일 후보: 판정자가 함께 읽는 공통 문서(contract.md·writer.md·task-file.md)의 겹치는 문장"
-_A2_NOTE = "1.2.0 A2 리뷰 자료와 효과 비교의 작성 안내를 writer.md 4절과 result-file.md에 둠. 2026-11-05 리뷰 권고대로 사유를 나눠 적고 사용자에게 알림"
-_A3_NOTE = "1.2.0 A3 코드 판단 기록(practices/code-judgment.md)과 결과·판정 파일의 칸. 2026-11-05 사용자 \"이대로 둬\"의 연장으로 넘는 것을 기록하고 알림"
-_V120_NOTE = "1.2.0 결정 종류, 묻는 기준, 성질을 writer.md 2절로 모음(설계 5.4절). 사용자 결정 2026-11-05: 상한에 맞춰 줄이면 kind마다 기준이 갈리므로 넘는 것을 기록함. 줄일 후보: writer.md 4절과 formats의 겹치는 문장"
-PENDING_OVER: list[tuple[str, int, int, str]] = [
-    ("read-judge:design", 51164, 64574, _V110_NOTE),
-    ("read-judge:change:design", 50347, 62522, _V110_NOTE),
-    ("run-judge:implementation", 31302, 35638, _V104_NOTE),
-    ("run-judge:fix", 31302, 35638, _V104_NOTE),
-    ("run-judge:root-cause", 30136, 34472, _V104_NOTE),
-    ("run-judge:merge", 30136, 34472, _V104_NOTE),
-    ("run-judge:wrap-up", 30822, 35416, _V104_NOTE),
-    ("run-judge:deploy-exec", 31840, 36249, _V104_NOTE),
-    ("requirements-writer:question", 32165, 36556, "S2 task-file.md 탐침 단계 +86(A-H4). A·B 흐름의 실제 증가가 어림보다 커 여유 216이 4로 줄었다. 사용자 결정으로 보류(T035 답 2026-10-30 18:11:03). " + _V120_NOTE),
-    ("requirements-writer:req-overview", 37209, 40542, _V120_NOTE),
-    ("requirements-writer:req-detail", 37507, 42044, _V120_NOTE),
-    ("requirements-writer:change:req-overview", 39251, 43338, _V120_NOTE),
-    ("requirements-writer:change:req-detail", 39549, 44840, _V120_NOTE),
-    ("requirements-writer:change:brief", 43557, 47263, _V120_NOTE),
-    ("design-writer:design", 55214, 65742, _V120_NOTE),
-    ("design-writer:change:design", 59694, 70826, _V120_NOTE),
-    ("code-writer:fe-implementation", 58737, 70667, _V120_NOTE),
-    ("code-writer:be-implementation", 50187, 61212, _V120_NOTE),
-    ("code-writer:probe", 38176, 43849, _V120_NOTE),
-    ("release-writer:deploy-plan", 50122, 61374, _V120_NOTE),
-    ("infra-writer:infra-design", 39126, 42200, _V120_NOTE),
-    ("infra-writer:probe", 35814, 41485, _V120_NOTE),
-    ("infra-writer:change:infra-design", 40651, 43921, _V120_NOTE),
-    ("read-judge:question", 33056, 37161, _V120_NOTE),
-    ("read-judge:req-overview", 35055, 38859, _V120_NOTE),
-    ("read-judge:req-detail", 35353, 40361, _V120_NOTE),
-    ("read-judge:brief", 39361, 42784, _V120_NOTE),
-    ("read-judge:ui-design", 40296, 45323, _V120_NOTE),
-    ("read-judge:change:req-overview", 39535, 43943, _V120_NOTE),
-    ("read-judge:change:req-detail", 39833, 45445, _V120_NOTE),
-    ("read-judge:change:brief", 43841, 47868, _V120_NOTE),
-    ("read-judge:change:ui-design", 44776, 50407, _V120_NOTE),
-    ("read-judge:implementation", 45220, 55648, _V120_NOTE),
-    ("read-judge:fix", 45220, 55648, _V120_NOTE),
-    ("read-judge:root-cause", 40492, 45888, _V120_NOTE),
-    ("read-judge:deploy-plan", 46348, 58310, _V120_NOTE),
-    ("read-judge:infra-design", 35580, 39525, _V120_NOTE),
-    ("read-judge:change:infra-design", 39179, 43320, _V120_NOTE),
-    ("read-judge:probe", 32270, 38810, _V120_NOTE),
-    ("read-judge:fe-implementation", 43797, 55937, _V120_NOTE),
-    ("read-judge:be-implementation", 43107, 54999, _V120_NOTE),
-    ("design-writer:change:ui-design", 60413, 65939, _V120_NOTE),
-    ("read-judge:flow-verify", 47504, 56907, _V120_NOTE),
-    ("read-judge:full-verify", 47504, 53768, _V120_NOTE),
-    ("read-judge:reverify", 47504, 53768, _V120_NOTE),
-    ("design-writer:ui-design", 55933, 60855, _A2_NOTE),
-    ("verify-writer:flow-verify", 47398, 55540, _A2_NOTE),
-    ("verify-writer:full-verify", 47398, 52401, _A2_NOTE),
-    ("verify-writer:reverify", 47398, 52401, _A2_NOTE),
-    ("read-judge:wrap-up", 37212, 41107, _A2_NOTE),
-    ("requirements-writer:brief", 43580, 44950, _V120_NOTE),
-    ("cause-writer:question", 46754, 49960, _V120_NOTE),
-    ("code-writer:implementation", 54645, 61861, _A3_NOTE),
-    ("code-writer:fix", 54645, 61861, _A3_NOTE),
-    ("release-writer:wrap-up", 41637, 44171, _A3_NOTE),
-    ("run-judge:fe-implementation", 31616, 35638, _A3_NOTE),
-    ("run-judge:be-implementation", 31616, 35638, _A3_NOTE),
-    ("cause-writer:root-cause", 48494, 51551, _A3_NOTE),
-    ("design-writer:question", 42802, 45465, _V120_NOTE),
-    ("read-judge:merge", 37916, 38739, _V120_NOTE),
-    ("run-judge:flow-verify", 37647, 38605, _V120_NOTE),
-]
+# (행위자, 상한, 그때 값, 사유). 한도(reading.limit)를 넘겨야 할 때만, 사유와 함께. 1.3.0에서 기준선을 다시 잡으며 비움
+PENDING_OVER: list[tuple[str, int, int, str]] = []
 
 AGENT_DIR = ROOT / "agents"
 KIND_DIR = ROOT / "references" / "kinds"
@@ -101,7 +34,7 @@ def over_budget(pending=None, sizes=None):
     out = []
     for actor, base in reading.BASELINE.items():
         now = reading.row_bytes(actor) if sizes is None else sizes[actor]
-        limit = pending.get(actor, base)
+        limit = pending.get(actor, reading.limit(actor))
         if now > limit:
             out.append((actor, base, now, limit))
     return out
@@ -112,7 +45,7 @@ def test_pending_over_rows_are_baseline_rows_over_their_baseline():
     for actor, base, then, item in PENDING_OVER:
         assert actor in reading.BASELINE and actor not in seen, actor
         seen.add(actor)
-        assert base == reading.BASELINE[actor], (actor, base)
+        assert base == reading.limit(actor), (actor, base)
         assert then > base and item, (actor, then, item)   # 상한 이하면 목록에 둘 까닭이 없다
 
 
@@ -122,15 +55,18 @@ def test_read_budget():
 
 
 def test_read_budget_detects_one_byte_over_limit_and_pending_value():
-    sizes = {a: base for a, base in reading.BASELINE.items()}
+    actor = "code-writer:fix"
+    base, lim = reading.BASELINE[actor], reading.limit(actor)
+    assert lim > base   # 한 판 안에서 늘 수 있는 몫
+    sizes = {a: reading.limit(a) for a in reading.BASELINE}
     assert over_budget(pending=[], sizes=sizes) == []
-    sizes["code-writer:fix"] += 1
-    assert over_budget(pending=[], sizes=sizes) == [("code-writer:fix", 54645, 54646, 54645)]
+    sizes[actor] += 1
+    assert over_budget(pending=[], sizes=sizes) == [(actor, base, lim + 1, lim)]
     # 보류 행은 그때 값까지 받고, 그 위 1바이트에서 걸린다
-    pending = [("code-writer:fix", 54645, 54646, "표본")]
+    pending = [(actor, lim, lim + 1, "표본")]
     assert over_budget(pending=pending, sizes=sizes) == []
-    sizes["code-writer:fix"] += 1
-    assert over_budget(pending=pending, sizes=sizes) == [("code-writer:fix", 54645, 54647, 54646)]
+    sizes[actor] += 1
+    assert over_budget(pending=pending, sizes=sizes) == [(actor, base, lim + 2, lim + 1)]
 
 
 # ---------------------------------------------------------------------------
