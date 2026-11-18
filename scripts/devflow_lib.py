@@ -500,6 +500,7 @@ JUDGMENT_NONE = re.compile(r"^- 없음(?:\s*\(.*\))?\s*$")
 RULES_V130 = "1.3.0"   # 이 판본부터 시작한 task에만 판정 전 사실 검사(facts.md)와 판정 파일 「짚음」·「주장-출처 대조」를 요구한다
 FACTS_FILE = kinds.FACTS_FILE
 RULES_V120 = "1.2.0"   # 이 판본(1.2.0-dev.n 포함)부터 시작한 task에만 판단 기록·코드 확인 규칙을 적용한다
+RULES_V131 = "1.3.1"   # 이 판본부터 시작한 코드 task는 판정을 통과하면 커밋한 뒤 묻는다(task_set.commit_first_problem)
 CODE_CHECK_ORIGIN = "코드 확인"   # 곳 답의 승인 기록 지점(`코드 확인 {키}`)과 그 답으로 만든 수정의 origin에 든다
 
 

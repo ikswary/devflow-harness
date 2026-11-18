@@ -385,3 +385,23 @@ def test_slot_mark_is_dropped_when_the_run_went_back_to_one(run_dir):
     proc = run_script("task_set", run_dir, "T001", "--status", "진행", "running_agent=w")
     assert proc.returncode == 0, proc.output
     assert not run_dir.tasks()["T001"].get("slot")
+
+
+def test_slot_task_passes_the_commit_gate_with_insert_pending(run_dir, place):
+    """커밋 관문(HB-50, AC-03): 1.3.1부터 시작해 판정을 통과한 칸 task는 `--pending`이 insert_pending을 적은 뒤에만 묻는다."""
+    from datetime import datetime
+    from test_transitions import CODE_READ_JUDGE, CODE_RESULT, contracted_run_judge
+
+    code(run_dir, "T001", "- a.txt", status="자체검증", started_version="1.3.1", rules="2")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    run_dir.result("T001", CODE_RESULT)
+    write(run_dir.task_dir("T001") / lib.FACTS_FILE, "# T001 미리 뽑은 사실\n")
+    run_dir.judge("T001", CODE_READ_JUDGE.format(now=now, failed="- 없음"))
+    write(run_dir.task_dir("T001") / "judge-run.md", contracted_run_judge().replace("2026-10-15 10:00:00", now))
+    refused = run_script("task_set", run_dir, "T001", "--status", "승인대기")
+    assert refused.returncode == 3 and task_set.COMMIT_FIRST.format("T001") in refused.output, refused.output
+    sha = work(run_dir, place, "T001", "1", "a.txt", "가\n")
+    assert run_dir.tasks()["T001"].get("insert_pending") == sha and not run_dir.tasks()["T001"].get("commit")
+    moved = run_script("task_set", run_dir, "T001", "--status", "승인대기")
+    assert moved.returncode == 0, moved.output
+    assert run_dir.tasks()["T001"].get("status") == "승인대기"

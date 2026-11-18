@@ -1178,3 +1178,87 @@ def test_old_lines_written_before_the_gate_are_read_as_before(lib):
     assert lib.approval_line(OLD_EMPTY_TEXT) is True
     assert lib.approval_line(OLD_FIX_ON_APPROVAL) is True
     assert lib.prior_approval({"_sections": {"승인 기록": OLD_EMPTY_TEXT}}) is True
+
+
+# ================================================================ 커밋 관문 (HB-50, 설계 harness-defects 5절 B2, AC-03, D-05·D-06)
+
+V131 = {"started_version": "1.3.1", "rules": "2"}
+CODE_RESULT = ("# T001 결과\n\n## 승인 화면\n### 리뷰 자료\n관문 시험의 결과다.\n### 전제\n- 없음\n### 정해 주실 것\n- 없음\n"
+               "### 하실 일·허용 요청\n- 없음\n### 알릴 것\n- 없음\n### 정한 것\n- 없음\n### 확인 안 된 것\n- 없음\n### 건수만\n- 없음\n\n"
+               "## 판단\n- 없음\n")
+CODE_READ_JUDGE = ("판정자: rjudge-T001 {now}\n\n## 통과 못 한 기준\n{failed}\n\n## 판정 표\n| 기준 | 판정 | 근거 |\n|---|---|---|\n"
+                   "| 1 | 통과 | 읽음 |\n\n## 짚음\n- 없음\n\n## 주장-출처 대조\n- 없음\n\n## 판단 대조\n- 없음\n")
+
+
+def judged_code(run_dir, kind="implementation", meta=V131, failed="- 없음", **more):
+    """판정까지 마친 자체검증 task: 결과, 사실 파일, 읽기·실행 판정(1.3.0부터의 절과 실행 판정 계약)."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sections = {"건드릴 파일": "- src/a.py"} if kind in kinds.TOUCH_FILES_KINDS else {}
+    run_dir.task("T001", "관문 시험", sections, kind=kind, block=kinds.block_of(kind) or "구현", status="자체검증",
+                 flow="f", **dict(meta, **more))
+    run_dir.result("T001", CODE_RESULT)
+    write(run_dir.task_dir("T001") / devflow_lib.FACTS_FILE, "# T001 미리 뽑은 사실\n")
+    run_dir.judge("T001", CODE_READ_JUDGE.format(now=now, failed=failed))
+    write(run_dir.task_dir("T001") / "judge-run.md", contracted_run_judge().replace("2026-10-15 10:00:00", now))
+    return load(run_dir)
+
+
+def to_waiting(run_dir, *keys):
+    return run_script("task_set", run_dir, "T001", *keys, "--status", "승인대기")
+
+
+def to_notified(run_dir, *keys):
+    return run_script("task_set", run_dir, "T001", *keys, "--status", "완료", "--record", "알림|알림으로 지나감|")
+
+
+@pytest.mark.parametrize("kind", sorted(kinds.commit_kinds(1)))
+@pytest.mark.parametrize("move", [to_waiting, to_notified])
+def test_passed_code_task_without_commit_is_refused_before_asking(run_dir, kind, move):
+    judged_code(run_dir, kind)
+    before = (run_dir.task_dir("T001") / "task.md").read_bytes()
+    p = move(run_dir)
+    assert p.returncode == 3, p.output
+    assert task_set.COMMIT_FIRST.format("T001") in p.output and "commit=" in p.output
+    assert (run_dir.task_dir("T001") / "task.md").read_bytes() == before
+
+
+@pytest.mark.parametrize("move", [to_waiting, to_notified])
+@pytest.mark.parametrize("keys", [("commit=abc1234",), ("no_change=true",)])
+def test_passed_code_task_with_commit_or_no_change_moves(run_dir, move, keys):
+    judged_code(run_dir)
+    p = move(run_dir, *keys)
+    assert p.returncode == 0, p.output
+    assert front_value(run_dir, "status") == ("승인대기" if move is to_waiting else "완료")
+
+
+@pytest.mark.parametrize("move", [to_waiting, to_notified])
+def test_passed_code_task_with_insert_pending_moves(run_dir, move):
+    """칸에서 돈 task는 slots.py --pending이 적은 insert_pending이 커밋 표지다(실제 --pending 경로는 test_slots.py)."""
+    judged_code(run_dir, insert_pending="abc1234abc1234abc1234abc1234abc1234abcd")
+    p = move(run_dir)
+    assert p.returncode == 0, p.output
+
+
+@pytest.mark.parametrize("case", ["1.3.0", "root-cause", "failed"])
+def test_gate_leaves_old_tasks_root_cause_and_failed_tasks_asking_without_commit(run_dir, case):
+    """1.3.0에 시작한 task, 원인 분석, 통과 못 한 기준이 있는 task는 지금처럼 커밋 없이 묻는다(code-folder.md 「커밋」)."""
+    if case == "1.3.0":
+        judged_code(run_dir, meta=V130)
+    elif case == "root-cause":
+        judged_code(run_dir, kind="root-cause")
+    else:
+        judged_code(run_dir, failed="- 기준 6: 기준선 밖 실패 1")
+    p = to_waiting(run_dir)
+    assert p.returncode == 0, p.output
+    assert front_value(run_dir, "status") == "승인대기"
+
+
+@pytest.mark.parametrize("built,refused", [({"failed": "", "judges_ok": True}, True),
+                                           ({"failed": "- 기준 1: 실패", "judges_ok": True}, False),
+                                           ({"failed": "", "judges_ok": False}, False)])
+def test_gate_reads_pass_from_screen_build(run_dir, monkeypatch, built, refused):
+    """통과 판별은 화면과 같은 값(screen.build의 failed·judges_ok, D-06)이다. 판정 파일은 그대로 두고 build 값만 바꾼다."""
+    t = judged_code(run_dir)
+    monkeypatch.setattr(screen, "build", lambda run, tid, tasks=None: dict(built))
+    why = check(run_dir, t, "자체검증", "승인대기")
+    assert why == (task_set.COMMIT_FIRST.format("T001") if refused else None)

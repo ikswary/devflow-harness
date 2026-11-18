@@ -170,6 +170,11 @@ RETRY_SCOPE_LINE = ("- 회차 {} (보관한 판정: {}, 사본: {}): 고칠 기�
                     "다른 기준과 판정자의 권장은 고치지 않는다. 판정자의 대안 문장은 그대로 옮기지 않고, 그 근거 줄과 원천을 열어 확인한 뒤 쓴다"
                     "(어긋나면 원천을 따르고 「알릴 것」에 적는다).")
 
+# 커밋 관문(HB-50): 1.3.1부터 시작한 코드 task는 판정을 통과하면 메인이 커밋한 뒤 묻는다
+COMMIT_FIRST = ("판정을 통과한 코드 task는 커밋한 뒤 묻는다: git add {{파일}} && git commit, "
+                "task_set.py {{실행 폴더}} {0} commit={{해시}}(칸에서 돈 task는 slots.py {{실행 폴더}} {0} --pending {{칸 커밋}}). "
+                "코드를 바꾸지 않았으면 no_change=true")
+
 
 class Unlisted(str):
     """check_transition이 전이표에 없는 짝에 돌려주는 거부 이유. --unlisted는 이 이유만 넘긴다."""
@@ -189,6 +194,22 @@ AFTER_CRITERIA = [name for name in _SECTION_ORDER[_SECTION_ORDER.index("판정 �
 
 def title_parked(t):
     return str(t.get("title", "")).lstrip().startswith(("[백로그]", "[안"))
+
+
+def commit_first_problem(run_dir, t):
+    """1.3.1부터 시작한 코드 task(kinds.commit_kinds(1))가 판정을 통과했는데 commit·no_change·insert_pending이 모두 비면
+    거부 이유. 통과는 화면과 같은 값(screen.build의 failed 항목 0과 judges_ok, 설계 D-06)이다. 통과하지 못한 task는
+    지금처럼 커밋 없이 묻는다(references/main/code-folder.md 「커밋」)."""
+    if t.get("kind") not in kinds.commit_kinds(1) \
+            or not devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V131):
+        return None
+    if any(str(t.get(k, "") or "").strip() for k in ("commit", "insert_pending")) or devflow_lib.no_change(t):
+        return None
+    import screen
+    b = screen.build(run_dir, t["id"])
+    if "error" in b or devflow_lib.item_count(b["failed"]) or not b["judges_ok"]:
+        return None
+    return COMMIT_FIRST.format(t["id"])
 
 
 def check_transition(run_dir, t, old, new, ctx):
@@ -254,7 +275,7 @@ def check_transition(run_dir, t, old, new, ctx):
     if pair == ("자체검증", "진행"):
         return None if ctx["archived"] else "자체검증→진행(재시도)은 --archive-judge와 함께"
     if pair == ("자체검증", "승인대기"):
-        return ask_judges()
+        return ask_judges() or commit_first_problem(run_dir, t)
     if pair == ("자체검증", "완료"):
         if not rec or point not in ("알림", "승인"):
             return "자체검증→완료는 --record \"알림|…\"(또는 승인)와 함께"
@@ -266,7 +287,7 @@ def check_transition(run_dir, t, old, new, ctx):
         if kinds.notify_policy(kind) == "findings" and not devflow_lib.prior_approval(t) \
                 and not devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V120):
             return "{}는 알림으로 지나가지 않는다(승인대기로)".format(kind)
-        why = judges() or stage_end()
+        why = judges() or stage_end() or commit_first_problem(run_dir, t)
         if why:
             return why
         if kind not in kinds.STAGE_KINDS and devflow_lib.prior_approval(t) \
