@@ -19,6 +19,7 @@
 | 선택지 문장의 자리 | `references/formats/result-file.md` 「정해 주실 것」 틀 | `test_option_text_*` |
 | 답 꼴 | `references/main/approval.md` 「묻는 방법」 | `test_answer_forms_*` |
 | 전제 셋 이내 | `screen-cells.md` 「전제와 정한 것」 | `test_premise_cap_*` |
+| 고침 답의 기록 꼴 | `references/main/approval.md` 「답의 처리」 표의 「산출물을 바꾸는 답」 행 | `test_fix_record_*` |
 """
 import re
 from datetime import datetime
@@ -31,6 +32,7 @@ import kinds
 import plain_text
 import report
 import screen
+import task_set
 from conftest import ROOT, run_script, write
 from test_boundary_report import DESIGN, V130, judged, result as screen_result
 from test_domain_paths import RUN_JUDGE
@@ -516,3 +518,26 @@ def test_premise_cap_counts_from_the_line_after_the_cap():
     rows = lib.premise_rows(text)
     assert [bool(r["problem"]) for r in rows] == [False] * cap + [True]
     assert premise_cap_word() in rows[-1]["problem"] and "전{}".format(cap + 1) in rows[-1]["problem"]
+
+
+# ---------------------------------------------------------------- 고침 답의 기록 꼴 (HB-51)
+
+def fix_record_form():
+    """approval.md 「답의 처리」 표의 「산출물을 바꾸는 답」 행에 적힌 고침 지점의 `--record` 꼴."""
+    rows = [l for l in lines_with(APPROVAL, "--record \"고침|") if l.startswith("| 산출물을 바꾸는 답")]
+    assert len(rows) == 1, rows
+    forms = re.findall(r"`(--record \"고침\|[^`]*)`", rows[0])
+    assert len(forms) == 1, rows[0]
+    return forms[0]
+
+
+def test_fix_record_form_is_shown_by_the_approval_point_rejection(run_dir):
+    """승인 지점에 적은 고침 답의 거부 문구가 문서의 꼴을 그대로 보이고, 그 꼴을 채운 답은 받는다."""
+    form = fix_record_form()
+    run_dir.task("T001", "기록 꼴", status="승인대기", started_version="1.3.0", rules="2")
+    p = run_script("task_set", run_dir.path, "T001", "--record", "승인|2(가)로 고침|2가 고쳐")
+    assert p.returncode == 3 and form in p.output, p.output
+    assert form in task_set.FIX_ON_APPROVAL
+    raw = fill(form, 결정="2(가)로 고침", 원문="2가 고쳐")[len("--record "):].strip('"')
+    p = run_script("task_set", run_dir.path, "T001", "--record", raw)
+    assert p.returncode == 0, p.output

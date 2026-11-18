@@ -32,6 +32,7 @@
                      탐침에 stage=기록을 주면 judge.md(계획 판정)를 judge.plan.md로 옮긴다(이미 있으면 거부).
   --record "지점|결정|원문"  「승인 기록」에 `- {시각} | 지점 | 결정 | 원문: "…"`. 지점이 `알림`이고 원문이 비면
                      `원문: (알림, 답 없음)`. `점검 확인|{코드}|원문`은 그 기록 점검 걸림을 다시 찍지 않게 한다.
+                     알림 밖 지점의 빈 원문과 승인 지점의 고침·보류 답은 종료 코드 3(고침 답은 `고침|{결정}|{원문}`).
   --reuse-answer "이유"  (--record와 함께만) 1.1.0 이상으로 시작한 task의 승인 원문이 한 마디 답이 아니고, 이 task의
                      승인 요청 전에 다른 task의 승인 줄과 같으면 --record는 종료 코드 3이다. 그 답을 다시 쓰는 것이 맞을 때
                      이것을 붙이면 승인 줄 끝에 `| 재사용 답: {이유}`, 「표 밖 전이」와 journal에 한 줄(그 답으로는 얼리지 않음).
@@ -729,6 +730,22 @@ def parse_record(raw):
     return tuple(parts)
 
 
+# 기록 관문(HB-51): 쓰는 때만 막는다. 이미 쓰인 옛 줄의 판별(devflow_lib.approval_line)은 그대로다
+EMPTY_TEXT = '원문이 비었음: --record "지점|결정|사용자 원문"'
+FIX_RECORD = '--record "고침|{결정}|{원문}"'   # references/main/approval.md 「산출물을 바꾸는 답」 행과 같은 글자
+FIX_ON_APPROVAL = "고침·보류 답은 승인 지점으로 적지 않는다: " + FIX_RECORD
+
+
+def record_problem(rec):
+    """적기 전에 거를 꼴: 알림 밖 지점의 빈 원문, 승인 지점에 적은 고침·보류 답. 문제가 없으면 None."""
+    point, decision, text = rec
+    if point != "알림" and not text:
+        return EMPTY_TEXT
+    if point == "승인" and ("고침" in decision or "보류" in decision):
+        return FIX_ON_APPROVAL
+    return None
+
+
 def record_line(rec):
     point, decision, text = rec
     if point == "알림" and not text:
@@ -1230,6 +1247,8 @@ def park_drop(run_dir, t, doc, tasks, opts):
     rec = parse_record(opts["--record"]) if "--record" in opts else None
     if rec is None or not rec[2]:
         raise Reject("--park-drop은 원문이 있는 --record와 함께(사람 답으로만 표지를 뗀다)")
+    if record_problem(rec):
+        raise Reject(record_problem(rec))
     names = PARK_KEYS + ("parked_pending", "park_applying")
     owner, owner_doc = t, doc
     if not any((doc.get(k) or "").strip() for k in names):
@@ -1771,6 +1790,8 @@ def main(argv):
         why = check_transition(run_dir, t, old, new, dict(ctx, archived=bool(opts.get("--archive-judge"))))
         if why and not (opts.get("--unlisted") and isinstance(why, Unlisted)):
             raise Reject(why + UNLISTED_ONLY if opts.get("--unlisted") else why)
+        if rec and record_problem(rec):   # 전이 관문의 더 자세한 거부(위험 수용 답 꼴 등)가 앞선다
+            raise Reject(record_problem(rec))
         if "--reuse-answer" in opts and rec is None:
             raise Reject("--reuse-answer는 --record와 함께")
         if rec and rec[0] == devflow_lib.HANDED_POINT and "--status" in opts:

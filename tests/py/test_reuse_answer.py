@@ -181,3 +181,13 @@ def test_short_answer_boundary(lib):   # (카)
         assert lib.short_answer(text) is True, text
     assert lib.short_answer(ELEVEN) is False
     assert lib.short_answer(ELEVEN + " (Recommended)") is False
+
+
+def test_fix_point_is_written_and_is_not_an_approval_line(run_dir, lib):   # HB-51 AC-02: 고침 지점
+    """`고침|{결정}|{원문}`은 받고, 그 줄은 승인이 아니라서 다른 task의 같은 원문과도 견주지 않는다."""
+    path = setup(run_dir)
+    proc = run_script("task_set", run_dir, "T002", "--record", "고침|2(가)로 고침|" + ELEVEN)
+    assert proc.returncode == 0, proc.output
+    line = records(path)[-1]
+    assert line.endswith('| 고침 | 2(가)로 고침 | 원문: "{}"'.format(ELEVEN))
+    assert lib.approval_line(line) is False

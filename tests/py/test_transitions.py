@@ -1096,3 +1096,68 @@ def test_probe_default_cwd_is_flow_dir_then_project(run_dir):
     tasks = run_dir.tasks()
     assert execmod.default_cwd(str(run_dir), tasks, t, "실행승인") == "F:/flow-dir"
     assert execmod.default_cwd(str(run_dir), tasks, t2, "실행승인") == "P:/project"
+
+
+# ================================================================ 기록 관문 (HB-51, 설계 harness-defects 5절 B1, AC-01·AC-02)
+
+V130 = {"started_version": "1.3.0", "rules": "2"}
+OLD_EMPTY_TEXT = '- 2026-11-17 06:30:09 | 승인 | 승인 | 원문: ""'   # 관문 전에 쓰인 옛 줄(T002 승인 기록 꼴)
+OLD_FIX_ON_APPROVAL = '- 2026-11-17 06:30:09 | 승인 | 2(가)로 고침 | 원문: "2가 고쳐"'
+
+
+def approval_records(run_dir, tid="T001"):
+    text = (run_dir.task_dir(tid) / "task.md").read_text(encoding="utf-8")
+    return [l for l in text.split("## 승인 기록", 1)[1].splitlines() if l.startswith("- ")]
+
+
+def record_cli(run_dir, raw):
+    make(run_dir, status="승인대기", **V130)
+    before = (run_dir.task_dir("T001") / "task.md").read_bytes()
+    return run_script("task_set", run_dir, "T001", "--record", raw), before
+
+
+@pytest.mark.parametrize("raw", ["승인|실행 승인|", "승인|실행 승인", "되물음(이해)|무엇|", "점검 확인|R3|  "])
+def test_record_without_original_text_is_rejected_outside_notify(run_dir, raw):
+    p, before = record_cli(run_dir, raw)
+    assert p.returncode == 3, p.output
+    assert task_set.EMPTY_TEXT in p.output
+    assert (run_dir.task_dir("T001") / "task.md").read_bytes() == before
+    assert approval_records(run_dir) == []
+
+
+def test_notify_record_without_original_text_is_still_written(run_dir):
+    p, _ = record_cli(run_dir, "알림|끝")
+    assert p.returncode == 0, p.output
+    assert [l.split(" | ", 1)[1] for l in approval_records(run_dir)] == ["알림 | 끝 | 원문: (알림, 답 없음)"]
+
+
+@pytest.mark.parametrize("raw", ["승인|2(가)로 고침|원문", "승인|보류|원문"])
+def test_fix_or_hold_answer_on_approval_point_is_rejected(run_dir, raw):
+    p, before = record_cli(run_dir, raw)
+    assert p.returncode == 3, p.output
+    assert task_set.FIX_ON_APPROVAL in p.output and "고침|" in p.output
+    assert (run_dir.task_dir("T001") / "task.md").read_bytes() == before
+
+
+def test_fix_answer_on_approval_point_is_rejected_on_park_drop_too(run_dir):
+    """`--park-drop --record`도 같은 관문을 지난다(표지를 찾기 전에 거른다)."""
+    make(run_dir, status="보류", parked="T001 patch.diff", **V130)
+    before = (run_dir.task_dir("T001") / "task.md").read_bytes()
+    p = run_script("task_set", run_dir, "T001", "--park-drop", "--record", "승인|2(가)로 고침|원문")
+    assert p.returncode == 3, p.output
+    assert task_set.FIX_ON_APPROVAL in p.output
+    assert (run_dir.task_dir("T001") / "task.md").read_bytes() == before
+
+
+def test_approval_point_with_plain_decision_is_written(run_dir):
+    """대조: 같은 지점에서 결정 칸에 고침·보류가 없고 원문이 있으면 그대로 적는다."""
+    p, _ = record_cli(run_dir, "승인|실행 승인|진행해 주세요")
+    assert p.returncode == 0, p.output
+    assert approval_records(run_dir)[-1].endswith('| 승인 | 실행 승인 | 원문: "진행해 주세요"')
+
+
+def test_old_lines_written_before_the_gate_are_read_as_before(lib):
+    """관문은 쓰는 때만 막는다. 옛 줄의 승인 판별(approval_line)은 그대로다(설계 2절 첫 행)."""
+    assert lib.approval_line(OLD_EMPTY_TEXT) is True
+    assert lib.approval_line(OLD_FIX_ON_APPROVAL) is True
+    assert lib.prior_approval({"_sections": {"승인 기록": OLD_EMPTY_TEXT}}) is True
