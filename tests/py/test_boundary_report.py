@@ -393,3 +393,32 @@ def test_author_growth_question_replaces_the_fallback(run_dir):
     assert "사진 수정을 내려면 배포 검사부터" in out
     assert "하네스가 만든 질문" not in out and "! 늘어남 질문 없음" not in out
     assert out.count("[늘어남]") >= 1 and "늘어난 일을 이번 실행에 붙일지 따로 뗄지" not in out
+
+
+# ---------------------------------------------------------------- 커밋한 코드 task의 즉시 질문 (HB-50 나머지, 설계 harness-defects 5절 B3, AC-05, D-09)
+
+def committed_instant(run_dir, commit):
+    """1.3.1에 시작해 커밋한 뒤 묻는 구현 T001과, 같은 흐름에서 승인 요청 뒤에 시작한 T002."""
+    run_dir.task("T001", "커밋한 구현", kind="implementation", block="구현", status="승인대기", flow="s1", commit=commit,
+                 started="2026-11-18 10:00:00", approval_requested="2026-11-18 11:00:00",
+                 started_version="1.3.1", rules="2")
+    run_dir.result("T001", result(decide="- 오류 문구를 어디에 둘지: (가) 위 / (나) 아래 [성질: 없음]"))
+    judged(run_dir)
+    run_dir.task("T002", "뒤에 시작한 구현", kind="implementation", block="구현", status="진행", flow="s1",
+                 started="2026-11-18 11:30:00")
+    p = run_script("screen", run_dir.path, "T001")
+    assert p.returncode == 0, p.output
+    lines = p.stdout.splitlines()
+    assert lines[0] == "[구현 중] 커밋한 구현", p.stdout   # 새 화면의 즉시 질문이다(양성 대조)
+    return lines
+
+
+def test_committed_code_task_instant_question_shows_commit_lines(run_dir):
+    lines = committed_instant(run_dir, "abc1234def5678")
+    assert screen.COMMITTED_HINT.format("abc1234") in lines
+    assert screen.COMMITTED_ON.format("T002") in lines
+
+
+def test_uncommitted_code_task_instant_question_has_no_commit_lines(run_dir):
+    lines = committed_instant(run_dir, "")
+    assert not [l for l in lines if l.startswith((screen.COMMITTED_HINT.split("{}")[0], screen.COMMITTED_ON.split("{}")[0]))]

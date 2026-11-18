@@ -75,6 +75,7 @@
                      판정을 모두 통과한 원인 분석(등록표 REPRO_PATCH_KINDS, 자체검증·승인대기)이면 `repro_patch`(tasks\\{id}\\repro.patch).
                      그 밖과, 패치에 담기지 않거나 패치에 없는 내용이 있거나, `.gitignore`를 바꿨거나, 같은 폴더에 쓰는 다른 task가 돌거나
                      변경을 쥐고 있으면 종료 코드 3(코드 폴더 그대로). 끊긴 치우기는 상태와 상관없이 잇는다.
+                     커밋한 코드 task는 종료 코드 3과 되돌림 수정 task(origin `보류 {id} 되돌림`, `git revert --no-commit`) 안내.
   --unpark           치운 변경을 그 task의 코드 폴더에 다시 붙이고 표지를 비운다. 자기 표지, 없으면 부모를 따라 올라가 만난 재현 패치를 본다.
                      →진행 전이도 같은 일을 먼저 한다(원인 분석 자손의 코드 task는 대기→진행 때). 충돌, 패치 전체 실패, 어긋남은
                      종료 코드 3(표지와 상태 그대로). 충돌을 푼 뒤(`git add`) 다시 부르면 표지를 비운다. `park_applying`이 그 근거다.
@@ -1036,19 +1037,24 @@ PARK_PENDING = "치우기가 끊긴 채임({} parked_pending: {}): task_set.py {
 PARK_BACKLOG = "치운 변경이 있어 백로그로 닫지 않는다({}): 표지가 끝남을 막는다. 사람 답으로 --park-drop --record 뒤 닫는다"
 PARK_NO_FOLDER = "코드 폴더를 찾지 못함(flows\\{}\\flow.md dir)"
 PATCH_STEMS = {"repro_patch": "repro", "parked": "parked"}
+PARK_COMMITTED = ("이미 커밋한 task는 치우지 않는다(커밋 전의 변경만). 보류하려면 같은 흐름에 되돌림 수정 task를 만든다: "
+                  "new --kind fix --flow {{흐름}} --origin \"{origin}\", 범위 `git revert --no-commit {commit}`"
+                  "(references/kinds/implementation/main-order.md 「보류」)")
 
 
 def park_key(t):
     """`--park`가 적을 표지 키. 치울 수 없는 task면 거부한다(통과하지 못하고 승인을 기다리는 task는 치우지 않는다, 설계 3절)."""
     kind, status = t.get("kind", ""), t.get("status", "")
-    if not devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V120):
-        raise Reject("치워 두기는 1.2.0부터 시작한 task만(이 task: {})".format(t.get("started_version") or "판본 없음"))
     if kind in kinds.STAGE_KINDS:
         raise Reject("{}는 치우지 않는다(병합 중인 폴더는 그 kind의 순서를 따른다)".format(kind))
     if not board.writes(t):
         raise Reject("코드 폴더에 쓰는 task만 치운다({})".format(kind))
-    if str(t.get("commit", "") or "").strip():
-        raise Reject("이미 커밋한 task는 치우지 않는다(커밋 전의 변경만)")
+    commit = str(t.get("commit", "") or "").strip()
+    if commit:
+        # 커밋한 변경은 패치로 뜰 것이 없다. 보류는 그 커밋을 되돌리는 수정 task로 한다(판본과 상관없이 같은 안내)
+        raise Reject(PARK_COMMITTED.format(commit=commit, origin=board.REVERT_ORIGIN.format(t["id"])))
+    if not devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V120):
+        raise Reject("치워 두기는 1.2.0부터 시작한 task만(이 task: {})".format(t.get("started_version") or "판본 없음"))
     if status == "보류":
         return "parked"
     if kind in kinds.REPRO_PATCH_KINDS and status in ("자체검증", "승인대기"):

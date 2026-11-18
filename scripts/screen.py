@@ -109,6 +109,8 @@ METHOD_HEAD = "■ 자체 검증의 확인 방법: {}"
 FAILED_HEAD = "■ 자체 검증에서 통과 못 한 기준"
 COMMIT_HINT = ("커밋: 변경 task로 고침·원인 분석을 고르면 지금 변경을 커밋한 위에서 고칩니다. "
                "보류를 고르면 커밋하지 않은 변경을 패치로 치울지 함께 묻습니다.")
+COMMITTED_HINT = "커밋: 이미 커밋함({}). 고침은 그 위에 쌓습니다"   # 커밋한 코드 task(앞 7자)
+COMMITTED_ON = "이 커밋 위에서 시작한 task: {}"
 FLOOR_ALERT = "! 재개 바닥 {}K({}K 이상): 하네스 밖 도구 정의가 큼. 이 프로젝트에 필요 없는 MCP 서버를 끄면 줄어듦"
 FLOOR_NOTED = "바닥 알림 {}K"   # floor_alert가 앞부분으로 이미 알렸는지 읽는다
 # 탐침 알림을 막는 이유 셋(probe_block). 시험이 같은 상수로 기대값을 만든다
@@ -730,6 +732,22 @@ def decided_lines(t, lines):
     return ["- ◇ " + line[2:] if line.startswith("- ") and not line[2:].startswith("◇") else line for line in lines]
 
 
+def committed_lines(tasks, t):
+    """커밋한 코드 task의 화면 줄(D-09): 고침은 그 커밋 위에 쌓인다는 줄과, 같은 흐름에서 이 task의 승인 요청 뒤에
+    시작한 task(그 커밋 위에서 돈다. 보류해 되돌리면 함께 영향을 받는다, references/kinds/implementation/main-order.md 「보류」)."""
+    sha = str(t.get("commit", "") or "").strip()
+    if not sha:
+        return []
+    out = [COMMITTED_HINT.format(sha[:7])]
+    asked, flow = board._epoch(t.get("approval_requested")), t.get("flow", "")
+    if asked is not None and flow:
+        later = sorted(o["id"] for o in tasks.values() if o.get("id") != t.get("id") and o.get("flow") == flow
+                       and (board._epoch(o.get("started")) or 0) > asked)
+        if later:
+            out.append(COMMITTED_ON.format(", ".join(later)))
+    return out
+
+
 def build(run_dir, tid, tasks=None):
     """화면 재료를 계산한다. 출력 없이 dict를 돌려준다(task_set.py가 알림 조건을 볼 때도 쓴다)."""
     tasks = tasks or devflow_lib.load_tasks(run_dir)
@@ -840,8 +858,9 @@ def build(run_dir, tid, tasks=None):
     blocked = blocked or bool(judgment) or bool(sources)
     code_task = t.get("kind") in kinds.AUTO_DEPEND_KINDS
     judged = sum(counts.values())
-    commit_hint = []
-    if code_task and devflow_lib.item_count(failed) and not str(t.get("commit", "")).strip() and not devflow_lib.no_change(t):
+    committed = committed_lines(tasks, t) if code_task else []
+    commit_hint = list(committed)
+    if code_task and devflow_lib.item_count(failed) and not committed and not devflow_lib.no_change(t):
         # 통과 못 한 코드 task는 사람이 답해 완료될 때 커밋한다(SKILL.md 6절 「커밋」)
         commit_hint.append(COMMIT_HINT)
     if devflow_lib.item_count(failed) and t.get("status") == "승인대기":
@@ -898,6 +917,7 @@ def build(run_dir, tid, tasks=None):
         "judge_top": judge_top, "counts": counts, "criterion": criterion, "kids": kids, "moved": moved,
         "move_failed": move_failed, "notify_ok": notify_ok and notify_kind, "notify_kind": notify_kind,
         "code_task": code_task, "user_answer": user_answer, "judged": judged, "notes": notes, "identity": identity, "env_n": env_n, "commit_hint": commit_hint,
+        "committed": committed,
         "facts": facts, "claims": claims, "judges_ok": judges_ok, "judges_why": judges_why,
         "resource_wait": resource_wait, "infra_paths": infra_paths, "probe_block": probe_why,
         "risky": risky, "contract": contract, "v120": v120, "judgment": judgment, "sources": sources, "review": review,
@@ -1940,6 +1960,10 @@ def old_human(run_dir, tid, b, waiting):
         print(failed)
         for line in b["commit_hint"]:
             print("  " + line)
+    elif b["committed"]:
+        print()
+        for line in b["committed"]:
+            print(line)
     if not b["judges_ok"]:
         print()
         print("■ 판정 미완료")

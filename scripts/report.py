@@ -347,6 +347,8 @@ def instant(run_dir, b, extra=None):
     if material:
         out.append(_short(material[0], 70))
     out += _blocking(b)
+    if b.get("committed"):   # 커밋한 코드 task: 고침은 그 커밋 위에 쌓인다(D-09)
+        out += [""] + b["committed"]
     later = sum(1 for i in _items(b["screen"].get("알릴 것", "")) if i[0].startswith(NEXT_MARK))
     if later:
         out.append("독립 확인이 짚은 것 {}건은 다음 경계 보고에서 묻습니다".format(later))

@@ -247,3 +247,38 @@ def test_c_ba_mark_with_required_judge_files_is_not_shown(run_dir):
 
     assert board.RESUME_STATUS.format("자체검증") in line   # 같은 task 줄이 나왔다(양성 대조)
     assert board.MARK_NOTE.split("{}")[0] not in line
+
+
+# --- 커밋한 코드 task의 화면 줄 (HB-50 나머지, 설계 harness-defects 5절 B3, AC-05, D-09, 옛 화면) ----------------
+
+def committed_flow(run_dir, commit="abc1234def5678"):
+    """승인을 기다리는 구현 T001(옛 화면)과 같은 흐름에서 승인 요청 뒤(T002)·앞(T003)에 시작한 task, 다른 흐름 T004."""
+    run_dir.task("T001", "커밋한 구현", kind="implementation", block="구현", flow="s1", status="승인대기", commit=commit,
+                 started="2026-10-30 10:00:00", approval_requested="2026-10-30 11:00:00")
+    run_dir.result("T001", RESULT)
+    run_dir.judge("T001", JUDGE_OK)
+    run_dir.task("T002", "뒤에 시작한 구현", kind="implementation", block="구현", flow="s1", status="진행",
+                 started="2026-10-30 11:30:00")
+    run_dir.task("T003", "앞에 시작한 구현", kind="implementation", block="구현", flow="s1", status="완료",
+                 started="2026-10-30 09:00:00")
+    run_dir.task("T004", "다른 흐름 구현", kind="implementation", block="구현", flow="s2", status="진행",
+                 started="2026-10-30 11:40:00")
+
+
+def test_committed_code_task_old_screen_shows_commit_and_tasks_started_on_it(run_dir):
+    committed_flow(run_dir)
+
+    lines = screen_lines(run_dir)
+
+    assert screen.COMMITTED_HINT.format("abc1234") in lines
+    assert screen.COMMITTED_ON.format("T002") in lines   # T003(앞에 시작)·T004(다른 흐름)는 들지 않는다
+    assert not [l for l in lines if screen.COMMIT_HINT in l]
+
+
+def test_uncommitted_code_task_old_screen_has_no_commit_lines(run_dir):
+    committed_flow(run_dir, commit="")
+
+    lines = screen_lines(run_dir)
+
+    assert counts_index(lines) > 0   # 화면은 끝까지 나왔다(양성 대조)
+    assert not [l for l in lines if l.startswith((screen.COMMITTED_HINT.split("{}")[0], screen.COMMITTED_ON.split("{}")[0]))]

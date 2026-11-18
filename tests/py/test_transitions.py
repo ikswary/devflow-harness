@@ -16,6 +16,7 @@ from datetime import datetime
 
 import pytest
 
+import board
 import devflow_lib
 import exec as execmod
 import kinds
@@ -1262,3 +1263,45 @@ def test_gate_reads_pass_from_screen_build(run_dir, monkeypatch, built, refused)
     monkeypatch.setattr(screen, "build", lambda run, tid, tasks=None: dict(built))
     why = check(run_dir, t, "자체검증", "승인대기")
     assert why == (task_set.COMMIT_FIRST.format("T001") if refused else None)
+
+
+# ================================================================ 커밋한 코드 task의 보류 (HB-50 나머지, 설계 harness-defects 5절 B3, AC-04, D-07)
+
+def git_folder(path):
+    """커밋 하나가 있는 임시 git 저장소(치우기는 실제 git으로 뜨고 되돌린다)."""
+    path.mkdir()
+    for args in (["init", "-q"], ["config", "user.email", "t@example.com"], ["config", "user.name", "t"],
+                 ["config", "core.autocrlf", "false"]):
+        subprocess.run(["git", "-C", str(path)] + args, check=True, capture_output=True)
+    write(path / "a.txt", "하나\n")
+    for args in (["add", "-A"], ["commit", "-q", "-m", "init"]):
+        subprocess.run(["git", "-C", str(path)] + args, check=True, capture_output=True)
+    return path
+
+
+def held_code(run_dir, folder, **more):
+    run_dir.flow("f", dir=str(folder), status="진행")
+    run_dir.task("T001", "보류한 구현", kind="implementation", block="구현", status="보류", flow="f",
+                 started="2026-11-18 10:00:00", **dict(V131, **more))
+
+
+def test_park_of_a_committed_code_task_is_refused_with_the_revert_fix(run_dir, tmp_path):
+    held_code(run_dir, git_folder(tmp_path / "code"), commit="abc1234def5678")
+    before = (run_dir.task_dir("T001") / "task.md").read_bytes()
+    p = run_script("task_set", run_dir, "T001", "--park")
+    assert p.returncode == 3, p.output
+    assert "되돌림" in p.output
+    assert board.REVERT_ORIGIN.format("T001") in p.output and "git revert --no-commit abc1234def5678" in p.output
+    assert (run_dir.task_dir("T001") / "task.md").read_bytes() == before
+
+
+def test_park_of_an_uncommitted_held_code_task_is_taken_as_before(run_dir, tmp_path):
+    """대조: commit이 빈 보류 구현은 지금처럼 변경을 패치로 치운다."""
+    folder = git_folder(tmp_path / "code")
+    held_code(run_dir, folder)
+    write(folder / "a.txt", "하나(고침)\n")
+    p = run_script("task_set", run_dir, "T001", "--park")
+    assert p.returncode == 0, p.output
+    assert "되돌림" not in p.output
+    assert front_value(run_dir, "parked").startswith("tasks/T001/parked.patch ")
+    assert (folder / "a.txt").read_text(encoding="utf-8") == "하나\n"

@@ -11,6 +11,7 @@ from datetime import datetime
 import pytest
 from conftest import run_script, write
 
+import board
 import collect
 
 DAY = "2026-10-30 "
@@ -496,3 +497,38 @@ def test_put_segment_is_idempotent_with_one_same_flow_piece():
             not_one.append((cell, once))
     assert not not_idem and not not_one, "{}칸 중 멱등 깨짐 {}칸 {!r}, 같은 흐름 조각이 하나가 아님 {}칸 {!r}".format(
         len(cells), len(not_idem), not_idem[:5], len(not_one), not_one[:5])
+
+
+# --- 커밋한 보류 구현과 되돌림 수정 (HB-50 나머지, 설계 harness-defects 5절 B3, AC-04, D-08) ------------------
+
+def flow_verify_reasons(run_dir, commit, fix_origin):
+    """보류한 구현 T001, 같은 흐름의 완료된 수정 T002, T002에 의존하는 흐름별 검증 T003. `board.py --ready`의 T003 줄."""
+    run_dir.task("T001", "보류한 구현", kind="implementation", block="구현", flow="context", status="보류",
+                 commit=commit, started=DAY + "10:00:00")
+    run_dir.task("T002", "수정", kind="fix", block="구현", flow="context", status="완료", origin=fix_origin,
+                 commit="def5678", started=DAY + "11:00:00", approved=DAY + "11:30:00")
+    run_dir.task("T003", "흐름별 검증", kind="flow-verify", block="검증", flow="context", status="대기", depends_on=["T002"])
+    r = run_script("board", run_dir, "--ready")
+    assert r.returncode == 0, r.output
+    line = [l for l in r.stdout.splitlines() if l.startswith("- T003 ")]
+    assert len(line) == 1, r.output   # T003이 목록에 나왔다(양성 대조)
+    return line[0]
+
+
+@pytest.mark.parametrize("commit,fix_origin", [
+    ("abc1234", board.REVERT_ORIGIN.format("T001")),
+    ("abc1234", "사용자 T001 2026-10-30 10:50:00 " + board.REVERT_ORIGIN.format("T001")),   # --from-answer가 앞에 붙인 꼴
+])
+def test_held_commit_with_a_done_revert_fix_is_not_a_held_implementation(run_dir, commit, fix_origin):
+    line = flow_verify_reasons(run_dir, commit, fix_origin)
+    assert "보류된 구현 있음" not in line
+
+
+@pytest.mark.parametrize("commit,fix_origin", [
+    ("", ""),                                           # commit 빈 보류 구현(지금 그대로)
+    ("abc1234", ""),                                    # 되돌림 수정이 없음
+    ("abc1234", board.REVERT_ORIGIN.format("T0011")),   # 다른 task의 되돌림
+])
+def test_held_implementation_without_its_revert_fix_still_asks(run_dir, commit, fix_origin):
+    line = flow_verify_reasons(run_dir, commit, fix_origin)
+    assert "보류된 구현 있음: T001 " in line

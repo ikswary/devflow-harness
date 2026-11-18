@@ -20,6 +20,7 @@
   python board.py {작업 공간} --backlog       작업 공간의 모든 실행에서 남은 백로그
 """
 import os
+import re
 import sys
 
 import delegation
@@ -44,6 +45,18 @@ PARK_NOTE = "치운 변경 {}: {}"
 PARK_DROP_HINT = " (백로그로 닫으려면 사람 답으로 --park-drop --record)"
 PARK_CONFLICT_BLOCK = "치운 변경 충돌 중: {}"
 PARK_CUT_BLOCK = "치우다 끊긴 task: {}"
+# 커밋한 코드 task를 보류할 때 메인이 만드는 되돌림 수정의 origin(references/kinds/implementation/main-order.md 「보류」)
+REVERT_ORIGIN = "보류 {} 되돌림"
+
+
+def reverted(tasks, t):
+    """커밋한 코드 task이고, 같은 흐름에 origin이 `보류 {id} 되돌림`인 수정이 `완료`면 참(그 커밋은 되돌려졌다).
+    origin 앞에 `사용자 {T} {시각}`이 붙은 꼴(new --from-answer)도 같은 낱말 묶음으로 찾는다."""
+    if not str(t.get("commit", "") or "").strip():
+        return False
+    mark = re.compile(r"(?<!\S){}(?!\S)".format(re.escape(REVERT_ORIGIN.format(t.get("id", "")))))
+    return any(o.get("kind") == "fix" and o.get("status") == kinds.DONE and o.get("flow") == t.get("flow")
+               and mark.search(str(o.get("origin", "") or "")) for o in tasks.values())
 
 
 def blocked_ids(tasks, tid):
@@ -375,7 +388,7 @@ def start_blocks(tasks, flows, cap, t, holds=None):
         if left:
             why.append("흐름 코드 task 남음: " + ", ".join(left))
         held = [o["id"] for o in code if o.get("kind") in kinds.IMPLEMENT_KINDS
-                and (o.get("status") == "보류" or o["id"] in holds)]
+                and (o.get("status") == "보류" or o["id"] in holds) and not reverted(tasks, o)]
         if held and not left and str(t.get("partial_flow", "")).strip().lower() not in ("true", "예"):
             why.append("보류된 구현 있음: {} — 묻기: (가) 이 흐름 보류 / (나) 남은 것만 검증(--record 뒤 partial_flow=true)".format(
                 ", ".join(held)))
