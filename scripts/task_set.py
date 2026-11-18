@@ -736,12 +736,17 @@ FIX_RECORD = '--record "고침|{결정}|{원문}"'   # references/main/approval.
 FIX_ON_APPROVAL = "고침·보류 답은 승인 지점으로 적지 않는다: " + FIX_RECORD
 
 
+def proceed_answer(decision):
+    """1.3.0 경계 보고의 `진행`·`진행, 단 …`. 조건 글에 `보류`가 있어도 승인이다(approval_line과 같은 판별)."""
+    return decision == "진행" or bool(re.match(r"진행,\s*단\s+\S|진행\s*[(:]", decision))
+
+
 def record_problem(rec):
     """적기 전에 거를 꼴: 알림 밖 지점의 빈 원문, 승인 지점에 적은 고침·보류 답. 문제가 없으면 None."""
     point, decision, text = rec
     if point != "알림" and not text:
         return EMPTY_TEXT
-    if point == "승인" and ("고침" in decision or "보류" in decision):
+    if point == "승인" and not proceed_answer(decision) and ("고침" in decision or "보류" in decision):
         return FIX_ON_APPROVAL
     return None
 

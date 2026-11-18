@@ -16,6 +16,7 @@ from datetime import datetime
 
 import pytest
 
+import devflow_lib
 import exec as execmod
 import kinds
 import screen
@@ -1137,6 +1138,22 @@ def test_fix_or_hold_answer_on_approval_point_is_rejected(run_dir, raw):
     assert p.returncode == 3, p.output
     assert task_set.FIX_ON_APPROVAL in p.output and "고침|" in p.output
     assert (run_dir.task_dir("T001") / "task.md").read_bytes() == before
+
+
+@pytest.mark.parametrize("raw", ["승인|진행, 단 T009 보류는 나중에|원문", "승인|진행|원문", "승인|진행(T009 보류 제외)|원문"])
+def test_proceed_answer_with_hold_word_is_written(run_dir, raw):
+    """`진행`·`진행, 단 …`은 조건 글에 `보류`가 있어도 승인 줄로 적고, approval_line도 같게 승인으로 본다(HB-51 예외)."""
+    p, _ = record_cli(run_dir, raw)
+    assert p.returncode == 0, p.output
+    lines = approval_records(run_dir)
+    assert len(lines) == 1
+    assert devflow_lib.approval_line(lines[0]) is True
+
+
+@pytest.mark.parametrize("decision", ["진행, 단 T009 보류는 나중에", "진행", "진행(고침 없음)"])
+def test_record_gate_and_approval_line_agree_on_proceed_answers(decision):
+    assert task_set.record_problem(("승인", decision, "원문")) is None
+    assert devflow_lib.approval_line('- 2026-11-18 10:00:00 | 승인 | {} | 원문: "원문"'.format(decision)) is True
 
 
 def test_fix_answer_on_approval_point_is_rejected_on_park_drop_too(run_dir):
