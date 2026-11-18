@@ -166,6 +166,32 @@ def test_outer_git_repo_vars_do_not_reach_snapshot(tmp_path, monkeypatch):
     assert git(code, "ls-tree", "-r", "--name-only", "HEAD").split() == ["app.txt"]
 
 
+def test_outer_git_config_hooks_do_not_run_in_snapshot(tmp_path, monkeypatch):
+    # `git -c core.hooksPath=…`로 도는 바깥 git의 설정(GIT_CONFIG_PARAMETERS)이 잡혀 있어도 사본 커밋에서 그 훅이
+    # 돌지 않고 시험용 코드 사본의 커밋에 사본의 파일이 든다
+    for name in load_setup().GIT_REPO_VARS:
+        monkeypatch.delenv(name, raising=False)
+    marker = tmp_path / "hook-ran.txt"
+    hook = write(tmp_path / "hooks" / "post-commit", '#!/bin/sh\necho ran >> "{}"\n'.format(marker.as_posix()))
+    os.chmod(hook, 0o755)
+    monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'core.hooksPath={}'".format(hook.parent.as_posix()))
+    probe = tmp_path / "probe"
+    probe.mkdir()
+    git(probe, "init", "-q")
+    git(probe, "-c", "user.name=probe", "-c", "user.email=probe@test", "-c", "commit.gpgsign=false",
+        "commit", "-q", "--allow-empty", "-m", "probe")
+    assert marker.is_file()   # 양성 대조: 이 변수로 준 훅이 실제로 돎
+    marker.unlink()
+    data = fake_data(tmp_path)
+    out = tmp_path / "out"
+    proc = run_setup(data, out)
+    monkeypatch.delenv("GIT_CONFIG_PARAMETERS")
+    assert proc.returncode == 0, proc.output
+    assert not marker.exists()
+    code = out / TARGET / "code"
+    assert git(code, "ls-tree", "-r", "--name-only", "HEAD").split() == ["app.txt"]
+
+
 def test_rerun_replaces_folder_with_marker(prepared):
     stray = prepared["out"] / TARGET / "stray.txt"
     stray.write_text("남은 것\n", encoding="utf-8")

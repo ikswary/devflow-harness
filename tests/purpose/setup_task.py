@@ -46,9 +46,14 @@ RESET_KEYS = (("status", "진행"), ("retry", "0"), ("judge_started", ""), ("app
               ("asked_at", ""), ("card_open", ""))
 RUN_SECTIONS = ("요청 원문", "이번 실행의 값")
 # 바깥 git(훅 안, git commit 도중에 도는 pytest)이 잡아 둔 저장소 지정 변수. 물려받으면 `-C`로 준 코드 사본이 아니라
-# 그 변수가 가리키는 저장소의 색인·객체에 쓰므로 git 하위 프로세스에는 넘기지 않는다
-GIT_REPO_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
-                 "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX")
+# 그 변수가 가리키는 저장소의 색인·객체·설정(`-c`로 준 훅 폴더 등)을 쓰므로 git 하위 프로세스에는 넘기지 않는다.
+# 목록은 git이 저장소를 바꿀 때 지우는 변수(`git rev-parse --local-env-vars`, git 2.55의 15개)에
+# 그 목록에 없지만 git이 받는 GIT_NAMESPACE·GIT_REFERENCE_BACKEND를 더한 것
+GIT_REPO_VARS = ("GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+                 "GIT_OBJECT_DIRECTORY", "GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_GRAFT_FILE",
+                 "GIT_INDEX_FILE", "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE", "GIT_PREFIX",
+                 "GIT_SHALLOW_FILE", "GIT_COMMON_DIR",
+                 "GIT_NAMESPACE", "GIT_REFERENCE_BACKEND")
 
 
 class Refuse(Exception):
