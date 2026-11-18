@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from conftest import write
+from conftest import run_script, write
 
 SID = "c2c2c2c2-0000-4000-8000-000000000000"
 
@@ -201,3 +201,54 @@ def test_stage_kind_run_log_is_not_r3(lib, run_dir, kind, after, want):
     assert ("merge" in lib.kinds.STAGE_KINDS) and ("implementation" not in lib.kinds.STAGE_KINDS)
     t = judged(lib, run_dir, HEAD, HEAD, kind=kind, result=after, snapshot=BEFORE, result_mtime=HEAD + 600)
     assert r3_files(lib, t) == want
+
+
+# (아) 단계 kind는 읽기 판정자의 반환이 result.md를 사본으로 떠 둔다(P-21 보강). `--screen-snapshot` 없이도 (사)가 작동한다
+
+def judge_returns(lib, run_dir, kind, stale=None):
+    """판정 뒤 `--returned rjudge-T003`. stale이면 앞 판정 때의 사본(지금 본문과 다름)을 먼저 둔다."""
+    t = judged(lib, run_dir, HEAD, HEAD, kind=kind, result=BEFORE, snapshot=stale)
+    proc = run_script("task_set", run_dir, "T003", "--returned", "rjudge-T003")
+    assert proc.returncode == 0, proc.output
+    return t
+
+
+def changed(run_dir, text):
+    """판정 뒤(첫 줄 시각 + 600초)에 result.md를 text로 바꾼다."""
+    write(run_dir.task_dir("T003") / "result.md", text)
+    os.utime(run_dir.task_dir("T003") / "result.md", (HEAD + 600,) * 2)
+
+
+@pytest.mark.parametrize("after, want", [(RUN_LOG_ONLY, []), (BODY_TOO, ["result.md"])], ids=["run-log", "body"])
+def test_stage_kind_judge_return_keeps_the_snapshot(lib, run_dir, after, want):
+    judge_returns(lib, run_dir, "merge")
+    changed(run_dir, after)
+    assert r3_files(lib, run_dir.tasks()["T003"]) == want
+    assert (run_dir.task_dir("T003") / "result.pre-screen.md").read_text(encoding="utf-8") == BEFORE
+
+
+def test_stage_kind_judge_return_replaces_an_older_snapshot(lib, run_dir):
+    """앞 판정 때 뜬 사본은 이번 판정이 본 본문이 아니다. 이번 반환이 덮어 판정 때 본 그대로와 견준다."""
+    judge_returns(lib, run_dir, "merge", stale=BODY_TOO)
+    changed(run_dir, RUN_LOG_ONLY)
+    assert r3_files(lib, run_dir.tasks()["T003"]) == []
+    assert (run_dir.task_dir("T003") / "result.pre-screen.md").read_text(encoding="utf-8") == BEFORE
+
+
+def test_other_kind_judge_return_keeps_no_snapshot(lib, run_dir):
+    """단계 kind가 아니면 고치기 전과 같다: 사본이 생기지 않고 「실행 기록」만 바뀌어도 R3다."""
+    judge_returns(lib, run_dir, "implementation")
+    assert not (run_dir.task_dir("T003") / "result.pre-screen.md").exists()
+    changed(run_dir, RUN_LOG_ONLY)
+    assert r3_files(lib, run_dir.tasks()["T003"]) == ["result.md"]
+
+
+def test_run_judge_return_keeps_no_snapshot(lib, run_dir):
+    """R3가 단계 kind의 result.md를 견주는 판정은 읽기 판정(judge.md)뿐이다. 실행 판정의 반환은 사본을 뜨지 않는다."""
+    judged(lib, run_dir, HEAD, HEAD, kind="wrap-up", result=BEFORE)
+    write(run_dir.task_dir("T003") / "judge-run.md", "판정자: xjudge-T003 {}\n".format(local(HEAD)))
+    proc = run_script("task_set", run_dir, "T003", "--returned", "xjudge-T003")
+    assert proc.returncode == 0, proc.output
+    # 양성 대조: 이 반환을 실행 판정(judge-run.md)의 반환으로 알아봤다. 판정자 이름 풀이가 어긋나 result.md 갈래로 빠지면 여기서 실패한다
+    assert set(lib.returned_pieces(run_dir.tasks()["T003"].get(lib.RETURNED_AT))) == {lib.kinds.JUDGE_FILES["run"]}
+    assert not (run_dir.task_dir("T003") / "result.pre-screen.md").exists()

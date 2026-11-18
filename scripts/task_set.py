@@ -1536,6 +1536,10 @@ def cmd_returned(run_dir, t, doc, name):
             pieces = devflow_lib.returned_pieces(doc.get(devflow_lib.RETURNED_AT))
             pieces[file_name] = now_str()
             doc.set(devflow_lib.RETURNED_AT, devflow_lib.returned_line(pieces))
+            res = os.path.join(t["_dir"], "result.md")
+            if t.get("kind") in kinds.STAGE_KINDS and file_name == kinds.JUDGE_FILES["read"] and os.path.isfile(res):
+                # 단계 kind는 판정 뒤 「실행 기록」을 덧붙인다(P-21). R3가 판정 때 본 본문과 견주도록 이 판정의 사본으로 덮는다
+                shutil.copyfile(res, os.path.join(t["_dir"], devflow_lib.SCREEN_SNAPSHOT))
         doc.save()
         return 0
     doc.set("returned_empty", "{} {}".format(now_str(), name))
@@ -1968,7 +1972,7 @@ def main(argv):
         if "--amend-criteria" in opts:
             amend_criteria(run_dir, t, doc, opts["--amend-criteria"], opts.get("--source"), tasks)
         if opts.get("--screen-snapshot"):
-            shutil.copyfile(res, os.path.join(t["_dir"], "result.pre-screen.md"))
+            shutil.copyfile(res, os.path.join(t["_dir"], devflow_lib.SCREEN_SNAPSHOT))
         if add_sec:
             doc.append_line(add_sec, add_line if add_line.startswith("- ") else "- " + add_line, before=["승인 기록"])
             if add_sec == "건드릴 파일":

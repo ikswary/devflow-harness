@@ -491,6 +491,9 @@ MTIME_SLACK = 60    # 초. 판정자가 첫 줄 시각을 쓴 뒤 파일을 닫�
 # 머리 키. `judge.md {시각}, judge-run.md {시각}`: 메인이 판정자 반환을 처리한 시각(`task_set.py --returned`, D-14).
 # R3는 판정 파일마다 max(첫 줄 시각, 이 값) + MTIME_SLACK 뒤의 수정만 잡는다(P-07). 값이 없으면 첫 줄 시각만 본다
 RETURNED_AT = "returned_at"
+# 판정 뒤의 result.md 사본. R3가 「승인 화면」(단계 kind는 「실행 기록」도) 밖만 견준다. `task_set.py --screen-snapshot`이 뜨고,
+# 단계 kind는 읽기 판정자의 `--returned`도 뜬다(P-21)
+SCREEN_SNAPSHOT = "result.pre-screen.md"
 ISOLATION_CONTRACT_VERSION = "1.0.1"
 RULES_V110 = "1.1.0"   # 1.1.0 판본 문턱. 이 판본부터 시작한 task에만 영역·판정 표지·재사용 거부 규칙을 적용한다
 RULES_V111 = "1.1.1"   # 이 판본부터 시작한 STAGE kind task에만 묻는 stage별 판정 요구(kinds.STAGE_JUDGES)를 건다
@@ -1760,7 +1763,7 @@ def record_check(t):
             readers.append(times["judge-run.md"])
         res = os.path.join(d, "result.md")
         if readers and os.path.isfile(res) and os.path.getmtime(res) > max(readers) + MTIME_SLACK:
-            snap = os.path.join(d, "result.pre-screen.md")
+            snap = os.path.join(d, SCREEN_SNAPSHOT)
             only_screen = False
             if os.path.isfile(snap):
                 a = sections(read_text(snap), level=2)
