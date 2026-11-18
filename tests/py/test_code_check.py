@@ -517,9 +517,24 @@ def two_judgments(run_dir, repo):
     ("b1 1, b2 3 판단 안 됨 호출", "b1=문제 없음 b2=판단 안 됨 호출"),
     ("b1,b2 문제 없음", "b1,b2=문제 없음"),
     ("1", "문제 없음"),
+    # HB-36: 글 답 뒤에 다른 판단이 더 와도 글이 그 판단까지 삼키지 않는다(사람이 쓴 원문)
+    ("b2 이 코드만 고침 : 잡는다, 올린다, b1 1", "b2=이 코드만 고침 : 잡는다, 올린다 b1=문제 없음"),
 ])
 def test_answers_per_judgment(run_dir, repo, text, want):
     got = two_judgments(run_dir, repo)
+    p = run_script("screen", run_dir.path, FV, "--answer", text)
+    assert p.returncode == 0, p.output
+    assert "코드 확인 {}|{}|".format(got[0]["key"], want) in p.stdout
+
+
+@pytest.mark.parametrize("text,want", [
+    ("b1 1, b2 2 이 코드만 고침 : X, b3 1", "b1=문제 없음 b2=이 코드만 고침 : X b3=문제 없음"),   # HB-36 사람이 쓴 원문
+    ("b1 1, b2 2 이 코드만 고침 : 잡는다, b 둘, b3 1", "b1=문제 없음 b2=이 코드만 고침 : 잡는다, b 둘 b3=문제 없음"),   # 판단 표지가 아닌 `b`는 글
+])
+def test_text_answer_in_the_middle_of_three_judgments(run_dir, repo, text, want):
+    got = one_place(run_dir, repo, "- 도우미 [종류: 구조] [위치: src/a.ts:3]\n- 오류 처리 [종류: 오류] [위치: src/a.ts:9]\n"
+                                   "- 재시도 [종류: 외부호출] [위치: src/a.ts:20]\n", "- 없음\n")
+    assert len(got[0]["판단"]) == 3, got
     p = run_script("screen", run_dir.path, FV, "--answer", text)
     assert p.returncode == 0, p.output
     assert "코드 확인 {}|{}|".format(got[0]["key"], want) in p.stdout

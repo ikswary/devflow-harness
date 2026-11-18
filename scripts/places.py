@@ -69,6 +69,7 @@ CELL_SPLIT = re.compile(r"\s\|\s")
 DECISION_TARGET = re.compile(r"(?:^|\s)(b\d+(?:,b\d+)*)=(?=" + "|".join(re.escape(n) for n in (FINE, FIX_ONLY, UNJUDGED)) + ")")
 PIECE_TARGET = re.compile(r"^(b\d+)(?:\s*=\s*|\s+)(\S.*)$")
 BARE_TARGET = re.compile(r"^b\d+$")
+NEXT_TARGET = re.compile(r",\s*(?=b\d+[\s=])")   # 글 답 뒤에 오는 다음 판단의 답(HB-36). 글 속의 `b 둘`·`b1,b2`는 끊지 않는다
 
 
 def _now():
@@ -936,6 +937,18 @@ def _value_text(value, text):
     return value
 
 
+def _card_pieces(text):
+    """카드 답의 조각. 공용 `_answer_pieces`는 `:`가 나온 조각을 줄 끝까지 글로 두므로(옛 화면 `고칠 것이 있음 : a, b`의 글 보호),
+    카드에서만 글 답 조각을 `, b{n} ` 앞에서 끊고 남은 조각을 다시 판단별 답으로 나눈다(HB-36)."""
+    out = []
+    for piece in devflow_lib._answer_pieces(text):
+        head, *rest = NEXT_TARGET.split(piece, maxsplit=1)
+        out.append(head.strip())
+        if rest:
+            out += _card_pieces(rest[0])
+    return out
+
+
 def resolve(place, text, tree_seen=False, has_code=True):
     """카드 답 원문을 푼다. {"show": "full"|"tree"} / {"decision": 결정 칸} / None(메인이 되묻는다).
     맨 숫자는 그 카드의 답 번호이고, 판단이 여럿이면 `b1 1, b2 이 코드만 고침 : …`처럼 판단마다 받는다."""
@@ -945,7 +958,7 @@ def resolve(place, text, tree_seen=False, has_code=True):
     numbers = [j["b"] for j in place["판단"]]
     rows, pending = [], []
     # 판단을 말하지 않은 글 답은 쉼표까지 글이다
-    for piece in [text] if TEXT_ANSWER_HEAD.match(text) else devflow_lib._answer_pieces(text):
+    for piece in [text] if TEXT_ANSWER_HEAD.match(text) else _card_pieces(text):
         if BARE_TARGET.match(piece):
             pending.append(piece)
             continue

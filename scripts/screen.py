@@ -650,8 +650,10 @@ def point_reason(why):
 
 
 def point_item(p, head="[독립 확인이 짚음]", source=""):
-    """짚음 하나를 질문 항목으로. 고치는 길이 있으면 첫 줄에 선택지로, 까닭·깨지는 조건은 하위 줄로."""
-    first = "- {} {}".format(head, p["text"]) + (": " + p["ways"] if p.get("ways") else "")
+    """짚음 하나를 질문 항목으로. 고치는 길이 있으면 첫 줄에 선택지로, 까닭·깨지는 조건은 하위 줄로.
+    고치는 길이 없으면 본문의 `(나)`는 선택지가 아니므로 전각 괄호 `（나）`로 실어 답 줄이 예·아니오가 되게 한다."""
+    text = p["text"] if p.get("ways") else CHOICE_LETTER.sub("（\\1）", p["text"])
+    first = "- {} {}".format(head, text) + (": " + p["ways"] if p.get("ways") else "")
     subs = ["  독립 확인: " + point_reason(p["why"])]
     if p.get("effects"):
         subs.append("  고르면: " + p["effects"])
@@ -1190,20 +1192,20 @@ def _answer_targets(piece):
 
 def _answer_value_fits(piece, items, new_screen=False):
     """일반 화면의 값 규칙. 숫자 값은 받지 않고, 글자는 그 항목의 선택지일 때만, `남김`은 일괄이나 항목 지정에서만 받는다.
-    새 화면은 선택지를 첫 줄에서만 보고, `예`·`아니오`는 선택지 글자가 없는 질문에만, `확인 먼저`·`펼쳐`는 어느 질문에나 받는다."""
+    `예`·`아니오`는 선택지 글자가 없는 질문에만 받는다. 새 화면은 선택지를 첫 줄에서만 보고, `확인 먼저`·`펼쳐`는 어느 질문에나 받는다."""
     value = piece.get("value")
     if value is None:
         return True
     if value.isdigit():
         return False
     targets = [piece["item"]] if "item" in piece else piece.get("items", [])
-    if new_screen and targets and value in ("예", "아니오"):
-        return all(not CHOICE_LETTER.search(items[n].split("\n")[0]) for n in targets)
+    first = (lambda n: items[n].split("\n")[0]) if new_screen else (lambda n: items[n])
+    if targets and value in ("예", "아니오"):   # 옛 화면도 받는다(HB-37). 옛 화면은 항목 본문 전체에서 글자를 본다
+        return all(not CHOICE_LETTER.search(first(n)) for n in targets)
     if new_screen and targets and value in ("확인 먼저", "펼쳐"):
         return True
     bare = value.strip("()")
     if len(bare) == 1:
-        first = (lambda n: items[n].split("\n")[0]) if new_screen else (lambda n: items[n])
         return bool(targets) and all("({})".format(bare) in first(n) for n in targets)
     return value != "남김" or "rest" in piece or "item" in piece or "items" in piece
 
@@ -1226,6 +1228,35 @@ def _new_answers_fit(plain, items, premises):
         elif n not in answered:
             return False
     return True
+
+
+OLD_TAKES = ("예", "아니오", "진행")   # 옛 화면도 받는 새 화면 답(HB-37, D-15): 항목의 예·아니오는 값 그대로, `진행`은 전체 승인
+OLD_ITEM_APPROVAL = re.compile(r"^(\d+)\s*([가-힣])\s+승인$")   # 옛 화면 `7 가 승인` = `7가`와 전체 승인(HB-45, D-16)
+OLD_WHOLE_APPROVAL = re.compile(r"^전체\s+승인$")               # 옛 화면 `전체  승인`(공백 수와 상관없이) = 전체 승인
+
+
+def _old_written_forms(text):
+    """옛 화면에서 사람이 쓴 승인 꼴(`7 가 승인`, `전체  승인`)을 답 꼴 조각으로 나눈다. 바꾼 조각이 없으면 원문 그대로."""
+    out, changed = [], False
+    for piece in devflow_lib._answer_pieces(text):
+        item = OLD_ITEM_APPROVAL.match(piece)
+        if item:
+            out += ["{} {}".format(item.group(1), item.group(2)), "승인"]
+        elif OLD_WHOLE_APPROVAL.match(piece):
+            out.append("승인")
+        else:
+            out.append(piece)
+            continue
+        changed = True
+    return "\n".join(out) if changed else text
+
+
+def _old_takes(piece):
+    """옛 화면에서 새 화면 답 낱말을 받는가. `예`·`아니오`는 항목을 말할 때만, `진행`은 조건 글 없는 전체 답일 때만이다."""
+    value = piece.get("value")
+    if value in ("예", "아니오"):
+        return "item" in piece or "items" in piece
+    return value == "진행" and not _answer_targets(piece) and "text" not in piece and "rest" not in piece
 
 
 def _progress_conflict(own):
@@ -1295,6 +1326,9 @@ def resolve_answer(shown, tid, text):
     allowed = FIXED_ANSWERS + tuple(letters) + tuple("({})".format(c) for c in letters) + devflow_lib.PREMISE_VALUES
     if new_screen:
         allowed += NEW_ANSWERS   # 1.3.0 화면(report.py): 진행·멈춤과 질문마다 확인 먼저·펼쳐·예·아니오
+    else:
+        allowed += OLD_TAKES
+        text = _old_written_forms(text)
     parsed = devflow_lib.parse_answer(text, allowed, ANSWERS_WITH_TEXT, own_task=tid)
     if parsed is None:
         return None
@@ -1310,7 +1344,7 @@ def resolve_answer(shown, tid, text):
     decided = {int(n): body for n, body in DECIDED_LINE.findall(shown)} if new_screen else {}
     if any("redo" in p and p["redo"] not in decided for p in own):   # `결정 n 다시`는 그 화면의 「정한 것」 번호만
         return None
-    if any(p.get("value") in NEW_ANSWERS and not new_screen for p in own):
+    if any(p.get("value") in NEW_ANSWERS and not new_screen and not _old_takes(p) for p in own):
         return None
     plain = [p for p in own if "redo" not in p]
     if new_screen and not _new_answers_fit(plain, items, premises):
@@ -1331,6 +1365,8 @@ def resolve_answer(shown, tid, text):
             lines.append("결정 {} 다시: {}".format(piece["redo"], decided[piece["redo"]].strip()[:SUMMARY_CHARS]))
             continue
         value = piece.get("value", "") + (" : " + piece["text"] if "text" in piece else "")
+        if not new_screen and value == "진행":
+            value = "승인"   # 옛 화면의 `진행`은 전체 승인이다(HB-37)
         number = next(iter(_answer_targets(piece)), None)
         if "objection" in piece:
             lines.append("이의: 항목 {} | {}".format(number, items[number].split("\n")[0][:SUMMARY_CHARS]))

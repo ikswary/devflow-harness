@@ -112,6 +112,30 @@ def test_old_screen_takes_tight_item(text, want):
     assert screen.resolve_answer(OLD_SHOWN, "T001", text) == want
 
 
+OLD_SEVEN = "■ 정해 주실 것 (1)\n- [7] 무엇을 고를지 (가) 이쪽 (나) 저쪽\n\ncounts: n_decide=1\n"
+SEVEN_LINE = "항목 7: 가 | 무엇을 고를지 (가) 이쪽 (나) 저쪽"
+
+
+@pytest.mark.parametrize("text,want", [
+    ("7 가 승인", [SEVEN_LINE, "전체: 승인"]),   # HB-45 사람이 쓴 원문(D-16: `7가`와 전체 승인)
+    ("7가 승인", [SEVEN_LINE, "전체: 승인"]),
+    ("전체  승인", ["전체: 승인"]),                # HB-45 사람이 쓴 원문(공백 둘)
+    ("전체 승인", ["전체: 승인"]),
+    ("7 가, 승인", [SEVEN_LINE, "전체: 승인"]),   # 대조: 고치기 전에도 풀리던 꼴
+])
+def test_old_screen_takes_written_approval_forms(text, want):
+    """옛 화면에서 사람이 쓴 `7 가 승인`·`전체  승인`을 받는다(HB-45 꼴)."""
+    import screen
+    assert screen.resolve_answer(OLD_SEVEN, "T001", text) == want
+
+
+@pytest.mark.parametrize("text", ["결정 1 다시", "전1 됨", "7 다 승인", "7 가 승인 승인", "전체  보류 승인"])
+def test_old_screen_still_asks_again_for_other_forms(text):
+    """새 화면의 꼴과 화면에 없는 글자는 옛 화면에서 그대로 되묻는다."""
+    import screen
+    assert screen.resolve_answer(OLD_SEVEN, "T001", text) is None
+
+
 
 @pytest.mark.parametrize("text,want", [
     ("1 가 / 2 나", [{"item": 1, "value": "가"}, {"item": 2, "value": "나"}]),

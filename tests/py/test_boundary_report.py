@@ -164,13 +164,35 @@ def test_new_screen_answers(run_dir):
     assert answer("2다").returncode == 3
 
 
-def test_old_screen_does_not_take_new_answers(run_dir):
+def test_old_screen_takes_progress_as_approval_but_not_other_new_answers(run_dir):
+    """HB-37: 옛 화면의 `진행`은 전체 승인이다(1.3.0까지는 되물음, 기대값 변경). 그 밖의 새 화면 답은 그대로 되묻는다."""
     run_dir.task("T001", "설계", kind="design", block="설계", status="승인대기", started_version="1.2.1", rules="2")
     run_dir.result("T001", DESIGN.replace("### 전제\n- 전1 사진 저장소 계정을 만들 수 있는지 해 보시고 알려 주세요 | 막아 세움: 예 | 답: 됨/안 됨/지금 해 보겠음 | 기대는 것: 사진 옮기기\n", "")
                    .replace("### 정한 것", "### 답하신 것의 반영"))
     judged(run_dir)
     assert run_script("screen", run_dir.path, "T001", "--save").returncode == 0
-    assert run_script("screen", run_dir.path, "T001", "--answer", "진행").returncode == 3
+    go = run_script("screen", run_dir.path, "T001", "--answer", "진행")
+    assert go.returncode == 0 and "전체: 승인" in go.stdout and "전체: 진행" not in go.stdout, go.output
+    for text in ("멈춤", "1 확인 먼저", "1 펼쳐", "진행, 단 밤에", "진행, 승인", "1 진행"):
+        assert run_script("screen", run_dir.path, "T001", "--answer", text).returncode == 3, text
+
+
+POINT_WITH_LETTER = ask("질문의 지금 값은 앞 실행 마무리가 같은 전체 검증을 한 번 더 돈다고 했지만 판정 시점의 기록은 다릅니다. "
+                        "질문의 지금 값과 근거를 실제로 고치고, 이 답이 (나)와 같은 방향이라는 점을 적어야 합니다",
+                        "주장-출처, 사실과 어긋남", "있음 앞 실행 마무리가 이미 줄인 검증으로 돎")
+
+
+def test_point_without_ways_takes_yes_even_with_a_letter_in_its_text(run_dir):
+    """T002 질문 3 꼴(경로 가림): 고치는 길이 없는 짚음의 본문 `(나)`는 선택지가 아니다. 답 줄은 예·아니오이고 `3 예`가 풀린다."""
+    out = shown(run_dir, points=POINT_WITH_LETTER)
+    # DESIGN 화면: 질문 1은 전1(전제), 질문 2가 (가)/(나) 결정, 짚음이 질문 3
+    assert "- [3] [독립 확인이 짚음] 질문의 지금 값은" in out and "이 답이 （나）와 같은 방향" in out, out
+    assert "  답: 3 예 / 3 아니오 / 3 확인 먼저 / 3 펼쳐" in out and "3나" not in out
+    alone = answer(run_dir, "3 예")
+    assert alone.returncode == 0 and "항목 3: 예 | " in alone.stdout, alone.output
+    whole = answer(run_dir, "전1 됨, 2가, 3 예, 진행")
+    assert whole.returncode == 0 and "항목 3: 예 | " in whole.stdout and "전체: 진행" in whole.stdout, whole.output
+    assert answer(run_dir, "3나").returncode == 3   # 대조: 본문의 글자는 고를 수 없다
 
 
 def test_notice_is_one_line(run_dir):
