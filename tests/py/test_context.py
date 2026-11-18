@@ -6,9 +6,12 @@
 - `no_change: true`인 완료 코드 task에 R4가 걸리지 않는지(10.5), `journal_append`의 줄 꼴.
 """
 import json
+import os
 import re
 import time
 from datetime import datetime, timezone
+
+import pytest
 
 from conftest import write
 
@@ -139,3 +142,62 @@ def test_journal_append_new_file_lf(lib, run_dir):
     lib.journal_append(str(run_dir), "메모", "-", "첫 줄")
     raw = (run_dir.path / "journal.md").read_bytes().decode("utf-8")
     assert re.fullmatch(r"- \d{4}-\d{2}-\d{2} \d{2}:\d{2} \| 메모 \| - \| 첫 줄\n", raw)
+
+
+# (바) R3 기준 시각: 판정 파일마다 max(첫 줄 시각, `returned_at`의 그 파일 값) + 60초 (P-07, D-14, AC-08)
+
+def r3_files(lib, t):
+    """R3 줄이 가리킨 파일 이름(판정 파일·result.md)."""
+    return sorted(name for code, msg, _ in lib.record_check(t) if code == "R3"
+                  for name in ("judge.md", "judge-run.md", "result.md") if msg.startswith(name))
+
+
+def judged(lib, run_dir, head, mtime, kind="implementation", result=None, snapshot=None, result_mtime=None, **meta):
+    """첫 줄 시각 head의 judge.md(mtime)를 둔 1.3.0 task. result.md는 판정보다 앞에 바뀐 것으로 둔다."""
+    run_dir.task("T003", "판정한 task", kind=kind, block="구현", status="자체검증", flow="f1",
+                 started_version="1.3.0", rules="2", **meta)
+    d = run_dir.task_dir("T003")
+    run_dir.result("T003", result or "# 결과\n")
+    if snapshot is not None:
+        write(d / "result.pre-screen.md", snapshot)
+    os.utime(d / "result.md", (result_mtime or head - 300,) * 2)
+    run_dir.judge("T003", "판정자: rjudge-T003 {}\n\n## 통과 못 한 기준\n- 없음\n".format(local(head)))
+    os.utime(d / "judge.md", (mtime, mtime))
+    return run_dir.tasks()["T003"]
+
+
+HEAD = int(time.time()) - 3600   # 첫 줄 시각 T(초 단위)
+
+
+@pytest.mark.parametrize("returned, mtime, want", [
+    ("judge.md {}".format(local(HEAD + 120)), HEAD + 90, []),                         # 반환 뒤 60초 안: 판정자가 닫은 틈
+    ("judge.md {}".format(local(HEAD + 120)), HEAD + 120 + 90, ["judge.md"]),         # 반환 뒤 90초에 바뀜
+    ("judge-run.md {}".format(local(HEAD + 120)), HEAD + 90, ["judge.md"]),           # 다른 판정 파일의 반환 시각은 쓰지 않음
+    ("judge-run.md {}, judge.md {}".format(local(HEAD + 30), local(HEAD + 120)), HEAD + 90, []),
+], ids=["return-plus-60-inside", "after-return-plus-90", "other-file-return", "both-files"])
+def test_r3_base_is_the_later_of_head_and_return(lib, run_dir, returned, mtime, want):
+    assert r3_files(lib, judged(lib, run_dir, HEAD, mtime, returned_at=returned)) == want
+
+
+@pytest.mark.parametrize("mtime, want", [(HEAD + 90, ["judge.md"]), (HEAD + 30, [])], ids=["head-plus-90", "head-plus-30"])
+def test_r3_without_return_time_keeps_the_head_base(lib, run_dir, mtime, want):
+    """`returned_at`이 없으면 고치기 전과 같이 첫 줄 시각 + 60초가 기준이다(판정 기준 2)."""
+    assert r3_files(lib, judged(lib, run_dir, HEAD, mtime)) == want
+
+
+# (사) 단계 kind의 result.md 「실행 기록」 절은 R3 비교에서 뺀다 (P-21, AC-09)
+
+BEFORE = "# 결과\n\n## 승인 화면\n- 없음\n\n## 본문\n- 합친 커밋 둘\n\n## 실행 기록\n- git merge 0\n"
+RUN_LOG_ONLY = BEFORE + "- 합친 뒤 시험 0\n"
+BODY_TOO = BEFORE.replace("합친 커밋 둘", "합친 커밋 셋")
+
+
+@pytest.mark.parametrize("kind, after, want", [
+    ("merge", RUN_LOG_ONLY, []),
+    ("merge", BODY_TOO, ["result.md"]),
+    ("implementation", RUN_LOG_ONLY, ["result.md"]),   # 단계 kind가 아니면 「실행 기록」도 그대로 본다
+], ids=["merge-run-log", "merge-body", "implementation-run-log"])
+def test_stage_kind_run_log_is_not_r3(lib, run_dir, kind, after, want):
+    assert ("merge" in lib.kinds.STAGE_KINDS) and ("implementation" not in lib.kinds.STAGE_KINDS)
+    t = judged(lib, run_dir, HEAD, HEAD, kind=kind, result=after, snapshot=BEFORE, result_mtime=HEAD + 600)
+    assert r3_files(lib, t) == want

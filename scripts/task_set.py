@@ -57,7 +57,7 @@
   --unfinished       (--archive-judge와 함께, --undecided와는 따로) 판정 미완료 보관. `--check-judge`에 문제 줄이 있을 때만
                      받고(없으면 종료 코드 3), judge.md만 보관한다. 재시도 상한을 보지 않고 retry와 「재시도 범위」를 그대로 둔다.
                      실행 판정(judge-run.md)이 남으면 판정 표지도 그대로 둔다.
-  --returned 이름     에이전트 반환 직후. 그 에이전트의 결과 파일(판정자면 그 판정 파일)이 없으면 `returned_empty`와 journal을 남기고 `!` 줄을 낸다.
+  --returned 이름     에이전트 반환 직후. 그 에이전트의 결과 파일(판정자면 그 판정 파일)이 없으면 `returned_empty`와 journal을 남기고 `!` 줄을 낸다. 판정자 판정 파일이 있으면 `returned_at`에 그 파일의 반환 시각을 적는다.
                      다음 `running_agent=`가 표지를 지우고 멈춘 시간을 journal에 남긴다(references/main/errors.md).
   {실행 폴더} resume --session ID --said "원문"  재개의 맨 앞. 재개 줄과 session_id를 쓴다. 진행 중 실행이 여럿인데 원문에 이 실행 폴더 이름이 없으면
                      아무것도 쓰지 않고 종료 3이다. 다른 세션의 흔적은 `!` 줄이다(references/main/resume.md).
@@ -940,6 +940,9 @@ def archive_judge(run_dir, t, doc, undecided=False, unfinished=False):
     if os.path.isfile(facts):   # 보관한 판정이 대조한 사실. 원본은 남긴다(판정불가 보관은 자체검증 전이 없이 다시 판정한다)
         shutil.copy2(facts, os.path.join(d, kinds.FACTS_FILE.replace(".md", ".r{}.md".format(n))))
     snap = make_snapshot(run_dir, t, n)   # 판정 파일을 옮긴 뒤, 「재시도 범위」를 쓰기 전
+    back = devflow_lib.returned_pieces(doc.get(devflow_lib.RETURNED_AT))
+    if any(name in back for name in present):   # 보관한 판정 파일의 반환 시각은 다음 판정자의 것이 아니다(D-14)
+        doc.set(devflow_lib.RETURNED_AT, devflow_lib.returned_line({k: v for k, v in back.items() if k not in present}))
     kept = unfinished and any(os.path.isfile(os.path.join(d, x)) for x in kinds.JUDGE_FILES.values())
     if doc.get("judge_started") and not kept:
         # 보관한 판정의 판정자는 끝났다. 다음 판정자를 띄울 때 다시 찍는다. 미완료 보관이 남긴 실행 판정이 있으면
@@ -1528,6 +1531,11 @@ def cmd_returned(run_dir, t, doc, name):
         doc.set("running_agent", "")
     if os.path.isfile(os.path.join(t["_dir"], file_name)):
         doc.set("returned_empty", "")
+        if file_name != "result.md":
+            # 판정 파일의 반환 시각(P-07, D-14). 기록 점검 R3가 첫 줄 시각과 이 값 가운데 늦은 쪽을 기준으로 본다
+            pieces = devflow_lib.returned_pieces(doc.get(devflow_lib.RETURNED_AT))
+            pieces[file_name] = now_str()
+            doc.set(devflow_lib.RETURNED_AT, devflow_lib.returned_line(pieces))
         doc.save()
         return 0
     doc.set("returned_empty", "{} {}".format(now_str(), name))

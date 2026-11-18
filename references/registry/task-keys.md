@@ -61,6 +61,7 @@
 | slot | engine | — |
 | slot_base | engine | — |
 | returned_empty | engine | — |
+| returned_at | engine | — |
 | asked_at | engine | — |
 | card_open | engine | — |
 | chosen_scope | engine | — |

@@ -58,6 +58,41 @@ def test_judge_return_looks_at_its_own_file(run_dir):
     assert not run_dir.tasks()["T004"].get("returned_empty")
 
 
+def returned_pieces(run_dir, tid="T004"):
+    """머리 키 `returned_at`을 {판정 파일: 시각 글}로(꼴 `judge.md {시각}, judge-run.md {시각}`)."""
+    value = run_dir.tasks()[tid].get("returned_at") or ""
+    return dict(piece.strip().split(" ", 1) for piece in value.split(",") if piece.strip())
+
+
+def test_judge_return_keeps_the_return_time_of_its_file(run_dir):
+    """P-07(D-14): 판정자 반환이 그 판정 파일의 반환 시각을 남긴다. 다른 판정 파일의 값은 그대로 둔다."""
+    running(run_dir, status="자체검증", judge_started="2026-11-06 13:00:00 rjudge-T004")
+    run_dir.result("T004", "# 결과\n")
+    run_dir.judge("T004", "판정자: rjudge-T004 2026-11-06 13:01:00\n")
+    write(run_dir.task_dir("T004") / "judge-run.md", "판정자: xjudge-T004 2026-11-06 13:02:00\n")
+    before = time.time() - 1
+    assert returned(run_dir, "rjudge-T004").returncode == 0
+    got = returned_pieces(run_dir)
+    assert list(got) == ["judge.md"]
+    assert time.mktime(time.strptime(got["judge.md"], "%Y-%m-%d %H:%M:%S")) >= int(before)
+    assert returned(run_dir, "xjudge-T004").returncode == 0
+    both = returned_pieces(run_dir)
+    assert list(both) == ["judge.md", "judge-run.md"] and both["judge.md"] == got["judge.md"]
+    assert returned(run_dir).returncode == 0   # 작성자 반환은 이 키를 건드리지 않는다
+    assert returned_pieces(run_dir) == both
+
+
+def test_archive_clears_only_the_archived_file(run_dir):
+    """`--archive-judge`가 보관한 판정 파일(judge.md)의 반환 시각만 비운다."""
+    run_dir.task("T004", "흐름 검증", **dict(V120, kind="flow-verify", status="자체검증",
+                                          returned_at="judge.md 2026-11-06 13:05:00, judge-run.md 2026-11-06 13:06:00"))
+    run_dir.judge("T004", "판정자: rjudge-T004 2026-11-06 13:01:00\n\n## 통과 못 한 기준\n- 기준 2: 실패 — 사례가 없음\n")
+    proc = run_script("task_set", run_dir, "T004", "--status", "진행", "--archive-judge")
+    assert proc.returncode == 0, proc.output
+    assert (run_dir.task_dir("T004") / "judge.r1.md").is_file()
+    assert returned_pieces(run_dir) == {"judge-run.md": "2026-11-06 13:06:00"}
+
+
 def test_returned_refuses_old_tasks(run_dir):
     running(run_dir, started_version="1.1.1")
     assert returned(run_dir).returncode == 3

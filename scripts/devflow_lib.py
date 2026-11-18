@@ -488,6 +488,9 @@ JUDGE_PREFIX = {kinds.JUDGE_FILES[r]: kinds.AGENTS[n].short + "-" for r, n in ((
 # 판정자 첫 줄. 정의는 `date "+%Y-%m-%d %H:%M:%S"`를 쓰게 하지만, 초 없음·T 구분·시간대 꼬리도 받는다
 JUDGE_LINE = re.compile(r"^판정자:\s*(\S+)\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(:\d{2})?(?:\.\d+)?\s*(?:Z|[+-]\d{2}:?\d{2}|[A-Z]{2,4})?\s*$")
 MTIME_SLACK = 60    # 초. 판정자가 첫 줄 시각을 쓴 뒤 파일을 닫기까지의 틈(판정 102초 뒤의 메인 Edit를 잡는 폭)
+# 머리 키. `judge.md {시각}, judge-run.md {시각}`: 메인이 판정자 반환을 처리한 시각(`task_set.py --returned`, D-14).
+# R3는 판정 파일마다 max(첫 줄 시각, 이 값) + MTIME_SLACK 뒤의 수정만 잡는다(P-07). 값이 없으면 첫 줄 시각만 본다
+RETURNED_AT = "returned_at"
 ISOLATION_CONTRACT_VERSION = "1.0.1"
 RULES_V110 = "1.1.0"   # 1.1.0 판본 문턱. 이 판본부터 시작한 task에만 영역·판정 표지·재사용 거부 규칙을 적용한다
 RULES_V111 = "1.1.1"   # 이 판본부터 시작한 STAGE kind task에만 묻는 stage별 판정 요구(kinds.STAGE_JUDGES)를 건다
@@ -806,6 +809,33 @@ def required_judges(t, stage=None):
     if kind == "merge" and "충돌" in branch_judgements(t).values():
         need.add("read")   # 충돌을 고친 합치기의 읽기 판정
     return need
+
+
+def returned_pieces(value):
+    """`returned_at` 값을 {판정 파일 이름: 시각 글}로. 판정 파일 이름으로 시작하지 않는 조각은 버린다."""
+    out = {}
+    for piece in str(value or "").split(","):
+        name, _, when = piece.strip().partition(" ")
+        if name in kinds.JUDGE_FILES.values() and when.strip():
+            out[name] = when.strip()
+    return out
+
+
+def returned_line(pieces):
+    """{판정 파일 이름: 시각 글}을 `returned_at` 값으로(차례는 judge.md, judge-run.md). 빈 값은 뺀다."""
+    return ", ".join("{} {}".format(n, pieces[n]) for n in kinds.JUDGE_FILES.values() if pieces.get(n))
+
+
+def returned_times(t):
+    """task의 `returned_at`을 {판정 파일 이름: 시각 초}로. 시각을 못 읽는 조각은 기록이 없는 것으로 본다."""
+    from datetime import datetime
+    out = {}
+    for name, when in returned_pieces(t.get(RETURNED_AT)).items():
+        try:
+            out[name] = datetime.strptime(when, "%Y-%m-%d %H:%M:%S").timestamp()
+        except ValueError:
+            continue
+    return out
 
 
 def judge_header(path):
@@ -1713,12 +1743,13 @@ def record_check(t):
                 out.append(("R2", "판정 기준이 {}와 다르고 「판정 기준 정정」 기록이 없음".format(os.path.basename(expect)),
                             text_diff(read_text(expect), cur), 0))
         times = {}
+        back = returned_times(t)
         for name in kinds.JUDGE_FILES.values():
             p = os.path.join(d, name)
             who, when = judge_header(p)
             if who and when:
-                times[name] = when
-                if os.path.getmtime(p) > when + MTIME_SLACK:
+                times[name] = when   # 판정이 읽은 때(사실 파일·result.md 비교)는 첫 줄 시각 그대로
+                if os.path.getmtime(p) > max(when, back.get(name, 0)) + MTIME_SLACK:
                     out.append(("R3", "{}가 첫 줄의 판정 시각 뒤에 바뀜".format(name), [], os.path.getmtime(p)))
         facts = os.path.join(d, FACTS_FILE)
         if version_at_least(t.get("started_version"), RULES_V130) and times and os.path.isfile(facts) \
@@ -1734,8 +1765,10 @@ def record_check(t):
             if os.path.isfile(snap):
                 a = sections(read_text(snap), level=2)
                 b = sections(read_text(res), level=2)
-                a.pop("승인 화면", None)
-                b.pop("승인 화면", None)
+                # 단계 kind(합치기·마무리·배포 실행·탐침)는 판정 뒤 「실행 기록」을 덧붙인다(P-21)
+                for title in ("승인 화면", "실행 기록") if kind in kinds.STAGE_KINDS else ("승인 화면",):
+                    a.pop(title, None)
+                    b.pop(title, None)
                 only_screen = a == b
             if not only_screen:
                 out.append(("R3", "result.md가 그것을 읽은 판정 뒤에 바뀜(「승인 화면」 밖)", [], os.path.getmtime(res)))

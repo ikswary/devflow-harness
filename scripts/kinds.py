@@ -296,7 +296,7 @@ _SCRIPT = ("started_version", "rules", "started", "approval_requested", "approve
 _OPTION = ("status", "retry", "kind")
 # 1.2.0: 스크립트만 쓰고 작성자·판정자가 읽지 않는 키. references/formats/task-file.md 표에 싣지 않는다.
 _ENGINE = ("waiting_policy", "parked", "parked_pending", "repro_patch", "park_applying", "holds_nothing", "insert_pending", "insert_failed", "commit_via", "slot", "slot_base", "returned_empty",
-           "asked_at", "card_open", "chosen_scope", "start_commit", "reviewed_tip")
+           "returned_at", "asked_at", "card_open", "chosen_scope", "start_commit", "reviewed_tip")
 _SELFCHECK = ("machine_check",)
 _LISTS = ("depends_on", "closes_ac", "partial_ac")
 _KEY_ORDER = ("id", "title", "kind", "block", "status", "parent", "depends_on", "flow", "difficulty", "closes_ac",
