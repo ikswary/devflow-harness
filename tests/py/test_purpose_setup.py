@@ -156,7 +156,9 @@ def test_outer_git_repo_vars_do_not_reach_snapshot(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_INDEX_FILE", str(outer / ".git" / "index"))
     monkeypatch.setenv("GIT_DIR", str(outer / ".git"))
     proc = run_setup(data, out)
-    monkeypatch.undo()   # 아래 확인용 git은 변수 없이 부른다
+    # 아래 확인용 git은 위에서 준 두 변수 없이 부른다. undo()는 처음에 지운 바깥 변수까지 되살리므로 쓰지 않는다
+    monkeypatch.delenv("GIT_INDEX_FILE")
+    monkeypatch.delenv("GIT_DIR")
     assert proc.returncode == 0, proc.output
     assert git(outer, "ls-files", "--stage") == before
     assert before.split()[-1] == "keep.txt"   # 양성 대조: 바깥 색인을 실제로 읽었음
