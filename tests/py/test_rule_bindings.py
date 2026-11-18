@@ -20,6 +20,7 @@
 | 답 꼴 | `references/main/approval.md` 「묻는 방법」 | `test_answer_forms_*` |
 | 전제 셋 이내 | `screen-cells.md` 「전제와 정한 것」 | `test_premise_cap_*` |
 | 고침 답의 기록 꼴 | `references/main/approval.md` 「답의 처리」 표의 「산출물을 바꾸는 답」 행 | `test_fix_record_*` |
+| 반환 전 판정 파일 검사 | `agents/read-judge.md` 「역할 고유 규칙」 | `test_check_judge_*` |
 """
 import re
 from datetime import datetime
@@ -46,6 +47,7 @@ KINDS_TABLE = ROOT / "references" / "registry" / "kinds.md"
 SCREEN_CELLS = ROOT / "references" / "formats" / "screen-cells.md"
 RESULT_FILE = ROOT / "references" / "formats" / "result-file.md"
 APPROVAL = ROOT / "references" / "main" / "approval.md"
+READ_JUDGE_DEF = ROOT / "agents" / "read-judge.md"
 
 # 문서가 수를 쓰는 낱말(수 관형사 포함). 규칙 문장이 아니라 낱말 → 수 대응이다
 NUMBER_WORDS = {"하나": 1, "한": 1, "둘": 2, "두": 2, "셋": 3, "세": 3, "넷": 4, "네": 4, "다섯": 5}
@@ -540,4 +542,29 @@ def test_fix_record_form_is_shown_by_the_approval_point_rejection(run_dir):
     assert form in task_set.FIX_ON_APPROVAL
     raw = fill(form, 결정="2(가)로 고침", 원문="2가 고쳐")[len("--record "):].strip('"')
     p = run_script("task_set", run_dir.path, "T001", "--record", raw)
+    assert p.returncode == 0, p.output
+
+
+# ---------------------------------------------------------------- 반환 전 판정 파일 검사 (HB-38, 설계 harness-defects 5절 C1, AC-06)
+
+def check_judge_command():
+    """read-judge 정의 「역할 고유 규칙」에 적힌 반환 전 검사 명령의 (스크립트 이름, 옵션 목록)."""
+    rows = lines_with(READ_JUDGE_DEF, "반환 전", "--check-judge")
+    assert len(rows) == 1, rows
+    cmds = re.findall(r"`python \$\{CLAUDE_PLUGIN_ROOT\}/scripts/(\w+)\.py \{실행 폴더\} \{id\} ([^`]*)`", rows[0])
+    assert len(cmds) == 1, rows[0]
+    return cmds[0][0], cmds[0][1].split()
+
+
+def test_check_judge_command_in_the_read_judge_definition_is_the_script_option(run_dir):
+    """정의의 명령 글자가 task_set.py의 옵션 이름이고, 그 명령을 그대로 돌리면 짝이 어긋난 판정 파일에서 종료 3, 맞으면 0이다."""
+    from test_judge_points import OFF_CLAIMS, OFF_POINTS, design_task, judge_text as points_judge
+    script, options = check_judge_command()
+    assert (script, options) == ("task_set", [task_set.CHECK_JUDGE])
+    assert task_set.CHECK_JUDGE in task_set.__doc__
+    design_task(run_dir, judge=points_judge(OFF_POINTS, OFF_CLAIMS))
+    p = run_script(script, run_dir.path, "T001", *options)
+    assert p.returncode == 3, p.output
+    design_task(run_dir)
+    p = run_script(script, run_dir.path, "T001", *options)
     assert p.returncode == 0, p.output

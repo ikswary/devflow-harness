@@ -1,6 +1,6 @@
 ## 7. 판본 칸
 
 - `RULES`: `2`
-- `DEF_VERSION_MIN`: `2026-11-17-c1`
+- `DEF_VERSION_MIN`: `2026-11-18-c1`
 - 플러그인 version(`plugin_version()`): `.claude-plugin/plugin.json`의 `version`
 

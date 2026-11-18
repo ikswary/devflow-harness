@@ -211,4 +211,4 @@ def test_documented_baseline_lines_are_what_the_screen_reads():
 
 def test_judge_definitions_carry_the_new_version():
     assert lib.agent_def_problems() == []
-    assert kinds.DEF_VERSION_MIN == "2026-11-17-c1"   # 1.3.0 목적 시험 뒤 짚음 칸(결과·추천)과 screen-cells
+    assert kinds.DEF_VERSION_MIN == "2026-11-18-c1"   # 1.3.1 C1: read-judge 정의의 반환 전 판정 파일 검사(HB-38)

@@ -859,6 +859,10 @@ POINT_RANKS = ((re.compile(r"(?<![가-힣])(?:범위|비용)(?![가-힣])|(?<!�
 POINT_FIELDS = ("갈래", "까닭", "길", "결과", "추천", "깨짐", "근거", "인용", "대조")
 FIELD_START = re.compile(r" \| (?:{}):".format("|".join(POINT_FIELDS)))
 CLAIM_POINT = "주장-출처"   # 「주장-출처 대조」의 어긋남·인용 없음을 옮긴 짚음의 까닭 머리
+# 짝 수 거부 문구(HB-38). 수만 보이면 판정자가 어느 줄의 짚음이 빠졌는지 찾지 못해 미완료로 반환했다(1.3.1 실행 T003, T021)
+CLAIM_PAIRS = ("「주장-출처 대조」의 어긋남·인용 없음 {}줄인데 까닭이 `{} …`인 짚음이 {}줄. "
+               "짝 없는 대조 줄(줄마다 짚음 하나, 짚음 글에 주장 앞부분): {}")
+CLAIM_PAIR_CHARS = 20   # 주장 앞 몇 자가 `주장-출처` 짚음 글에 있으면 짝으로 보는가(설계 harness-defects D-11)
 
 
 def _split_fields(body, names):
@@ -963,6 +967,14 @@ def claim_rows(t):
     return out
 
 
+def unpaired_claims(off, moved):
+    """어긋남·인용 없음 줄(off) 가운데 주장 앞 CLAIM_PAIR_CHARS자가 어느 `주장-출처` 짚음(moved)의 글에도 없는 줄.
+    하나도 못 고르면(짚음 글 하나가 주장 여럿을 담음) off 전부(D-11)."""
+    texts = [p["text"] for p in moved]
+    lone = [r for r in off if not any(r["claim"][:CLAIM_PAIR_CHARS] in s for s in texts)]
+    return lone or off
+
+
 def point_problems(t):
     """1.3.0부터 시작한 task의 judge.md 두 절과 사실 파일 문제 목록."""
     if not version_at_least(t.get("started_version"), RULES_V130):
@@ -983,7 +995,8 @@ def point_problems(t):
     off = [r for r in rows if r["verdict"] in ("어긋남", "인용 없음")]
     moved = [p for p in points if p["why"].startswith(CLAIM_POINT)]
     if len(moved) < len(off):
-        out.append("「주장-출처 대조」의 어긋남·인용 없음 {}줄인데 까닭이 `{} …`인 짚음이 {}줄".format(len(off), CLAIM_POINT, len(moved)))
+        lone = unpaired_claims(off, moved)
+        out.append(CLAIM_PAIRS.format(len(off), CLAIM_POINT, len(moved), " / ".join(r["claim"][:40] for r in lone)))
     if t.get("kind") in kinds.FACT_CHECKS and not os.path.isfile(os.path.join(t["_dir"], FACTS_FILE)):
         out.append("{0} 없음(판정 전에 `python scripts/judge_facts.py {{실행 폴더}} tasks\\{1}\\task.md`로 뽑고 판정을 다시 띄운다)"
                    .format(FACTS_FILE, t.get("id", "")))

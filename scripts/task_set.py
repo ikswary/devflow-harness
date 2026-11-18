@@ -2,7 +2,7 @@
 
 사용:
   python task_set.py {실행 폴더} {id} [키=값 …] [--status S] [--record "지점|결정|원문"] [--reason "문장"]
-                     [--reuse-answer "이유"] [--message "한 메시지 전체"] [--unlisted "이유"] [--archive-judge [--undecided]] [--amend-criteria {파일} --source "출처"]
+                     [--reuse-answer "이유"] [--message "한 메시지 전체"] [--unlisted "이유"] [--archive-judge [--undecided | --unfinished]] [--amend-criteria {파일} --source "출처"]
                      [--judge-start 이름,…] [--judge-clear] [--screen-snapshot] [--now 키,…]
   python task_set.py {실행 폴더} {id} --park | --unpark | --park-cancel | --park-drop --record "지점|결정|원문"
   python task_set.py {실행 폴더} new --kind K --title "제목" --body-from {파일} [--parent T] [--depends-on T,…]
@@ -10,6 +10,8 @@
   python task_set.py {실행 폴더} {id} --card-open {곳 키}     흐름별 검증의 코드 확인 카드를 연다(머리 파일 card_open)
   python task_set.py {실행 폴더} --check [id]
   python task_set.py {실행 폴더} {id} --identity     배포 실행 결과 승인에 옮길 줄(소스 시험의 한계, 배포 대상 동일성 관문의 지금 판정과 이유)
+  python task_set.py {실행 폴더} {id} --check-judge  읽기 판정자가 반환 전에 judge.md의 판정 미완료 줄(짝 없는 대조 줄 포함)을 본다.
+                     파일을 바꾸지 않는다. 문제가 있거나 judge.md가 없으면 종료 코드 3, 없으면 0. 다른 옵션과 함께 받지 않는다
 
 옵션
   키=값              머리 파일 키를 그 값으로(목록은 `[a, b]`). 없던 키는 머리 끝에 더한다.
@@ -52,6 +54,9 @@
                      꼬리표(judge.md는 환경, judge-run.md는 환경·대상)이고 하나 이상일 때만 받는다. 재시도 상한·판정 미완료를
                      보지 않고 retry와 「재시도 범위」를 그대로 둔다(보관·사본·표지 비움은 같다). external_progress가
                      `자원 대기:`이면 종료 코드 3.
+  --unfinished       (--archive-judge와 함께, --undecided와는 따로) 판정 미완료 보관. `--check-judge`에 문제 줄이 있을 때만
+                     받고(없으면 종료 코드 3), judge.md만 보관한다. 재시도 상한을 보지 않고 retry와 「재시도 범위」를 그대로 둔다.
+                     실행 판정(judge-run.md)이 남으면 판정 표지도 그대로 둔다.
   --returned 이름     에이전트 반환 직후. 그 에이전트의 결과 파일(판정자면 그 판정 파일)이 없으면 `returned_empty`와 journal을 남기고 `!` 줄을 낸다.
                      다음 `running_agent=`가 표지를 지우고 멈춘 시간을 journal에 남긴다(references/main/errors.md).
   {실행 폴더} resume --session ID --said "원문"  재개의 맨 앞. 재개 줄과 session_id를 쓴다. 진행 중 실행이 여럿인데 원문에 이 실행 폴더 이름이 없으면
@@ -166,6 +171,18 @@ NO_MARK = "표지 없음"
 UNDECIDED_WAIT = "자원 대기라 판정불가로 보관하지 않음: {}"
 UNDECIDED_MIXED = "판정불가가 아닌 항목이 있음: --undecided 없이 보관한다(재시도)"
 UNDECIDED_NONE = "판정불가 항목이 없음: --undecided 없이 보관한다"
+# 판정 미완료 보관(--archive-judge --unfinished, HB-58)의 거부 문구와 출력
+UNFINISHED_NONE = "판정 미완료가 아님(`--check-judge`에 문제 줄 없음): --unfinished 없이 보관한다"
+UNFINISHED_ALONE = "--unfinished는 --archive-judge와 함께"
+UNFINISHED_MIXED = "--undecided와 --unfinished는 함께 쓰지 않는다"
+UNFINISHED_DONE = " (판정 미완료 보관: judge.md만, retry·「재시도 범위」·실행 판정 그대로)"
+# 반환 전 판정 파일 검사(--check-judge, HB-38). 읽기만 한다
+CHECK_JUDGE = "--check-judge"
+CHECK_JUDGE_OK = "judge.md 검사: 문제 없음"
+CHECK_JUDGE_OLD = "judge.md 검사: 1.3.0 앞에 시작한 task라 「짚음」·「주장-출처 대조」를 보지 않음"
+CHECK_JUDGE_MISSING = "judge.md 없음: 판정 파일을 쓴 뒤 돌린다"
+CHECK_JUDGE_FOUND = "judge.md 문제 {}줄(고친 뒤 다시 돌린다. 이대로 반환하면 판정 미완료로 거부된다):"
+CHECK_JUDGE_ALONE = "--check-judge는 따로 부른다(읽기만 한다)"
 # 「재시도 범위」 회차 줄. 회차, 보관한 판정, 사본, 고칠 기준
 RETRY_SCOPE_LINE = ("- 회차 {} (보관한 판정: {}, 사본: {}): 고칠 기준: {}. 그 기준 안에서는 판정자가 적지 않은 같은 종류의 결함도 고친다. "
                     "다른 기준과 판정자의 권장은 고치지 않는다. 판정자의 대안 문장은 그대로 옮기지 않고, 그 근거 줄과 원천을 열어 확인한 뒤 쓴다"
@@ -859,11 +876,16 @@ def failed_numbers(paths):
     return sorted(nums), loose
 
 
-def archive_check(run_dir, t, undecided=False):
+def archive_check(run_dir, t, undecided=False, unfinished=False):
     """보관할 수 있는지만 본다(파일을 바꾸지 않는다). (retry, 보관할 파일 목록).
-    undecided(판정불가 보관)면 재시도 상한과 판정 미완료 대신 꼬리표 조건과 자원 대기를 본다."""
+    undecided(판정불가 보관)면 재시도 상한과 판정 미완료 대신 꼬리표 조건과 자원 대기를 본다.
+    unfinished(판정 미완료 보관, HB-58)면 재시도 상한 대신 `point_problems`가 있는지 보고 judge.md만 보관한다."""
     d = t["_dir"]
     retry = int(str(t.get("retry", "0") or "0").strip() or 0)
+    if unfinished:
+        if not devflow_lib.point_problems(t):
+            raise Reject(UNFINISHED_NONE)
+        return retry, [kinds.JUDGE_FILES["read"]]   # point_problems가 있으면 judge.md가 있다
     if undecided:
         wait = devflow_lib.resource_wait(t)
         if wait:
@@ -903,9 +925,9 @@ def undecided_check(d, present):
         raise Reject(UNDECIDED_NONE)
 
 
-def archive_judge(run_dir, t, doc, undecided=False):
+def archive_judge(run_dir, t, doc, undecided=False, unfinished=False):
     d = t["_dir"]
-    retry, present = archive_check(run_dir, t, undecided)
+    retry, present = archive_check(run_dir, t, undecided, unfinished)
     n = retry + 1
     while any(os.path.exists(os.path.join(d, x)) for x in ("judge.r{}.md".format(n), "judge-run.r{}.md".format(n))):
         n += 1
@@ -918,10 +940,13 @@ def archive_judge(run_dir, t, doc, undecided=False):
     if os.path.isfile(facts):   # 보관한 판정이 대조한 사실. 원본은 남긴다(판정불가 보관은 자체검증 전이 없이 다시 판정한다)
         shutil.copy2(facts, os.path.join(d, kinds.FACTS_FILE.replace(".md", ".r{}.md".format(n))))
     snap = make_snapshot(run_dir, t, n)   # 판정 파일을 옮긴 뒤, 「재시도 범위」를 쓰기 전
-    if doc.get("judge_started"):
-        doc.set("judge_started", "")   # 보관한 판정의 판정자는 끝났다. 다음 판정자를 띄울 때 다시 찍는다
-    if undecided:
-        return moved, snap   # 판정불가 보관은 재시도로 세지 않는다(retry·「재시도 범위」 그대로)
+    kept = unfinished and any(os.path.isfile(os.path.join(d, x)) for x in kinds.JUDGE_FILES.values())
+    if doc.get("judge_started") and not kept:
+        # 보관한 판정의 판정자는 끝났다. 다음 판정자를 띄울 때 다시 찍는다. 미완료 보관이 남긴 실행 판정이 있으면
+        # 그 판정자의 표지를 둔다(비우면 판정이 남은 채 --amend-criteria가 열린다)
+        doc.set("judge_started", "")
+    if undecided or unfinished:
+        return moved, snap   # 판정불가·판정 미완료 보관은 재시도로 세지 않는다(retry·「재시도 범위」 그대로)
     nums, loose = failed_numbers([os.path.join(d, m) for m in moved])
     # 판정불가 보관이 앞서면 사본 번호 n이 회차(retry + 1)와 달라지므로 사본 경로를 함께 적는다
     copy = "tasks\\{}\\before.r{}".format(t.get("id", ""), n) if os.path.isdir(os.path.join(d, "before.r{}".format(n))) else "(사본 없음)"
@@ -1691,6 +1716,23 @@ def cmd_new(run_dir, args, kv):
     return 0
 
 
+def cmd_check_judge(t):
+    """읽기 판정자가 반환 전에 돌린다(HB-38). judge.md의 `point_problems` 줄을 찍고 파일을 바꾸지 않는다.
+    문제가 있거나 judge.md가 없으면 종료 코드 3, 없으면 0."""
+    if not os.path.isfile(os.path.join(t["_dir"], kinds.JUDGE_FILES["read"])):
+        print(CHECK_JUDGE_MISSING)
+        return 3
+    problems = devflow_lib.point_problems(t)
+    if problems:
+        print(CHECK_JUDGE_FOUND.format(len(problems)))
+        for line in problems:
+            print("- " + line)
+        return 3
+    new = devflow_lib.version_at_least(t.get("started_version"), devflow_lib.RULES_V130)
+    print(CHECK_JUDGE_OK if new else CHECK_JUDGE_OLD)
+    return 0
+
+
 def cmd_check(run_dir, only):
     tasks = devflow_lib.load_tasks(run_dir)
     found = [f for f in devflow_lib.record_findings(tasks) if not only or f[0] == only]
@@ -1751,6 +1793,11 @@ def main(argv):
     if "--identity" in opts:
         print("\n".join(identity_lines(run_dir, t)))
         return 0
+    if CHECK_JUDGE in opts:
+        if kv or len(opts) > 1:
+            print(CHECK_JUDGE_ALONE)
+            return 2
+        return cmd_check_judge(t)
     try:
         doc = devflow_lib.Doc(t["_path"])
         if "--returned" in opts:
@@ -1808,6 +1855,10 @@ def main(argv):
             raise Reject("--amend-criteria와 {}는 따로 부른다".format("·".join(marks)))
         if opts.get("--undecided") and not opts.get("--archive-judge"):
             raise Reject("--undecided는 --archive-judge와 함께")
+        if opts.get("--unfinished") and not opts.get("--archive-judge"):
+            raise Reject(UNFINISHED_ALONE)
+        if opts.get("--unfinished") and opts.get("--undecided"):
+            raise Reject(UNFINISHED_MIXED)
         if opts.get("--archive-judge") and ("--judge-start" in opts or "--judge-clear" in opts):
             raise Reject("--archive-judge는 표지를 비운다. --judge-start·--judge-clear는 따로 부른다")
         filled_tip = ""
@@ -1864,9 +1915,9 @@ def main(argv):
         res = os.path.join(t["_dir"], "result.md")
         if opts.get("--screen-snapshot") and not os.path.isfile(res):
             raise Reject("result.md가 없음")
-        undecided = bool(opts.get("--undecided"))
+        undecided, unfinished = bool(opts.get("--undecided")), bool(opts.get("--unfinished"))
         if opts.get("--archive-judge"):
-            archive_check(run_dir, t, undecided)
+            archive_check(run_dir, t, undecided, unfinished)
         if "--amend-criteria" in opts:
             amend_check(t, opts["--amend-criteria"], opts.get("--source") or "", tasks)
         if new in ("진행", "승인대기", kinds.DONE, "백로그") and new != old and str(t.get("parked_pending", "") or "").strip():
@@ -1916,8 +1967,9 @@ def main(argv):
                 for line in touch_path_warnings(run_dir, t, add_line):
                     print(line)
         if opts.get("--archive-judge"):
-            moved, snap = archive_judge(run_dir, t, doc, undecided)
-            print("보관: " + ", ".join(moved) + (" (판정불가 보관: retry·「재시도 범위」 그대로)" if undecided else ""))
+            moved, snap = archive_judge(run_dir, t, doc, undecided, unfinished)
+            print("보관: " + ", ".join(moved) + (" (판정불가 보관: retry·「재시도 범위」 그대로)" if undecided
+                                                  else UNFINISHED_DONE if unfinished else ""))
             for line in snap:
                 print(line)
 

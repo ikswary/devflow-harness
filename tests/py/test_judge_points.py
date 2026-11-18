@@ -12,7 +12,7 @@ from datetime import datetime
 
 import devflow_lib as lib
 import task_set
-from conftest import write
+from conftest import run_script, write
 
 V130 = {"started_version": "1.3.0", "rules": "2"}
 V121 = {"started_version": "1.2.1", "rules": "2"}
@@ -227,3 +227,65 @@ def test_failure_line_reads_only_its_own_criterion(run_dir):
     design_task(run_dir, judge=text)
     nums, loose = task_set.failed_numbers([str(run_dir.task_dir("T001") / "judge.md")])
     assert nums == [6, 8] and loose == []
+
+
+# ---------------------------------------------------------------- 반환 전 판정 파일 검사 (HB-38, 설계 harness-defects 5절 C1, AC-06, D-10·D-11)
+
+# T001 앞 판 꼴(이번 실행 T003 judge-a.bak, T021 judge-r1-incomplete.bak와 같은 결함): 어긋남·인용 없음 5줄 가운데
+# 둘만 `주장-출처` 짚음이 있고, 나머지 짚음은 다른 까닭이다
+OFF_CLAIMS = ("- 재시도는 세 번이다 | 인용: src/retry.ts:9 | 대조: 맞음\n"
+              "- 시간 초과는 30초다 | 인용: src/a.ts:20 | 대조: 어긋남 | 줄은 60초\n"
+              "- 기존 시험이 없다 | 인용: 없음 | 대조: 인용 없음\n"
+              "- 로그 보관은 이레다 | 인용: ops/log.md:4 | 대조: 어긋남 | 줄은 열흘\n"
+              "- 배포 창은 화요일 오전이다 | 인용: 없음 | 대조: 인용 없음\n"
+              "- 캐시 키에 사용자 id가 들어간다 | 인용: src/cache.ts:7 | 대조: 어긋남 | 키는 경로만\n")
+OFF_POINTS = ("- 시간 초과는 30초다라는 문장과 src/a.ts:20의 60초가 다름 | 갈래: 물을 것 | 까닭: 주장-출처 어긋남 | 깨짐: 없음 | 근거: src/a.ts:20\n"
+              "- 기존 시험이 없다는 말에 근거가 없음 | 갈래: 물을 것 | 까닭: 주장-출처 인용 없음 | 깨짐: 없음 | 근거: 없음\n"
+              "- 로그 보관 기간이 두 문서에서 다름 | 갈래: 하네스가 고칠 것 | 까닭: 문서 어긋남 | 근거: ops/log.md:4, spec/b.md:8\n"
+              "- 이름이 길다 | 갈래: 그대로 둠 | 까닭: 관례 | 근거: src/b.ts:4\n")
+PAIRED = ("시간 초과는 30초다", "기존 시험이 없다")
+LONE = ("로그 보관은 이레다", "배포 창은 화요일 오전이다", "캐시 키에 사용자 id가 들어간다")
+
+
+def pair_line(problems):
+    """짝 수 거부 줄(`lib.CLAIM_PAIRS`의 머리로 찾는다)."""
+    head = lib.CLAIM_PAIRS.split("{")[0]
+    found = [x for x in problems if x.startswith(head)]
+    assert len(found) == 1, problems
+    return found[0]
+
+
+def test_check_judge_prints_the_unpaired_claims_and_leaves_the_file(run_dir):
+    t = design_task(run_dir, judge=judge_text(OFF_POINTS, OFF_CLAIMS))
+    judge = run_dir.task_dir("T001") / "judge.md"
+    before, stamp = judge.read_bytes(), judge.stat().st_mtime_ns
+    p = run_script("task_set", run_dir.path, "T001", "--check-judge")
+    assert p.returncode == 3, p.output
+    problems = lib.point_problems(t)
+    assert problems and all(x in p.output for x in problems), p.output
+    line = pair_line(problems)
+    assert "5줄" in line and "2줄" in line
+    assert all(c in line for c in LONE), line
+    assert not any(c in line for c in PAIRED), line   # 짝이 있는 줄은 고칠 곳이 아니다
+    assert judge.read_bytes() == before and judge.stat().st_mtime_ns == stamp
+
+
+def test_check_judge_passes_a_judge_file_whose_pairs_match(run_dir):
+    design_task(run_dir)   # 어긋남·인용 없음 2줄, `주장-출처` 짚음 2줄
+    p = run_script("task_set", run_dir.path, "T001", "--check-judge")
+    assert p.returncode == 0, p.output
+    assert task_set.CHECK_JUDGE_OK in p.output
+
+
+def test_check_judge_without_a_judge_file_is_refused(run_dir):
+    run_dir.task("T001", "설계", kind="design", block="설계", status="자체검증", **V130)
+    p = run_script("task_set", run_dir.path, "T001", "--check-judge")
+    assert p.returncode == 3 and task_set.CHECK_JUDGE_MISSING in p.output, p.output
+    assert not (run_dir.task_dir("T001") / "judge.md").exists()
+
+
+def test_unpaired_lines_fall_back_to_every_off_line(run_dir):
+    """D-11: 짚음 글 하나가 주장 둘을 모두 담아 짝 없는 줄을 고르지 못하면 어긋남·인용 없음 줄 전부를 보인다."""
+    both = "- 시간 초과는 30초다와 기존 시험이 없다가 근거와 다름 | 갈래: 물을 것 | 까닭: 주장-출처 어긋남 | 깨짐: 없음 | 근거: src/a.ts:20\n"
+    line = pair_line(lib.point_problems(design_task(run_dir, judge=judge_text(both, CLAIMS))))
+    assert all(c in line for c in PAIRED), line

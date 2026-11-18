@@ -1305,3 +1305,58 @@ def test_park_of_an_uncommitted_held_code_task_is_taken_as_before(run_dir, tmp_p
     assert "되돌림" not in p.output
     assert front_value(run_dir, "parked").startswith("tasks/T001/parked.patch ")
     assert (folder / "a.txt").read_text(encoding="utf-8") == "하나\n"
+
+
+# ================================================================ 판정 미완료 보관 (HB-58, 설계 harness-defects 5절 C1, AC-07, D-13)
+
+UNFINISHED_MARK = "2026-11-18 10:00:00 rjudge-T001 xjudge-T001"
+SCOPE = "- 회차 2 (보관한 판정: judge.r2.md): 고칠 기준: 1."
+
+
+def judged_points(run_dir, points, **more):
+    """1.3.0부터 시작한 설계 task, 재시도 상한(2)에 닿음. 판정 파일은 「주장-출처 대조」의 어긋남 한 줄과 points 짚음."""
+    from test_judge_points import CLAIMS, judge_text as points_judge
+    run_dir.task("T001", "미완료 판정", sections={"재시도 범위": SCOPE}, status="자체검증", retry="2",
+                 judge_started=UNFINISHED_MARK, started_version="1.3.0", rules="2", **more)
+    write(run_dir.task_dir("T001") / devflow_lib.FACTS_FILE, "# T001 미리 뽑은 사실\n")
+    run_dir.judge("T001", points_judge(points, CLAIMS))
+    write(run_dir.task_dir("T001") / "judge-run.md", RUN_JUDGE)
+
+
+PAIRS = ("- x가 다름 | 갈래: 물을 것 | 까닭: 주장-출처 어긋남 | 깨짐: 없음 | 근거: a:1\n"
+         "- y에 근거가 없음 | 갈래: 물을 것 | 까닭: 주장-출처 인용 없음 | 깨짐: 없음 | 근거: 없음\n")
+
+
+def test_unfinished_judge_is_archived_without_counting_a_retry(run_dir):
+    judged_points(run_dir, "- 없음")
+    assert devflow_lib.point_problems(load(run_dir))   # 전제: 판정 미완료
+    p = run_script("task_set", run_dir, "T001", "--archive-judge", "--unfinished")
+    assert p.returncode == 0, p.output
+    d = run_dir.task_dir("T001")
+    assert (d / "judge.r3.md").is_file() and not (d / "judge.md").exists()
+    assert front_value(run_dir, "retry") == "2" and front_value(run_dir, "status") == "자체검증"
+    text = (d / "task.md").read_text(encoding="utf-8")
+    assert "## 재시도 범위\n" + SCOPE + "\n" in text and text.count("- 회차 ") == 1
+    # 미완료는 읽기 판정만의 일이다. 실행 판정과 그 판정자의 표지는 그대로 둔다
+    assert (d / "judge-run.md").is_file() and not (d / "judge-run.r3.md").exists()
+    assert front_value(run_dir, "judge_started") == UNFINISHED_MARK
+
+
+def test_unfinished_archive_of_a_finished_judge_is_refused(run_dir):
+    judged_points(run_dir, PAIRS)
+    assert devflow_lib.point_problems(load(run_dir)) == []   # 전제: 짝이 맞음
+    before = (run_dir.task_dir("T001") / "task.md").read_bytes()
+    p = run_script("task_set", run_dir, "T001", "--archive-judge", "--unfinished")
+    assert p.returncode == 3 and task_set.UNFINISHED_NONE in p.output, p.output
+    d = run_dir.task_dir("T001")
+    assert (d / "judge.md").is_file() and not (d / "judge.r3.md").exists()
+    assert (d / "task.md").read_bytes() == before
+
+
+@pytest.mark.parametrize("args, why", [(["--unfinished"], "UNFINISHED_ALONE"),
+                                       (["--archive-judge", "--unfinished", "--undecided"], "UNFINISHED_MIXED")])
+def test_unfinished_needs_archive_judge_alone(run_dir, args, why):
+    judged_points(run_dir, "- 없음")
+    p = run_script("task_set", run_dir, "T001", *args)
+    assert p.returncode == 3 and getattr(task_set, why) in p.output, p.output
+    assert (run_dir.task_dir("T001") / "judge.md").is_file()
