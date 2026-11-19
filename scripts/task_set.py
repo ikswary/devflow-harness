@@ -10,6 +10,7 @@
   python task_set.py {실행 폴더} {id} --card-open {곳 키}     흐름별 검증의 코드 확인 카드를 연다(머리 파일 card_open)
   python task_set.py {실행 폴더} --check [id]
   python task_set.py {실행 폴더} {id} --identity     배포 실행 결과 승인에 옮길 줄(소스 시험의 한계, 배포 대상 동일성 관문의 지금 판정과 이유)
+  python task_set.py {실행 폴더} {id} --inherit-ci   마무리가 이어받을 앞 전체 CI 한 줄(`이어받을 CI: …`). 파일을 바꾸지 않는다. 마무리가 아니면 종료 3
   python task_set.py {실행 폴더} {id} --check-judge  읽기 판정자가 반환 전에 judge.md의 판정 미완료 줄(짝 없는 대조 줄 포함)을 본다.
                      파일을 바꾸지 않는다. 문제가 있거나 judge.md가 없으면 종료 코드 3, 없으면 0. 다른 옵션과 함께 받지 않는다
 
@@ -183,6 +184,9 @@ CHECK_JUDGE_OLD = "judge.md 검사: 1.3.0 앞에 시작한 task라 「짚음」�
 CHECK_JUDGE_MISSING = "judge.md 없음: 판정 파일을 쓴 뒤 돌린다"
 CHECK_JUDGE_FOUND = "judge.md 문제 {}줄(고친 뒤 다시 돌린다. 이대로 반환하면 판정 미완료로 거부된다):"
 CHECK_JUDGE_ALONE = "--check-judge는 따로 부른다(읽기만 한다)"
+INHERIT_CI = "--inherit-ci"
+INHERIT_CI_ALONE = "--inherit-ci는 따로 부른다(읽기만 한다)"
+INHERIT_CI_WRAP = "--inherit-ci는 마무리(wrap-up) task에만: {}는 {}"
 # 「재시도 범위」 회차 줄. 회차, 보관한 판정, 사본, 고칠 기준
 RETRY_SCOPE_LINE = ("- 회차 {} (보관한 판정: {}, 사본: {}): 고칠 기준: {}. 그 기준 안에서는 판정자가 적지 않은 같은 종류의 결함도 고친다. "
                     "다른 기준과 판정자의 권장은 고치지 않는다. 판정자의 대안 문장은 그대로 옮기지 않고, 그 근거 줄과 원천을 열어 확인한 뒤 쓴다"
@@ -463,17 +467,7 @@ def stage_rule(run_dir, t, old, new, ctx):
 
 def final_merge_candidate(run_dir, t):
     """이번 회차의 다른 기능·수정 흐름이 모두 합쳐졌으면 현재 merge가 최종 배포 후보를 만든다."""
-    current, rnd = str(t.get("flow", "") or ""), devflow_lib.run_round(run_dir)
-    flows = []
-    for path in glob.glob(os.path.join(run_dir, "flows", "*", "flow.md")):
-        meta_lines, _ = devflow_lib.split_front_matter(devflow_lib.read_text(path))
-        meta = devflow_lib.parse_meta(meta_lines)
-        name = str(meta.get("flow", "") or os.path.basename(os.path.dirname(path)))
-        if devflow_lib.as_round(meta.get("round", "")) != rnd or devflow_lib.flow_role(name, meta) not in ("feature", "fixes"):
-            continue
-        if str(meta.get("status", "")) == "폴더 없음":
-            continue
-        flows.append((name, str(meta.get("status", ""))))
+    current, flows = str(t.get("flow", "") or ""), devflow_lib.round_code_flows(run_dir)
     return len(flows) >= 2 and any(name == current for name, _ in flows) \
         and all(name == current or status in ("합쳐짐", "폴더 지움") for name, status in flows)
 
@@ -488,6 +482,18 @@ def same_git_commit(a, b):
     return bool(GIT_SHA.fullmatch(a) and GIT_SHA.fullmatch(b) and (a.startswith(b) or b.startswith(a)))
 
 
+def inherited_ci_problem(run_dir, t):
+    """마무리의 `- 이어받은 CI: {id} {sha}`가 `devflow_lib.inherit_source`의 원천(id, 앞 7자 이상 같은 commit)과 같은가.
+    다르거나 원천이 없으면 거부 이유, 같으면 None."""
+    src, commit, _, why = devflow_lib.inherit_source(run_dir, t)
+    if src is None:
+        return "이어받을 원천 없음({}): 전체 검증을 새로 돌린다".format(why)
+    wid, wsha = devflow_lib.inherited_ci(t)
+    if wid != src.get("id") or not same_git_commit(wsha, commit):
+        return "이어받은 CI가 원천과 다름: 적힌 {} {}, 원천 {} {}".format(wid or "없음", wsha or "없음", src.get("id"), commit)
+    return None
+
+
 def final_candidate_ci_problem(run_dir, t, always=False, expected_commit=None):
     if not devflow_lib.uses_isolation_contract(t) or (not always and not final_merge_candidate(run_dir, t)):
         return None
@@ -499,8 +505,12 @@ def final_candidate_ci_problem(run_dir, t, always=False, expected_commit=None):
     missing = [k for k in ("범위", "검증 commit", "검증 artifact") if not values.get(k) or values.get(k) in ("없음", "(없음)")]
     if missing:
         return "최종 배포 후보 CI 필수 값 없음: {}".format(", ".join(missing))
-    if values["범위"] != "전체 검증":
-        return "최종 배포 후보 CI 범위가 전체 검증이 아님({})".format(values["범위"])
+    if values["범위"] != devflow_lib.FULL_CI_SCOPE:
+        if not (always and values["범위"] == devflow_lib.INHERITED_SCOPE):
+            return "최종 배포 후보 CI 범위가 전체 검증이 아님({})".format(values["범위"])
+        why = inherited_ci_problem(run_dir, t)   # 마무리만 같은 코드의 앞 전체 CI를 이어받는다(D-27 (나), D-33)
+        if why:
+            return why
     commit = str(t.get("commit", "") if expected_commit is None else expected_commit or "").strip()
     checked = values["검증 commit"].strip()
     if devflow_lib.run_from_v120(run_dir):
@@ -1804,6 +1814,15 @@ def main(argv):
     t = tasks[tid]
     if "--identity" in opts:
         print("\n".join(identity_lines(run_dir, t)))
+        return 0
+    if INHERIT_CI in opts:
+        if kv or len(opts) > 1:
+            print(INHERIT_CI_ALONE)
+            return 2
+        if t.get("kind") != "wrap-up":
+            print(INHERIT_CI_WRAP.format(tid, t.get("kind", "")))
+            return 3
+        print(devflow_lib.inherit_line(run_dir, t))
         return 0
     if CHECK_JUDGE in opts:
         if kv or len(opts) > 1:

@@ -1093,7 +1093,101 @@ def final_ci_values(t):
     return values
 
 
-SOURCE_TESTED = "없음(소스 시험)"   # 소스를 시험하고 배포 때 빌드하는 프로젝트의 `검증 artifact`. 이 글자 그대로일 때만 표지다
+FULL_CI_SCOPE = "전체 검증"
+INHERITED_SCOPE = "이어받은 전체 검증"   # 마무리가 같은 코드의 앞 전체 CI를 이어받은 범위(D-27 (나), D-32). 합치기는 받지 않는다
+INHERITED_CI = "이어받은 CI"   # 마무리 「최종 배포 후보 CI」의 `- 이어받은 CI: {task id} {sha}` 줄. FINAL_CI_KEYS에 넣지 않는다
+FULL_CI_RECORD = "전체 검증 기록"   # 코드 task judge-run.md의 절: `- 범위: 전체 검증`, `- 검증 tree: {40자}`(D-32)
+SHA_LIKE = re.compile(r"[0-9a-fA-F]{7,40}")
+TREE_SHA = re.compile(r"[0-9a-fA-F]{40}")
+
+
+def round_code_flows(run_dir):
+    """이번 회차의 기능·수정 흐름 [(이름, status)]. `폴더 없음`은 세지 않는다. 최종 합치기 판별
+    (task_set.final_merge_candidate)과 이어받을 CI 원천(inherit_source)이 같은 셈을 쓴다."""
+    rnd, flows, root = run_round(run_dir), [], os.path.join(run_dir, "flows")
+    for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        path = os.path.join(root, name, "flow.md")
+        if name.startswith(".") or not os.path.isfile(path):
+            continue
+        meta = parse_meta(split_front_matter(read_text(path))[0])
+        flow, status = str(meta.get("flow", "") or name), str(meta.get("status", ""))
+        if as_round(meta.get("round", "")) != rnd or flow_role(flow, meta) not in ("feature", "fixes") or status == "폴더 없음":
+            continue
+        flows.append((flow, status))
+    return flows
+
+
+def _key_values(text):
+    """`- 키: 값` 줄을 {키: 값}으로(같은 키는 첫 줄)."""
+    out = {}
+    for line in text.splitlines():
+        m = re.match(r"^-\s*([^:]+?)\s*:\s*(.+?)\s*$", line.strip())
+        if m:
+            out.setdefault(m.group(1), m.group(2))
+    return out
+
+
+def inherited_ci(t):
+    """마무리 judge-run.md 「최종 배포 후보 CI」의 `- 이어받은 CI: {task id} {sha}` → (id, sha). 없으면 ("", "")."""
+    path = os.path.join(t["_dir"], kinds.JUDGE_FILES["run"])
+    text = sections(read_text(path), level=2).get("최종 배포 후보 CI", "") if os.path.isfile(path) else ""
+    parts = _key_values(text).get(INHERITED_CI, "").split()
+    return (parts[0], parts[1]) if len(parts) >= 2 else ((parts[0], "") if parts else ("", ""))
+
+
+def inherit_source(run_dir, t):
+    """마무리 t가 이어받을 앞 전체 CI(D-29, AC-25) → (원천 task, commit, tree, "") 또는 (None, "", "", 까닭).
+    흐름(round_code_flows)이 둘 이상이면 가장 늦게 승인된 완료 합치기의 「최종 배포 후보 CI」(commit = 검증 commit,
+    tree 빔), 하나면 그 흐름에서 가장 늦게 승인된 완료 코드 task의 「전체 검증 기록」(commit = 그 task의 머리 키 commit).
+    가장 늦은 후보가 조건을 채우지 않으면 앞 후보로 내려가지 않고 원천 없음이다. 파일을 쓰지 않는다."""
+    flows = round_code_flows(run_dir)
+    if not flows:
+        return None, "", "", "이번 회차의 기능·수정 흐름 없음"
+    done = [o for o in load_tasks(run_dir).values() if o.get("status") == kinds.DONE]
+    if len(flows) >= 2:
+        pool, where = [o for o in done if o.get("kind") == "merge"], "완료된 합치기 없음"
+    else:
+        flow = flows[0][0]
+        pool = [o for o in done if o.get("kind") in kinds.commit_kinds(1) and str(o.get("flow", "") or "") == flow]
+        where = "흐름 {}에 완료된 코드 task 없음".format(flow)
+    if not pool:
+        return None, "", "", where
+    src = max(pool, key=lambda o: (str(o.get("approved", "")), str(o.get("id", ""))))
+    sid, path = src.get("id"), os.path.join(src["_dir"], kinds.JUDGE_FILES["run"])
+    if not os.path.isfile(path):
+        return None, "", "", "{} judge-run.md 없음".format(sid)
+    sec = sections(read_text(path), level=2)
+    if len(flows) >= 2:
+        if sec.get("최종 배포 후보 CI") is None:
+            return None, "", "", "{} judge-run.md 「최종 배포 후보 CI」 없음".format(sid)
+        values, title, tree = final_ci_values(src), "최종 배포 후보 CI", ""
+        commit = values.get("검증 commit", "").strip()
+    else:
+        if sec.get(FULL_CI_RECORD) is None:
+            return None, "", "", "{} judge-run.md 「{}」 없음".format(sid, FULL_CI_RECORD)
+        values, title = _key_values(sec[FULL_CI_RECORD]), FULL_CI_RECORD
+        tree, commit = values.get("검증 tree", "").strip(), str(src.get("commit", "") or "").strip()
+    if values.get("범위", "") != FULL_CI_SCOPE:
+        return None, "", "", "{} 「{}」 범위가 전체 검증이 아님({})".format(sid, title, values.get("범위") or "없음")
+    if len(flows) == 1 and not TREE_SHA.fullmatch(tree):
+        return None, "", "", "{} 「{}」 검증 tree가 40자 16진수가 아님({})".format(sid, title, tree or "없음")
+    if not SHA_LIKE.fullmatch(commit):
+        return None, "", "", "{} {}이 Git SHA가 아님({})".format(sid, "검증 commit" if len(flows) >= 2 else "머리 키 commit", commit or "없음")
+    failed = sec.get("통과 못 한 기준")
+    if failed is None or item_count(failed) or not any(EMPTY_ITEM.match(x.strip()) for x in failed.splitlines()):
+        return None, "", "", "{} 「통과 못 한 기준」이 `- 없음`이 아님".format(sid)
+    return src, commit, tree, ""
+
+
+def inherit_line(run_dir, t):
+    """`task_set.py … --inherit-ci`가 찍는 한 줄(AC-25)."""
+    src, commit, tree, why = inherit_source(run_dir, t)
+    if src is None:
+        return "이어받을 CI: 없음({})".format(why)
+    return "이어받을 CI: {} commit {}".format(src.get("id"), commit) + (" tree {}".format(tree) if tree else "")
+
+
+SOURCE_TESTED ="없음(소스 시험)"   # 소스를 시험하고 배포 때 빌드하는 프로젝트의 `검증 artifact`. 이 글자 그대로일 때만 표지다
 SOURCE_TESTED_FACT = "빌드 결과물 자체를 시험한 것은 아닙니다. 빌드 설정과 환경 차이는 배포 뒤 확인이 잡습니다"
 ARTIFACT_ID = re.compile(r"[A-Za-z0-9][!-~]*")
 
