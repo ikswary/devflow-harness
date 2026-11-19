@@ -86,6 +86,25 @@ def _where(text):
     return m.group(1), (int(m.group(2)) if m.group(2) else None)
 
 
+def _cell_pieces(text):
+    """판정자 칸의 위치 글 조각(HB-40). ` (` 뒤 설명은 버리고 `, `로 나눈다. 빈 조각은 뺀다."""
+    return [p for p in (_path(piece) for piece in _path(text).split(" (")[0].split(", ")) if p]
+
+
+def _cell_places(text):
+    """판정자 칸의 위치 글을 [(파일, 줄 또는 None)]으로. `:`로 시작하는 조각(`hooks/panel.tsx:6, :53`의 `:53`)은 앞 조각 파일의 줄이다."""
+    out = []
+    for piece in _cell_pieces(text):
+        out.append(_where(out[-1][0] + piece) if piece.startswith(":") and out else _where(piece))
+    return out
+
+
+def _cell_where(text):
+    """칸의 첫 위치 조각(`파일:줄`, 줄 범위는 그대로). 조각이 없으면 칸 글 그대로."""
+    pieces = _cell_pieces(text)
+    return pieces[0] if pieces else _path(text)
+
+
 def _short_hash(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
 
@@ -175,7 +194,7 @@ def _with_judge(t, judgments, lines, warnings):
     out = [dict(j) for j in judgments]
     for name, cells, _ in lines:
         if name == "숨은 판단" and len(cells) >= 3 and cells[-1] in kinds.JUDGMENT_KINDS:
-            out.append({"text": " | ".join(cells[1:-1]), "kind": cells[-1], "where": _path(cells[0]), "follows": False})
+            out.append({"text": " | ".join(cells[1:-1]), "kind": cells[-1], "where": _cell_where(cells[0]), "follows": False})
     for name, cells, _ in lines:
         if name not in ("종류 이의", "같은 판단"):
             continue
@@ -198,7 +217,7 @@ def _same_groups(files, lines):
     for name, cells, _ in lines:
         if name != "같은 곳":
             continue
-        linked = {_where(c)[0] for c in cells if c}
+        linked = {path for c in cells for path, _ in _cell_places(c)}
         hit = [g for g in groups if g & linked]
         if not hit:
             continue

@@ -21,6 +21,7 @@
 | 전제 셋 이내 | `screen-cells.md` 「전제와 정한 것」 | `test_premise_cap_*` |
 | 고침 답의 기록 꼴 | `references/main/approval.md` 「답의 처리」 표의 「산출물을 바꾸는 답」 행 | `test_fix_record_*` |
 | 반환 전 판정 파일 검사 | `agents/read-judge.md` 「역할 고유 규칙」 | `test_check_judge_*` |
+| 곳 답 없이 승인으로 가는 판본 | `references/main/approval.md` 옛 코드 확인 카드 줄, `references/kinds/verify/main-order.md` 「코드 확인」 | `test_place_answer_version_*` |
 """
 import re
 from datetime import datetime
@@ -48,6 +49,7 @@ SCREEN_CELLS = ROOT / "references" / "formats" / "screen-cells.md"
 RESULT_FILE = ROOT / "references" / "formats" / "result-file.md"
 APPROVAL = ROOT / "references" / "main" / "approval.md"
 READ_JUDGE_DEF = ROOT / "agents" / "read-judge.md"
+VERIFY_ORDER = ROOT / "references" / "kinds" / "verify" / "main-order.md"
 
 # 문서가 수를 쓰는 낱말(수 관형사 포함). 규칙 문장이 아니라 낱말 → 수 대응이다
 NUMBER_WORDS = {"하나": 1, "한": 1, "둘": 2, "두": 2, "셋": 3, "세": 3, "넷": 4, "네": 4, "다섯": 5}
@@ -568,3 +570,22 @@ def test_check_judge_command_in_the_read_judge_definition_is_the_script_option(r
     design_task(run_dir)
     p = run_script(script, run_dir.path, "T001", *options)
     assert p.returncode == 0, p.output
+
+
+# ---------------------------------------------------------------- 곳 답 없이 승인으로 가는 판본 (HB-46, 설계 harness-defects 5절 D, D-17, AC-14)
+
+PLACE_ANSWER_RULE = re.compile(r"(\d+\.\d+\.\d+)부터 ([^().]*곳 답[^().]*)")
+
+
+def place_answer_rules(lines):
+    """줄들에서 `{판본}부터 …곳 답…` 규칙 (판본, 문장)."""
+    return [m.groups() for line in lines for m in PLACE_ANSWER_RULE.finditer(line)]
+
+
+def test_place_answer_version_is_the_same_in_both_documents_and_the_code():
+    """approval.md 옛 코드 확인 카드 줄과 verify/main-order.md 「코드 확인」이 같은 판본·같은 문장으로 말하고, 그 판본이 places.py의 문턱이다."""
+    approval = place_answer_rules(lines_with(APPROVAL, "코드 확인"))
+    order = place_answer_rules(lib.sections(read(VERIFY_ORDER)).get("코드 확인", "").splitlines())
+    assert len(approval) == 1 and len(order) == 1, (approval, order)
+    assert approval == order
+    assert approval[0][0] == lib.RULES_V130

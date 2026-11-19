@@ -526,3 +526,46 @@ def test_a_row_written_by_hand_does_not_leave_places(run_dir, repo):
 
 def test_screen_module_is_untouched_by_old_screens(run_dir):
     assert screen.places.screen_lines(str(run_dir.path), "T001") == []
+
+
+# ---------------------------------------------------------------- 판정자 칸의 위치 나누기 (HB-40, 설계 harness-defects 5절 D, AC-13)
+
+# 2026-11-17-tests T006 judge.md 34행 그대로. 한 칸에 `파일:줄, :줄 (설명)`이 든다
+T006_SAME_PLACE = "- 같은 곳: hooks/common.ts:20 | hooks/panel.tsx:6, :53 (사유 함수 하나를 두 훅이 씀)\n"
+
+
+def test_same_place_cell_with_more_lines_and_a_note_links_the_paths(run_dir, repo):
+    """`같은 곳:` 칸의 `, :53 (…)`을 떼어 경로로 잇고, 그 곳 키로 고침 task를 만든다."""
+    judgments = "- 사유 함수를 common에 둔다 [종류: 구조] [위치: hooks/common.ts:20]\n"
+    code(run_dir, "T006", judgments, T006_SAME_PLACE, sha=commit(repo, {"hooks/common.ts": BODY, "hooks/panel.tsx": BODY}))
+    verify(run_dir, repo)
+    got = make_places(run_dir)
+    assert [p["파일"] for p in got] == [["hooks/common.ts", "hooks/panel.tsx"]]
+    waiting(run_dir)
+    assert run_script("task_set", run_dir.path, FV, "--card-open", got[0]["key"]).returncode == 0
+    r = run_script("task_set", run_dir.path, FV, "--record", "코드 확인 {}|이 코드만 고침 : 사유 함수를 옮긴다|2".format(got[0]["key"]))
+    assert r.returncode == 0, r.output
+    p = run_script("task_set", run_dir.path, "new", "--from-answer", FV, "--place", got[0]["key"])
+    assert p.returncode == 0, p.output
+    fix = run_dir.tasks()[p.stdout.strip().splitlines()[-1]]
+    assert lib.touch_paths(fix["_sections"]["건드릴 파일"]) == ["hooks/common.ts", "hooks/panel.tsx"]
+
+
+def test_hidden_judgment_cell_with_more_lines_reads_as_the_path(run_dir, repo):
+    """`숨은 판단:` 칸 `src/a.ts:3, :9 (…)`의 파일은 `src/a.ts`이고 위치는 첫 줄이다."""
+    compare = "- 숨은 판단: src/a.ts:3, :9 (두 곳이 같은 도우미) | 도우미를 새로 뺐다 | 구조\n"
+    code(run_dir, "T001", "- 없음\n", compare, sha=commit(repo, {"src/a.ts": BODY}))
+    verify(run_dir, repo)
+    got = make_places(run_dir)
+    assert [p["파일"] for p in got] == [["src/a.ts"]]
+    assert got[0]["위치"] == ["src/a.ts:3"]
+
+
+@pytest.mark.parametrize("cell,want", [
+    ("hooks/panel.tsx:6, :53 (사유 함수 하나를 두 훅이 씀)", [("hooks/panel.tsx", 6), ("hooks/panel.tsx", 53)]),
+    ("`src/a.ts:3`", [("src/a.ts", 3)]),
+    ("src/a.ts:3, src/b.ts:9", [("src/a.ts", 3), ("src/b.ts", 9)]),
+    ("src/a.ts (설명, 쉼표 든)", [("src/a.ts", None)]),
+])
+def test_cell_places_split(cell, want):
+    assert places._cell_places(cell) == want
