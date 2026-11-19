@@ -138,6 +138,80 @@ def test_da_superseded_line_with_shifted_cells_is_still_superseded():
     assert lines == [HEAD.format(0, 1)]
 
 
+# --- (바) 둘째 꼴 `- {시각} [T…] {결정}. 원문: "…"`, 원문 없는 줄, 대체 변형 (HB-12, AC-20, D-19) ----------------
+# 표본은 50-self 실행의 결정 줄 꼴만 본떠 새로 썼다(그 실행의 문장·이름은 넣지 않는다)
+
+HEAD_KEEP = "- 2026-01-01 09:00:00 [T002] 결정 A. 원문: \"가\""
+HEAD_BARE = "- 2026-01-01 08:00:00 [T001] 액션은 태그 고정 그대로(사용자 답 '태그 그대로')"
+FREE_REPLACE = "- 2026-01-01 11:00:00 [T003] 08:00:00 결정을 대체: 태그 대신 커밋 고정"
+
+
+def test_ba_head_form_with_original_is_a_decision():
+    lines, kept, superseded, malformed = decisions.brief_lines(HEAD_KEEP + "\n")
+    assert (kept, superseded, malformed) == (1, 0, 0)
+    assert lines == [HEAD.format(1, 0), "- 2026-01-01 09:00:00 | 결정 A."]
+    # 대조: 칸 꼴로 적은 같은 결정도 같은 줄로 나온다
+    assert decisions.brief_lines("- 2026-01-01 09:00:00 | 결정 A. | 원문: \"가\" | T002\n")[0] == lines
+
+
+def test_ba_line_without_original_is_kept_with_mark():
+    lines, kept, superseded, malformed = decisions.brief_lines(HEAD_BARE + "\n" + HEAD_KEEP + "\n")
+    assert (kept, superseded, malformed) == (2, 0, 0)
+    assert lines[1] == "- 2026-01-01 08:00:00 | 액션은 태그 고정 그대로(사용자 답 '태그 그대로') (원문 없음)"
+    # 대조: 원문이 있는 줄에는 표지가 없다
+    assert lines[2] == "- 2026-01-01 09:00:00 | 결정 A."
+    # task 머리 없이 시각 뒤에 바로 글을 쓴 줄도 같다
+    plain = decisions.brief_lines("- 2026-01-01 08:30:00 머리 없는 결정\n")[0]
+    assert plain == [HEAD.format(1, 0), "- 2026-01-01 08:30:00 | 머리 없는 결정 (원문 없음)"]
+
+
+def test_ba_superseded_mark_variants_are_dropped():
+    variants = [
+        HEAD_BARE + " →대체: 2026-01-01 11:00:00",
+        "- 2026-01-01 08:10:00 [T001] 결정 B. 원문: \"나\" → 대체 : 2026-01-01 11:00:00",
+        "- 2026-01-01 08:20:00 | 결정 C | 원문: \"다\" | T001 →대체:2026-01-01 11:00:00",
+        "- 2026-01-01 08:21:00 | 결정 D | 원문: \"라\" | T001 → 대체 2026-01-01 11:00:00",
+    ]
+    lines, kept, superseded, malformed = decisions.brief_lines("\n".join(variants + [HEAD_KEEP]) + "\n")
+    assert (kept, superseded, malformed) == (1, 4, 0)
+    assert lines == [HEAD.format(1, 4), "- 2026-01-01 09:00:00 | 결정 A."]
+
+
+def test_ba_free_text_replace_word_is_shown_with_mark():
+    lines, kept, superseded, malformed = decisions.brief_lines(
+        FREE_REPLACE + "\n- 2026-01-01 11:10:00 [T003] B를 대체: C. 원문: \"C로\"\n")
+    # 화살표 표지가 아닌 `대체`는 숨기지 않고 표지를 단다(어느 줄을 대체했는지 메인이 전문에서 본다)
+    assert (kept, superseded, malformed) == (2, 0, 0)
+    assert lines[1:] == ["- 2026-01-01 11:00:00 | 08:00:00 결정을 대체: 태그 대신 커밋 고정 (원문 없음) (대체 언급)",
+                         "- 2026-01-01 11:10:00 | B를 대체: C. (대체 언급)"]
+    # 대조: `대체`가 없는 줄에는 표지가 없다
+    assert "(대체 언급)" not in decisions.brief_lines(HEAD_KEEP + "\n")[0][1]
+
+
+def test_ba_current_form_output_is_unchanged_next_to_new_forms():
+    current = [KEEP_1, OLD, KEEP_2, "- 2026-10-30 11:00:00 | 칸이 하나뿐"]
+    before = decisions.brief_lines("\n".join(current) + "\n")[0]
+    assert before == [HEAD.format(2, 1), "- 2026-10-30 02:40:51 | 설계를 A·B·C로 나눔",
+                      "- 2026-10-30 10:29:52 | 이번 실행의 값: 동시에 도는 흐름 2 → 3", "형식 밖 1줄: 2026-10-30 11:00:00"]
+    mixed = decisions.brief_lines("\n".join(current + [HEAD_KEEP]) + "\n")[0]
+    assert mixed[1:3] == before[1:3] and mixed[3] == "- 2026-01-01 09:00:00 | 결정 A." and mixed[-1] == before[-1]
+
+
+def test_ba_head_form_without_decision_is_malformed():
+    lines, kept, superseded, malformed = decisions.brief_lines("- 2026-01-01 12:00:00 [T004] 원문: \"가\"\n")
+    assert (kept, superseded, malformed) == (0, 0, 1)
+    assert lines[-1] == "형식 밖 1줄: - 2026-01-01 12:00:00 [T004] 원"
+
+
+def test_ba_cli_reads_the_second_form(tmp_path):
+    write(tmp_path / "decisions.md", "\n".join([HEAD_BARE, HEAD_KEEP, KEEP_1]) + "\n")
+    r = run_script("decisions", tmp_path, "--brief")
+    assert r.returncode == 0, r.output
+    assert r.stdout.splitlines() == [HEAD.format(3, 0),
+                                     "- 2026-01-01 08:00:00 | 액션은 태그 고정 그대로(사용자 답 '태그 그대로') (원문 없음)",
+                                     "- 2026-01-01 09:00:00 | 결정 A.", "- 2026-10-30 02:40:51 | 설계를 A·B·C로 나눔"]
+
+
 # --- (라) 명령행: --brief가 없거나 다르면 사용법과 종료 2 -------------------------------------------------------
 
 def test_ra_cli_without_brief_prints_usage_and_exits_2(tmp_path):

@@ -19,7 +19,7 @@ generated-cache\    코드 끝별 생성 명령 결과 (project_docs.py)
 inserted\docs\…, inserted-ours\docs\…     넣은 글과 넣기 전 프로젝트 쪽 글 (project_docs.py --insert)
 tasks\{id}\task.md      머리 (스크립트: spawn_children.py·task_set.py)
 tasks\{id}\criteria.orig.md, criteria.amend{n}.md, criteria.ack.md   만들 때의 판정 기준, 판정 기준 정정, R2 점검 확인 때의 판정 기준 (스크립트)
-tasks\{id}\result.md    결과 (작성자). result.pre-screen.md는 「승인 화면」만 다시 쓰기 전의 사본 (스크립트)
+tasks\{id}\result.md    결과 (작성자). result.pre-screen.md는 「승인 화면」만 다시 쓰기 전과 단계 kind의 읽기 판정자 반환 때 뜨는 사본 (스크립트)
 tasks\{id}\judge.md     읽기 판정 (읽기 판정자), judge-run.md 실행 판정 (실행 판정자). 늘 최신 판정
 tasks\{id}\judge.r{n}.md, judge-run.r{n}.md   재판정 전에 보관한 n번째 판정 (`task_set.py --archive-judge`)
 tasks\{id}\judge.plan.md  탐침 계획 단계의 읽기 판정 (`stage=기록` 때 `task_set.py`가 judge.md를 옮김)
