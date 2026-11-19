@@ -61,3 +61,24 @@ python tests/purpose/setup_task.py --data {자료 폴더} --task {TID} --out {�
 - 비교는 고치기 전 판과 고친 판을 같은 task로 돌린다(원칙 문서 4절 「기준선과 나란히」).
 - 저장소에 다른 프로젝트 이름과 사용자 경로를 쓰지 않는다. `tests/py/test_strings.py`가 일반 꼴을 보고, 비공개 낱말은 환경
   변수 `DEVFLOW_FORBIDDEN`(쉼표로 나눔)에 넣어 함께 본다.
+
+## 화면만 다시 그리기
+
+작성자와 판정을 다시 돌리지 않고, 지난 실행에서 사람이 본 승인 화면을 지금 스크립트로 다시 그려 고치기 전 화면과 견준다.
+준비 스크립트 자체는 `tests/py/test_purpose_rerender.py`가 가짜 실행 폴더로 시험한다.
+
+```
+python tests/purpose/rerender.py --run {원본 실행 폴더} --task {TID} --out {출력 폴더}
+python scripts/screen.py {사본} {TID}
+```
+
+- `{사본}`은 첫 명령이 마지막 줄 `잘린 사본:`에 낸 `{출력 폴더}/{원본 실행 폴더 이름}`이다. 원본은 읽기만 하고 바꾸지 않는다.
+- 자르는 시각은 대상 task 머리 파일의 `approval_requested`다. 그보다 늦게 만든 task를 지우고, 머리 파일 「승인 기록」에서
+  그보다 늦은 줄을 지우고, 그보다 늦게 승인한 task는 `status: 진행`·`approved` 빔으로, 대상 task는 `승인대기`·
+  `approval_mode`·`approved` 빔(단계 kind면 `stage: 결과승인`)으로 둔다. decisions.md·journal.md는 자르지 않는다.
+- 비교할 고치기 전 화면은 원본 그 task 폴더의 `screen-shown.md`다. `펼침:`처럼 실행 폴더 경로가 든 줄과 `메인 컨텍스트:`
+  (세션 값) 줄은 사본 자리와 지금 세션에 따라 달라지므로 비교에서 뺀다. `screen.py`에 `--save`를 붙이지 않는다(사본의
+  `screen-shown.md`와 머리 파일 `asked_at`을 고친다).
+- 다시 돌리면 표지 `.purpose-rerender`가 있는 사본만 지우고 새로 만든다. 표지 없는 폴더가 있거나, `--out`이 원본 안이거나
+  사본 자리가 원본을 덮거나, `--out`이 이 저장소 안이면서 `_workspace/` 밖이거나, 대상 task에 `approval_requested`가
+  없으면 종료 3으로 거부한다.
