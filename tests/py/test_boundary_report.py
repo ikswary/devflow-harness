@@ -352,11 +352,13 @@ def between_done(run_dir, tid, flow, points, **more):
 
 
 def carried_screen(run_dir, kind):
-    """흐름 a·b의 경계 사이 task 짚음: a 둘이 같은 글, a 하나는 고침 task가 있음, b 하나. 흐름 a인 kind 화면의 「정해 주실 것」."""
+    """흐름 a·b의 경계 사이 task 짚음: a 둘이 같은 글, a 하나는 사람 답에서 나온 고침 task가 있음, b 하나. 흐름 a인 kind 화면의 「정해 주실 것」."""
     between_done(run_dir, "T010", "a", ["흐름 a 여백이 다름", "두 흐름이 같이 쓰는 이름이 길다"])
     between_done(run_dir, "T011", "a", ["두 흐름이 같이 쓰는 이름이 길다"])
     between_done(run_dir, "T012", "a", ["이미 고친 문구"])
-    run_dir.task("T013", "T012 짚음 고침", kind="fix", block="구현", status="진행", flow="a", origin="판정자 T012 짚음")
+    # `task_set.py new --from-answer T012`가 쓰는 origin 꼴(task_set.py cmd_new: "사용자 {답 task} {답 시각}")
+    run_dir.task("T013", "T012 답 고침", kind="fix", block="구현", status="진행", flow="a", origin="사용자 T012 2026-11-18 11:00:00")
+    run_dir.task("T015", "T0101 답 고침", kind="fix", block="구현", status="진행", flow="a", origin="사용자 T0101 2026-11-18 11:00:00")  # T010 짚음은 남음
     between_done(run_dir, "T014", "b", ["흐름 b 색이 다름"])
     run_dir.task("T001", "끝", kind=kind, block="구현", status="승인대기", flow="a", **V130)
     run_dir.result("T001", result())
@@ -370,7 +372,26 @@ def test_flow_screens_carry_only_their_flow_points_once_without_fixed_ones(run_d
     assert "[앞 일에서 짚음] 흐름 a 여백이 다름" in decide                         # 같은 흐름 짚음(양성 대조)
     assert decide.count("[앞 일에서 짚음] 두 흐름이 같이 쓰는 이름이 길다") == 1  # 같은 글 둘은 한 번
     assert "흐름 b 색이 다름" not in decide                                         # 다른 흐름
-    assert "이미 고친 문구" not in decide                                           # origin `판정자 T012 짚음`인 task가 있음
+    assert "이미 고친 문구" not in decide                                           # origin `사용자 T012 …`인 task가 있음(AC-15)
+
+
+@pytest.mark.parametrize("kind", ["merge", "flow-verify"])
+def test_harness_fix_task_does_not_drop_the_same_judges_ask_point(run_dir, kind):
+    """T016 V-01: 한 판정 파일의 「하네스가 고칠 것」 짚음을 고치는 task(origin `판정자 T012 짚음`)가 있어도
+    같은 파일의 「물을 것」 짚음은 흐름 화면에 옮겨진다(AC-15, 설계 harness-defects 5절 E, T016 답 2나)."""
+    run_dir.task("T012", "T012 구현", kind="implementation", block="구현", status="완료", flow="a",
+                 approved="2026-11-18 10:00:00", **V130)
+    run_dir.judge("T012", "판정자: rjudge-T012 2026-11-18 09:00:00\n\n## 통과 못 한 기준\n- 없음\n\n## 짚음\n"
+                          "- 하네스 문구 고칠 것 | 갈래: 하네스가 고칠 것 | 까닭: 문서 어긋남 | 깨짐: 없음 | 근거: a:1\n"
+                          + carried_point("사람에게 물을 것") + "\n## 주장-출처 대조\n- 없음\n")
+    run_dir.task("T013", "T012 짚음 고침", kind="fix", block="구현", status="진행", flow="a",
+                 origin=screen.POINT_FIX_ORIGIN.format("T012"))
+    run_dir.task("T001", "끝", kind=kind, block="구현", status="승인대기", flow="a", **V130)
+    run_dir.result("T001", result())
+    judged(run_dir)
+    tasks = lib.load_tasks(str(run_dir.path))
+    carried = [p["text"] for _, p in screen.carried_points(tasks, tasks["T001"])]
+    assert carried == ["사람에게 물을 것"], carried
 
 
 def test_wrap_up_screen_still_carries_every_flow(run_dir):

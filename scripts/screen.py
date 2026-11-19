@@ -669,18 +669,20 @@ def point_item(p, head="[독립 확인이 짚음]", source=""):
 
 
 FLOW_CARRY_KINDS = ("flow-verify", "merge")   # 짚음 이월을 같은 흐름으로 좁히는 화면(HB-53). 마무리·전체 검증은 실행 전체
-POINT_FIX_ORIGIN = "판정자 {} 짚음"   # 짚음에서 나온 고침 task의 origin(main/approval.md 「하네스가 고칠 것」)
+POINT_FIX_ORIGIN = "판정자 {} 짚음"   # 「하네스가 고칠 것」 짚음의 고침 task origin(main/approval.md 32행). 짚음을 빼는 까닭이 아니다
+USER_FIX_ORIGIN = "사용자 {} "   # 사람 답에서 나온 고침 task origin의 머리(`task_set.py new --from-answer {id}`). 그 task의 짚음을 뺀다
 
 
 def carried_points(tasks, t):
     """앞 경계 보고(같은 실행에서 사람이 승인한 경계 kind) 뒤에 끝난 경계 사이 task의 「다음 경계에서 물음」 짚음 [(task, 짚음)].
     승인 방식(알림·즉시 질문)과 상관없이 옮긴다. 흐름별 검증·합치기(FLOW_CARRY_KINDS, flow가 있을 때)는 같은 흐름 task만,
-    같은 글은 한 번, origin이 `판정자 {id} 짚음`인 task가 있는 task의 짚음은 뺀다(HB-53)."""
+    같은 글은 한 번, origin이 `사용자 {id} `로 시작하는 task(그 task의 사람 답에서 나온 고침)가 있는 task의 짚음은 뺀다(HB-53).
+    origin `판정자 {id} 짚음`(POINT_FIX_ORIGIN)은 빼지 않는다: 같은 판정 파일의 「물을 것」이 묻지 않은 채 빠진다(T016 V-01)."""
     marks = [str(o.get("approved", "")) for o in tasks.values()
              if o is not t and o.get("kind") in kinds.BOUNDARY_KINDS and str(o.get("approval_mode", "")).strip() == "승인"]
     after = max(marks) if marks else ""
     flow = str(t.get("flow", "") or "").strip() if t.get("kind") in FLOW_CARRY_KINDS else ""
-    origins = [str(o.get("origin", "") or "") for o in tasks.values()]
+    origins = [str(o.get("origin", "") or "").strip() for o in tasks.values()]
     out, seen = [], set()
     for o in tasks.values():
         if o is t or o.get("kind") not in kinds.BETWEEN_KINDS or o.get("status") != kinds.DONE or str(o.get("approved", "")) <= after:
@@ -690,8 +692,7 @@ def carried_points(tasks, t):
         if flow:
             if str(o.get("flow", "") or "").strip() != flow:
                 continue
-            mark = re.compile(r"(?<!\S){}(?!\S)".format(re.escape(POINT_FIX_ORIGIN.format(o.get("id", "")))))
-            if any(mark.search(origin) for origin in origins):
+            if any(origin.startswith(USER_FIX_ORIGIN.format(o.get("id", ""))) for origin in origins):
                 continue
         places = devflow_lib.point_places([p for p in devflow_lib.judge_points(o) if not p["problem"]])
         for p in places["report"]:

@@ -4,7 +4,10 @@
 - 가짜 실행 폴더 둘: 흐름 둘(`flows/{a,b}/flow.md`가 합쳐짐, 완료 merge 둘), 흐름 하나(완료 코드 task 둘).
 - 판정 파일의 입력은 판정자가 쓰는 꼴(D-32) 그대로 글자로 적는다. 출력 줄은 AC-25의 꼴로 단언한다.
 """
+import subprocess
 from pathlib import Path
+
+import pytest
 
 import task_set
 from conftest import run_script, write
@@ -29,10 +32,10 @@ def code_judge_run(failed="- 없음", record=True):
     return text
 
 
-def wrap_judge_run(source_id, source_sha, scope="이어받은 전체 검증"):
+def wrap_judge_run(source_id, source_sha, scope="이어받은 전체 검증", head=HEAD, changed="- 그 뒤 바뀐 파일: 1개(README.md)\n"):
     return ("판정자: xjudge-T090 2026-11-19 12:00:00\n\n## 통과 못 한 기준\n- 없음\n\n"
-            "## 최종 배포 후보 CI\n- 범위: {}\n- 이어받은 CI: {} {}\n- 그 뒤 바뀐 파일: 1개(README.md)\n"
-            "- 검증 commit: {}\n- 검증 artifact: ci-run-9\n").format(scope, source_id, source_sha, HEAD)
+            "## 최종 배포 후보 CI\n- 범위: {}\n- 이어받은 CI: {} {}\n{}"
+            "- 검증 commit: {}\n- 검증 artifact: ci-run-9\n").format(scope, source_id, source_sha, changed, head)
 
 
 def task(run_dir, tid, judge_run=None, **meta):
@@ -71,9 +74,44 @@ def inherit(run_dir, tid=WRAP):
     return proc.returncode, proc.stdout.strip()
 
 
-def wrap_problem(run_dir):
+def wrap_problem(run_dir, head=HEAD):
     t = run_dir.tasks()[WRAP]
-    return task_set.final_candidate_ci_problem(str(run_dir), t, always=True, expected_commit=HEAD)
+    return task_set.final_candidate_ci_problem(str(run_dir), t, always=True, expected_commit=head)
+
+
+def git(folder, *args):
+    out = subprocess.run(["git", "-C", str(folder)] + list(args), check=True, capture_output=True, encoding="utf-8")
+    return out.stdout.strip()
+
+
+def docs_after_source(folder, *changed):
+    """원천 commit(파일 둘) 위에 마무리 문서 커밋 하나(changed 파일들을 고침)를 쌓은 git 저장소 → (원천 commit, HEAD)."""
+    folder.mkdir()
+    for args in (["init", "-q"], ["config", "user.email", "t@example.com"], ["config", "user.name", "t"],
+                 ["config", "core.autocrlf", "false"]):
+        git(folder, *args)
+    for name in ("README.md", "scripts/x.py"):
+        write(folder / name, "앞\n")
+    git(folder, "add", "-A")
+    git(folder, "commit", "-q", "-m", "원천")
+    source = git(folder, "rev-parse", "HEAD")
+    for name in changed:
+        write(folder / name, "뒤\n")
+    git(folder, "add", "-A")
+    git(folder, "commit", "-q", "-m", "마무리 문서")
+    return source, git(folder, "rev-parse", "HEAD")
+
+
+def two_flows_in_git(run_dir, folder, *changed, listed="- 그 뒤 바뀐 파일: 1개(README.md)\n"):
+    """two_flows와 같되 원천 T051의 검증 commit과 마무리 검증 commit이 흐름 b 폴더(folder)의 실제 commit이다."""
+    source, head = docs_after_source(folder, *changed)
+    run_dir.flow("a", status="합쳐짐")
+    run_dir.flow("b", status="합쳐짐", dir=str(folder))
+    task(run_dir, "T051", merge_judge_run(source), kind="merge", block="합치기", flow="b", status="완료",
+         commit=source, stage="끝", approved="2026-11-19 11:00:00")
+    task(run_dir, WRAP, wrap_judge_run("T051", source[:7], head=head, changed=listed), kind="wrap-up", block="마무리",
+         status="자체검증", exported_commit=head)
+    return head
 
 
 # ---------------------------------------------------------------- AC-25 원천 찾기
@@ -111,10 +149,20 @@ def test_inherit_ci_is_only_for_wrap_up(run_dir):
 
 # ---------------------------------------------------------------- AC-26 마무리 완료 관문
 
-def test_wrap_up_gate_accepts_inherited_scope_matching_the_source(run_dir):
-    two_flows(run_dir)
-    write(run_dir.task_dir(WRAP) / "judge-run.md", wrap_judge_run("T051", LAST_MERGE[:7]))
-    assert wrap_problem(run_dir) is None
+def test_wrap_up_gate_accepts_inherited_scope_matching_the_source(run_dir, tmp_path):
+    head = two_flows_in_git(run_dir, tmp_path / "b", "README.md")
+    assert wrap_problem(run_dir, head) is None   # 원천 뒤 바뀐 파일이 적힌 목록(README.md) 안에만 있다
+
+
+@pytest.mark.parametrize("listed", ["- 그 뒤 바뀐 파일: 1개(README.md)\n", ""], ids=["outside", "no-line"])
+def test_wrap_up_gate_rejects_files_changed_after_the_source_outside_the_written_list(run_dir, tmp_path, listed):
+    """원천 commit과 검증 commit 사이에 적힌 `- 그 뒤 바뀐 파일:` 목록 밖의 파일이 바뀌었거나 그 줄이 없으면 거부
+    (AC-26, 설계 harness-defects 5절 H1·D-30, T016 답 6가, T028 답 1가)."""
+    head = two_flows_in_git(run_dir, tmp_path / "b", "README.md", "scripts/x.py", listed=listed)
+    why = wrap_problem(run_dir, head)
+    assert why is not None, "관문이 적힌 목록 밖의 변경을 받음"
+    want = task_set.INHERIT_FILES_OUTSIDE.format("scripts/x.py") if listed else task_set.INHERIT_FILES_NONE
+    assert why == want, why
 
 
 def test_wrap_up_gate_rejects_inherited_ci_naming_another_task(run_dir):

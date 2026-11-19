@@ -1135,6 +1135,29 @@ def inherited_ci(t):
     return (parts[0], parts[1]) if len(parts) >= 2 else ((parts[0], "") if parts else ("", ""))
 
 
+INHERITED_FILES = "그 뒤 바뀐 파일"   # 마무리 「최종 배포 후보 CI」의 `- 그 뒤 바뀐 파일: {n}개({경로}, …)` 줄(D-32). 완료 관문이 대조한다
+
+
+def inherited_files(t):
+    """마무리 judge-run.md 「최종 배포 후보 CI」의 `- 그 뒤 바뀐 파일: {n}개({경로}, …)` → 경로 집합(역슬래시 → `/`, 앞 `./`·따옴표 뗌).
+    `0개`면 빈 집합, 줄이 없으면 None."""
+    path = os.path.join(t["_dir"], kinds.JUDGE_FILES["run"])
+    text = sections(read_text(path), level=2).get("최종 배포 후보 CI", "") if os.path.isfile(path) else ""
+    value = _key_values(text).get(INHERITED_FILES)
+    if value is None:
+        return None
+    m = re.match(r"^\d+\s*개\s*\((.*)\)\s*$", value)
+    raw = m.group(1) if m else ("" if re.fullmatch(r"0\s*개", value) else value)
+    out = set()
+    for piece in raw.split(","):
+        piece = piece.strip().strip("`'\"").replace("\\", "/")
+        while piece.startswith("./"):
+            piece = piece[2:]
+        if piece:
+            out.add(piece)
+    return out
+
+
 def inherit_source(run_dir, t):
     """마무리 t가 이어받을 앞 전체 CI(D-29, AC-25) → (원천 task, commit, tree, "") 또는 (None, "", "", 까닭).
     흐름(round_code_flows)이 둘 이상이면 가장 늦게 승인된 완료 합치기의 「최종 배포 후보 CI」(commit = 검증 commit,

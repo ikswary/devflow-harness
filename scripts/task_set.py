@@ -59,6 +59,7 @@
                      받고(없으면 종료 코드 3), judge.md만 보관한다. 재시도 상한을 보지 않고 retry와 「재시도 범위」를 그대로 둔다.
                      실행 판정(judge-run.md)이 남으면 판정 표지도 그대로 둔다.
   --returned 이름     에이전트 반환 직후. 그 에이전트의 결과 파일(판정자면 그 판정 파일)이 없으면 `returned_empty`와 journal을 남기고 `!` 줄을 낸다. 판정자 판정 파일이 있으면 `returned_at`에 그 파일의 반환 시각을 적는다.
+                     단계 kind(합치기·마무리·배포 실행·탐침)에서 읽기 판정자가 반환하면 result.md를 result.pre-screen.md로 떠 둔다(있으면 덮는다).
                      다음 `running_agent=`가 표지를 지우고 멈춘 시간을 journal에 남긴다(references/main/errors.md).
   {실행 폴더} resume --session ID --said "원문"  재개의 맨 앞. 재개 줄과 session_id를 쓴다. 진행 중 실행이 여럿인데 원문에 이 실행 폴더 이름이 없으면
                      아무것도 쓰지 않고 종료 3이다. 다른 세션의 흔적은 `!` 줄이다(references/main/resume.md).
@@ -187,6 +188,10 @@ CHECK_JUDGE_ALONE = "--check-judge는 따로 부른다(읽기만 한다)"
 INHERIT_CI = "--inherit-ci"
 INHERIT_CI_ALONE = "--inherit-ci는 따로 부른다(읽기만 한다)"
 INHERIT_CI_WRAP = "--inherit-ci는 마무리(wrap-up) task에만: {}는 {}"
+# 이어받음 완료 관문의 바뀐 파일 다시 보기(T016 답 6가, D-30): 원천 commit과 검증 commit 사이 바뀐 파일이 적힌 목록 안인가
+INHERIT_FILES_OUTSIDE = "원천 뒤 문서 커밋 밖 파일이 바뀜({}): 전체 검증을 새로 돌린다"
+INHERIT_FILES_NONE = "「최종 배포 후보 CI」에 `- 그 뒤 바뀐 파일:` 줄 없음: 전체 검증을 새로 돌린다"
+INHERIT_FILES_UNREAD = "원천 commit {}과 검증 commit {} 사이 바뀐 파일을 git으로 못 읽음: 전체 검증을 새로 돌린다"
 # 「재시도 범위」 회차 줄. 회차, 보관한 판정, 사본, 고칠 기준
 RETRY_SCOPE_LINE = ("- 회차 {} (보관한 판정: {}, 사본: {}): 고칠 기준: {}. 그 기준 안에서는 판정자가 적지 않은 같은 종류의 결함도 고친다. "
                     "다른 기준과 판정자의 권장은 고치지 않는다. 판정자의 대안 문장은 그대로 옮기지 않고, 그 근거 줄과 원천을 열어 확인한 뒤 쓴다"
@@ -494,6 +499,25 @@ def inherited_ci_problem(run_dir, t):
     return None
 
 
+def inherited_files_problem(run_dir, t, checked):
+    """이어받음 완료 관문의 바뀐 파일 다시 보기(T016 답 6가, D-30, AC-26): 원천 commit과 검증 commit(checked) 사이
+    `git diff --name-only`가 판정자가 적은 `- 그 뒤 바뀐 파일:` 목록 안에만 드는가. 목록 밖 파일이 있거나 줄이 없거나
+    git을 못 읽으면 거부 이유, 아니면 None. 목록에 든 파일이 정말 문서 커밋 파일인지는 가리지 못한다(설계 12절 위험 행)."""
+    listed = devflow_lib.inherited_files(t)
+    if listed is None:
+        return INHERIT_FILES_NONE
+    src, commit, _, _ = devflow_lib.inherit_source(run_dir, t)
+    # 원천 commit과 검증 commit을 함께 가진 저장소: 마무리의 흐름 폴더, 원천의 흐름 폴더, 내보낸 뒤의 원래 폴더 차례
+    folders = [places.code_folder(run_dir, t), places.code_folder(run_dir, src or {}),
+               str(devflow_lib.run_meta(run_dir).get("project", "") or "")]
+    for folder in (f for f in folders if f and os.path.isdir(f)):
+        ok, out = places._git(folder, "diff", "--name-only", commit, checked, "--")
+        if ok:
+            outside = sorted(p for p in (l.strip() for l in out.splitlines()) if p and p not in listed)
+            return INHERIT_FILES_OUTSIDE.format(", ".join(outside)) if outside else None
+    return INHERIT_FILES_UNREAD.format(commit or "없음", checked)
+
+
 def final_candidate_ci_problem(run_dir, t, always=False, expected_commit=None):
     if not devflow_lib.uses_isolation_contract(t) or (not always and not final_merge_candidate(run_dir, t)):
         return None
@@ -525,6 +549,8 @@ def final_candidate_ci_problem(run_dir, t, always=False, expected_commit=None):
         return "최종 배포 후보 commit이 유효한 Git SHA가 아님({})".format(commit or "없음")
     if not same_git_commit(checked, commit):
         return "최종 배포 후보 CI 검증 commit({})이 후보 commit({})과 다름".format(checked, commit)
+    if values["범위"] == devflow_lib.INHERITED_SCOPE:
+        return inherited_files_problem(run_dir, t, checked)
     return None
 
 
