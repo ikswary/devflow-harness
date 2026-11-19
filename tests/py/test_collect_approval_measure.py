@@ -5,15 +5,18 @@
 """
 import json
 import os
+import subprocess
 from datetime import datetime
 
 import pytest
 
 import collect
 from conftest import SCRIPTS, run_script, write
+from test_boundary_report import result as boundary_result, shown
 from test_code_check import BODY, FV, code, commit, make_places, repo, verify, waiting  # noqa: F401  repo는 fixture다
 from test_imports import import_graph
 from test_review_contract import NEW, result
+from test_transitions import git_folder
 
 V120 = "1.2.0-dev.1"
 FLOW = "flow-verify"
@@ -555,7 +558,8 @@ def test_measure_keeps_its_first_three_lines(run_dir):
     assert got[0].startswith("- 결정 0 승인: ") and got[1].startswith("- 관점 지적: ") and got[2].startswith("- 멈춤: ")
     assert [l.split(":")[0] for l in got[3:]] == ["- 답", "- 질문 꼴별 답", "- 읽을 줄", "- 흐름당 읽을 줄", "- 마무리 리뷰", "- 리뷰 자료 없음", "- 가림",
                                                   "- 코드 확인", "- 곳 답", "- 곳당 시간", "- 코드 의견", "- 숨은 판단", "- 흐름 리뷰 도장", "- 전·후", "- 알림으로 바꾼 것", "- 위임", "- 한 장 올리기",
-                                                  "- 계약별 리뷰", "- 직접 내린 판단", "- 설계 승인", "- 책임 경계", "- 한 장 이의", "- 시험 변화", "- 설계 뿌리 결함", "- 멈춤 그 밖", "- 1.3.0 화면"]
+                                                  "- 계약별 리뷰", "- 직접 내린 판단", "- 설계 승인", "- 책임 경계", "- 한 장 이의", "- 시험 변화", "- 설계 뿌리 결함", "- 멈춤 그 밖", "- 1.3.0 화면",
+                                                  "- 요청 전 커밋 비율", "- 커밋 대기 분"]
 
 
 def test_measure_lines_fit_a_table_cell(run_dir):
@@ -582,3 +586,74 @@ def test_gates_and_judges_do_not_read_measure_values():
     assert readers <= {"visual"}   # 표시 층의 마무리 리뷰뿐이다
     outside = [p.name for p in SCRIPTS.glob("*.py") if p.name != "collect.py" and "approval_measure" in p.read_text(encoding="utf-8")]
     assert outside == []
+
+
+# ================================================================ 1.3.1 측정 칸 (HB-47, HB-50 측정, 설계 harness-defects 3절 AC-17, 5절 F)
+NEW_ASK = "- 배포 때 DB 이전을 어떻게 할지: (가) 따로 올림 / (나) 같이 올림 [성질: 없음]\n  추천 (가): 이전이 5분으로 짧음"
+OLD_ASK = "- 배포 때 DB 이전을 어떻게 할지: (가) 따로 올림 / (나) 같이 올림 ← 추천 [성질: 없음]"
+
+
+@pytest.mark.parametrize("ask, marker, answer, want", [
+    (NEW_ASK, "\n  추천 (가)", "1가", "추천대로 답함 1/1"),
+    (NEW_ASK, "\n  추천 (가)", "1나", "추천대로 답함 0/1"),   # 대조: 추천과 다른 답은 세지 않는다
+    (OLD_ASK, "(나) 같이 올림 ← 추천", "1나", "추천대로 답함 1/1"),
+], ids=["하위 줄 추천", "하위 줄 추천과 다른 답", "옛 꼴 추천"])
+def test_recommended_answers_count_the_sub_line_and_the_old_form(run_dir, ask, marker, answer, want):
+    shown(run_dir, text=boundary_result(decide=ask))
+    assert marker in (run_dir.task_dir("T001") / "screen-shown.md").read_text(encoding="utf-8")   # 화면이 그 꼴을 실제로 실었다
+    head = run_dir.task_dir("T001") / "task.md"
+    head.write_text(head.read_text(encoding="utf-8").replace(
+        "## 승인 기록\n", "## 승인 기록\n" + record("2026-11-18 10:00:00", "승인", "승인", answer) + "\n"), encoding="utf-8")
+    line = collect.v130_line(run_dir.tasks())
+    assert "질문 1개" in line and line.endswith(want), line
+
+
+def commit_at(folder, when):
+    """그 시각을 커밋 시각으로 갖는 커밋 하나를 더하고 해시를 돌려준다."""
+    stamp = "{} +0900".format(int(datetime.strptime(when, "%Y-%m-%d %H:%M:%S").timestamp()))
+    write(folder / "a.txt", when + "\n")
+    env = dict(os.environ, GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp)
+    subprocess.run(["git", "-C", str(folder), "commit", "-q", "-am", when], check=True, capture_output=True, env=env)
+    return subprocess.run(["git", "-C", str(folder), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def code_task(run_dir, tid, asked, approved, commit, **meta):
+    task_with(run_dir, tid, [record(approved, "승인", "승인", "승인")], kind="implementation", block="구현", flow="f",
+              created="2026-11-18 08:00:00", approval_requested=asked, approved=approved, commit=commit, **meta)
+
+
+def committed_flow(run_dir, tmp_path):
+    """T001은 요청(09:00) 전 08:50에 커밋, T002는 요청(10:00) 뒤 10:30에 커밋. T002에 의존하지 않는 같은 흐름 T003은 08:00에 준비됐고 10:40에 시작했다."""
+    folder = git_folder(tmp_path / "code")
+    run_dir.flow("f", dir=str(folder), status="진행")
+    code_task(run_dir, "T001", "2026-11-18 09:00:00", "2026-11-18 09:05:00", commit_at(folder, "2026-11-18 08:50:00"), started="2026-11-18 08:10:00")
+    code_task(run_dir, "T002", "2026-11-18 10:00:00", "2026-11-18 10:31:00", commit_at(folder, "2026-11-18 10:30:00"), started="2026-11-18 09:10:00")
+    run_dir.task("T003", "다음 구현", kind="implementation", block="구현", status="진행", flow="f",
+                 created="2026-11-18 08:00:00", started="2026-11-18 10:40:00", started_version=V120)
+    return folder
+
+
+def test_commit_before_request_ratio_and_commit_wait_minutes(run_dir, tmp_path):
+    committed_flow(run_dir, tmp_path)
+    assert line_of(run_dir, "요청 전 커밋 비율") == "- 요청 전 커밋 비율: 1/2"
+    # T003이 기다린 08:00~10:40 가운데 T002가 커밋 없이 사람을 기다린 10:00~10:30. T001은 요청 전에 커밋해 막지 않았다
+    assert line_of(run_dir, "커밋 대기 분") == "- 커밋 대기 분: 30분 (1개)"
+
+
+def test_commit_before_request_counts_only_the_ones_committed_first(run_dir, tmp_path):
+    folder = committed_flow(run_dir, tmp_path)
+    code_task(run_dir, "T005", "2026-11-18 12:00:00", "2026-11-18 12:05:00", commit_at(folder, "2026-11-18 11:59:00"), started="2026-11-18 11:00:00")
+    assert line_of(run_dir, "요청 전 커밋 비율") == "- 요청 전 커밋 비율: 2/3"   # 대조: 앞뒤를 뒤집어 세면 1/3
+
+
+def test_commit_time_that_git_cannot_read_is_left_out_and_said(run_dir, tmp_path):
+    committed_flow(run_dir, tmp_path)
+    code_task(run_dir, "T004", "2026-11-18 11:00:00", "2026-11-18 11:05:00", "0" * 40, started="2026-11-18 08:20:00")   # 시작이 T002 요청 앞이라 대기에 들지 않는다
+    assert line_of(run_dir, "요청 전 커밋 비율") == "- 요청 전 커밋 비율: 1/2 · 시각 못 읽은 task 1개 뺌"
+    assert line_of(run_dir, "커밋 대기 분") == "- 커밋 대기 분: 30분 (1개) · 시각 못 읽은 task 1개 뺌"
+
+
+def test_commit_measures_without_code_tasks_are_unmeasured_not_zero(run_dir):
+    task_with(run_dir, "T001", [record("2026-11-18 10:00:00", "승인", "승인", "승인")])
+    assert line_of(run_dir, "요청 전 커밋 비율") == "- 요청 전 커밋 비율: 재지 못함: 커밋해 물은 코드 task 없음"
+    assert line_of(run_dir, "커밋 대기 분") == "- 커밋 대기 분: 재지 못함: 코드 task 없음"

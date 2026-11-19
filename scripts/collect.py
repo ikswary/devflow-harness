@@ -13,6 +13,7 @@ r"""마무리 입력 모으기: 실행 하나의 task들에 흩어진 목록을 
     (흐름별 검증·재검증·수정 흐름 합치기를 띄우기 전에 메인이 돌리고, 작성자에게 경로를 준다)
   python collect.py {실행 폴더} --measure
     표준 출력 줄(결정 0 승인, 관점별 지적, 멈춤과 1.2.0 칸. 세는 법은 docs/approval-baseline-1.1.1.md). 메인이 measure.md 그 실행 행의 비고 칸에 `; `로 잇는다
+    끝의 두 줄은 1.3.1 칸 `요청 전 커밋 비율`·`커밋 대기 분`(HB-50 측정). 커밋 시각은 흐름 코드 폴더(없으면 run.md `project`)의 git에서 읽는다
   종료 코드: 0 정상(칸이 빠진 형식 경고는 목록 위에 적고 0), 2 사용법 오류,
              3 result.md나 「승인 화면」 절이 없는 `완료` task가 있음(목록 맨 위에 적힌다)
   python collect.py {실행 폴더} --folder-wait
@@ -40,6 +41,7 @@ import deploy_reuse
 import devflow_lib
 import exec as execmod
 import flow_review
+import judge_facts
 import kinds
 import places
 import shadow_check
@@ -1433,10 +1435,18 @@ def approval_measure(run_dir, tasks):
     """1.2.0 칸(설계 10절과 11.1절의 경계 표). 정책과 규약 칸은 1.3.0이다."""
     return answers_lines(tasks) + [reading_line(tasks), flow_reading_line(tasks), wrap_review_line(tasks), missing_material_line(tasks), masked_line(tasks)] \
         + code_check_measure(run_dir, tasks) + [hidden_judgment_line(tasks), flow_stamp_line(tasks), before_after_line(tasks), notified_line(tasks), delegation_line(run_dir, tasks), sheet_upload_line(run_dir)]         + contract_lines(tasks) + [design_approval_line(tasks), boundary_line(run_dir, tasks), sheet_layer_line(tasks), test_change_measure_line(tasks),
-                                   design_root_line(tasks), stall_more_line()] + slot_line(run_dir, tasks) + [v130_line(tasks)]
+                                   design_root_line(tasks), stall_more_line()] + slot_line(run_dir, tasks) + [v130_line(tasks)] \
+        + [commit_before_line(run_dir, tasks), commit_wait_line(run_dir, tasks)]
 
 
-RECOMMENDED = re.compile(r"\(([가-힣])\)[^(]*?←\s*추천")
+RECOMMENDED = re.compile(r"\(([가-힣])\)[^(]*?←\s*추천")   # 옛 꼴: 첫 줄의 `(가) … ← 추천`
+RECOMMENDED_SUB = re.compile(r"^\s+추천 \(([가-힣])\)", re.M)   # 1.3.0 꼴: 들여쓴 하위 줄 `  추천 (가) …`(HB-47)
+
+
+def recommended_letter(body):
+    """화면 항목 글의 추천 선택지 글자. 옛 꼴을 먼저 보고 없으면 하위 줄을 본다. 추천이 없으면 None."""
+    m = RECOMMENDED.search(body) or RECOMMENDED_SUB.search(body)
+    return m.group(1) if m else None
 
 
 def v130_line(tasks):
@@ -1461,7 +1471,7 @@ def v130_line(tasks):
         items = screen.shown_items(shown)
         asked += len(items)
         chars += sum(plain_text.count(body) for body in items.values())
-        picks = {n: m.group(1) for n, body in items.items() for m in [RECOMMENDED.search(body)] if m}
+        picks = {n: letter for n, body in items.items() for letter in [recommended_letter(body)] if letter}
         for line in devflow_lib.record_lines(t):
             quote = devflow_lib.record_quote(line) or ""
             for n, letter in re.findall(r"(?<!\d)(\d+)\s*([가-힣])(?![가-힣])", quote):
@@ -1471,6 +1481,76 @@ def v130_line(tasks):
     mean = chars // asked if asked else 0
     return "- 1.3.0 화면: 경계 보고 {경계 보고} · 즉시 질문 {즉시 질문} · 알림 {알림}; 질문 {q}개(평균 {c}자); 추천대로 답함 {r}/{a}".format(
         q=asked, c=mean, r=recommended, a=answered, **forms)
+
+
+COMMIT_BEFORE = "요청 전 커밋 비율"
+COMMIT_WAIT_MINUTES = "커밋 대기 분"
+UNREAD_TIMES = " · 시각 못 읽은 task {}개 뺌"
+
+
+def commit_epoch(run_dir, t):
+    """task `commit`의 커밋 시각(git `%ct`, epoch). 흐름 코드 폴더에서 읽고, 못 읽으면(폴더를 지웠으면) run.md `project` 폴더에서 읽는다.
+    커밋이 비었거나 어디서도 못 읽으면 None."""
+    sha = str(t.get("commit", "") or "").split()
+    if not sha:
+        return None
+    for folder in (places.code_folder(run_dir, t), judge_facts.project_dir(run_dir) or ""):
+        ok, out = places._git(folder, "show", "-s", "--format=%ct", sha[0])
+        if ok and out.strip().isdigit():
+            return int(out.strip())
+    return None
+
+
+def commit_before_line(run_dir, tasks):
+    """요청 전 커밋 비율(HB-50 측정, approval-study-2026-11-18/efficiency.md 25·98행): 묻는 코드 task 가운데
+    커밋 시각이 `approval_requested` 앞인 것. 코드를 바꾸지 않은 task는 커밋할 것이 없어 뺀다."""
+    asked = [t for t in tasks.values() if t.get("kind") in CODE_APPROVAL_KINDS and is_asked(t) and not devflow_lib.no_change(t)]
+    if not asked:
+        return "- {}: {}".format(COMMIT_BEFORE, UNMEASURED.format("커밋해 물은 코드 task 없음"))
+    pairs = [(commit_epoch(run_dir, t), board._epoch(t.get("approval_requested"))) for t in asked]
+    read = [(c, a) for c, a in pairs if c is not None and a is not None]
+    unread = UNREAD_TIMES.format(len(pairs) - len(read)) if len(read) < len(pairs) else ""
+    if not read:
+        return "- {}: {}".format(COMMIT_BEFORE, UNMEASURED.format("커밋·요청 시각을 못 읽음")) + unread
+    return "- {}: {}/{}".format(COMMIT_BEFORE, sum(c < a for c, a in read), len(read)) + unread
+
+
+def commit_wait_line(run_dir, tasks):
+    """커밋 대기 분(HB-50 측정, efficiency.md 25·85-98행): 같은 흐름의 쓰는 task가 준비된 뒤 시작하기까지, 다른 코드 task가
+    커밋 없이 사람을 기다린 구간([approval_requested, 커밋과 approved 가운데 이른 것], board.commit_waiting)과 겹친 분.
+    준비 시각은 폴더 대기와 같이 `ready_at`이고, 칸 폴더에서 도는 task는 커밋 대기에 막히지 않아 뺀다(board.start_blocks).
+    `{분}분 ({막힌 task 수}개)`."""
+    code = [t for t in tasks.values() if t.get("flow") and t.get("kind") in kinds.AUTO_DEPEND_KINDS]
+    if not code:
+        return "- {}: {}".format(COMMIT_WAIT_MINUTES, UNMEASURED.format("코드 task 없음"))
+    spans, unread = {}, 0
+    for t in code:
+        asked = board._epoch(t.get("approval_requested"))
+        if asked is None or devflow_lib.no_change(t):
+            continue   # 사람을 기다리지 않았거나 커밋할 것이 없다
+        committed = commit_epoch(run_dir, t)
+        ends = [x for x in (committed, board._epoch(t.get("approved"))) if x is not None]
+        if (str(t.get("commit", "") or "").strip() and committed is None) or not ends:
+            unread += 1
+            continue
+        if min(ends) > asked:
+            spans[t["id"]] = (t["flow"], asked, min(ends))
+    wait_min, n_tasks = 0, 0
+    for t in tasks.values():
+        start = board._epoch(t.get("started"))
+        if not (t.get("flow") and board.writes(t)) or start is None or board.in_slot(t):
+            continue
+        ready = ready_at(t, tasks)
+        if ready is None:
+            unread += 1
+            continue
+        cut = [(max(s, ready), min(e, start)) for o, (flow, s, e) in spans.items()
+               if o != t["id"] and flow == t["flow"] and min(e, start) > max(s, ready)]
+        minutes = union_minutes(cut)
+        if minutes > 0:
+            wait_min += minutes
+            n_tasks += 1
+    return "- {}: {}분 ({}개)".format(COMMIT_WAIT_MINUTES, wait_min, n_tasks) + (UNREAD_TIMES.format(unread) if unread else "")
 
 
 def write_risk_accepted(run_dir, out_dir, tasks):
