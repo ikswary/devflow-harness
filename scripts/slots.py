@@ -25,6 +25,7 @@ SLOT_COUNT = "작업 칸 수"
 RUNTIME_MARK = re.compile(r"^[ \t*-]*런타임\s*:\s*폴더별[ \t]*(?:[(（][^)）\n]*[)）][ \t]*)?\r?$", re.M)   # 값 전체. 괄호에는 확인한 파일을 적는다
 SYNC_ORIGIN = "받아오기"   # 받아오기 충돌을 고치는 task의 origin. 병합 중인 흐름 폴더에서 돈다
 DEPS_LINE = re.compile(r"^[\s*-]*의존성 목록\s*:\s*(.+)$", re.M)
+APPEND_LINE = re.compile(r"^[\s*-]*덧붙이기 파일\s*:\s*(.+)$", re.M)   # 코드 task마다 끝에 한 줄씩 더하는 파일(자식을 만들 때 겹침으로 세지 않음)
 DEP_FILES = ("package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "requirements.txt", "poetry.lock", "uv.lock",
              "pyproject.toml", "go.mod", "go.sum", "Cargo.toml", "Cargo.lock", "build.gradle", "build.gradle.kts", "pom.xml")
 MIGRATION = re.compile(r"migrat|마이그레이션", re.I)
@@ -132,6 +133,20 @@ def paths_overlap(a, b):
 def dep_files(run_dir):
     m = DEPS_LINE.search(recon_text(run_dir))
     return set(DEP_FILES) | ({x.strip().strip("`") for x in m.group(1).split(",")} if m else set())
+
+
+def norm_path(path):
+    """「건드릴 파일」 경로를 견줄 꼴로: 역슬래시를 `/`로, 앞 `./`를 뗀다."""
+    path = path.strip().replace("\\", "/")
+    while path.startswith("./"):
+        path = path[2:]
+    return path
+
+
+def append_files(run_dir):
+    """recon.md `- 덧붙이기 파일: a, b` 줄의 경로 집합(`norm_path` 꼴). 줄이 없으면 빈 집합."""
+    m = APPEND_LINE.search(recon_text(run_dir))
+    return {norm_path(x.strip().strip("`")) for x in m.group(1).split(",") if x.strip().strip("`")} if m else set()
 
 
 def tasks_overlap(a, b, deps):

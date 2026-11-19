@@ -24,7 +24,7 @@ class Kind(NamedTuple):
     notify: str                 # none / all_cells / by_decide / findings(1.2.0부터 지적 0) / never
     stages: object              # 단계 튜플 또는 None
     writes_code_dir: bool       # 코드 폴더에 쓴다(흐름 상한·폴더 사용 중을 센다)
-    auto_depends_in_flow: bool  # 같은 흐름의 앞 task에 자동 의존, flow.md 필요, machine_check
+    auto_depends_in_flow: bool  # 같은 흐름 앞 task에 자동 의존(1.3.1부터는 「건드릴 파일」이 겹치는 앞 행·[계약] 행), flow.md 필요, machine_check
     needs_touch_files: bool     # 자식 행에 「건드릴 파일」 필수
     writes_canon: bool          # 정본(spec·ui·design)을 쓴다
     readback: bool              # 실행 판정도 result.md를 읽는다

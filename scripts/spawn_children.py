@@ -8,12 +8,14 @@
 
 - 자식 목록의 형식은 formats.md 「자식 목록」을 따른다.
 - `depends_on`에 형제의 제목을 적으면 그 형제의 새 id로 바꾼다. 이미 있는 task id(T숫자)는 그대로 둔다.
-- 같은 흐름의 코드 task(등록표 `auto_depends_in_flow`, 문서 행 제외)는 앞 형제에 자동으로 의존한다(한 흐름의 코드 task는 차례로 진행).
+- 같은 흐름의 코드 task(등록표 `auto_depends_in_flow`, 문서 행 제외)는 이 목록의 앞 코드 형제 가운데 「건드릴 파일」이 겹치는
+  행 모두와 「시그니처와 결정 번호」에 `[계약]`이 든 행 모두에 자동으로 의존한다(부모가 1.3.1부터 시작한 task일 때.
+  recon.md `- 덧붙이기 파일:`의 파일은 겹침으로 세지 않고 의존성 목록 파일은 겹침으로 센다). 1.3.1 앞에 시작한 부모는 바로 앞 형제.
 - 영역 규칙(부모가 1.1.0부터 시작한 task일 때, devflow_lib.uses_domain_rules): 상세 정본에서 화면 id가 붙은 인수 기준을
   `closes_ac`에 둔 구현 행은 fe-implementation이어야 한다(아니면 종료 코드 3. 같은 번호가 두 정본에 있으면 `! 인수 기준 중복:`
   줄만 낸다). 수정 행은 인수 기준의 화면 id·`[계약]`·화면 경로에서, 화면 구현이 아닌 구현 행은 화면 경로에서 영역 판정 문장을
   「판정 기준」 끝(`(스크립트 주입: 영역 판정)` 줄 아래)에 넣는다. 「건드릴 파일」이 모두 프로젝트 설정의 문서 경로인 행(문서 행)은
-  자동 의존을 받지 않고 그 흐름의 앞 코드 행으로도 세지 않는다.
+  자동 의존(겹침·`[계약]`이든 바로 앞 행이든)을 받지 않고 그 흐름의 앞 코드 행으로도 세지 않는다.
 - --depends-on: 모든 자식에 공통으로 더할 의존(예: 답을 반영하는 변경 task).
 - --now: 자식의 `created` 값. 없으면 지금 시각(`YYYY-MM-DD HH:MM:SS`, `task_set.py new`와 같은 꼴).
 - 자식마다 `criteria.orig.md`(만들 때의 판정 기준)를 함께 쓴다.
@@ -43,6 +45,7 @@ from datetime import datetime
 
 import devflow_lib
 import kinds
+import slots
 
 OPTION_RE = re.compile(r"^[^/\s,]+/[^/\s,]+$")
 
@@ -91,6 +94,28 @@ def parked(child):
     """바로 돌지 않는 행: `[백로그]` 행과 option 키 없는 옛 `[안 …]` 행(고른 안인지 스크립트가 모른다)."""
     title = child["title"].lstrip()
     return title.startswith("[백로그]") or (title.startswith("[안") and not row_options(child))
+
+
+def row_paths(child, appended):
+    """행 「건드릴 파일」의 경로(`slots.norm_path` 꼴)에서 덧붙이기 파일을 뺀 목록."""
+    paths = [slots.norm_path(p) for p in devflow_lib.touch_paths(child["body"].get("건드릴 파일", ""))]
+    return [p for p in paths if p and p not in appended]
+
+
+def rows_overlap(a, b, appended, dep_names):
+    """두 행의 「건드릴 파일」이 겹치는가(D-38). 덧붙이기 파일을 뺀 뒤 한쪽이 비면 겹치지 않고, 의존성 목록 파일을
+    건드리면 겹친다. 그 밖은 `slots.paths_overlap`이 한 쌍이라도 참이면 겹친다."""
+    left, right = row_paths(a, appended), row_paths(b, appended)
+    if not left or not right:
+        return False
+    if any(os.path.basename(p) in dep_names for p in left + right):
+        return True
+    return any(slots.paths_overlap(x, y) for x in left for y in right)
+
+
+def contract_row(child):
+    """행 「시그니처와 결정 번호」에 `[계약]`이 있는가(`devflow_lib.contract_token`과 같은 판별)."""
+    return devflow_lib.contract_token({"_sections": child["body"]})
 
 
 def render(tid, parent_id, child, depends, now, status="대기", generation=0):
@@ -422,6 +447,10 @@ def main(argv):
 
     skipped_titles = {c["title"] for c in skipped}
     last_code_in_flow = {}
+    # 1.3.1부터 시작한 부모는 바로 앞 코드 행 대신 겹치는 앞 코드 행과 [계약] 앞 행에 자동 의존한다(D-36, D-39)
+    narrow = devflow_lib.version_at_least(parent.get("started_version", ""), devflow_lib.RULES_V131)
+    appended, dep_names = (slots.append_files(run_dir), slots.dep_files(run_dir)) if narrow else (set(), set())
+    code_in_flow = {}   # 흐름 → 이 목록의 앞 코드 행 [(id, 행)]
     plan = []
     notes = {}   # 출력 줄 끝에 붙일 영역 규칙 표시
     for c in rows:
@@ -460,9 +489,16 @@ def main(argv):
                 old = pairs[c["title"]]
                 prev = next((d for d in old.get("depends_on", []) if d in tasks and d not in ids.values()
                              and tasks[d].get("flow") == flow and tasks[d].get("kind") in kinds.AUTO_DEPEND_KINDS), None)
-            if prev and prev not in depends:
-                depends.append(prev)
+            auto = [prev] if prev else []
+            if narrow and flow in last_code_in_flow:
+                # 1.3.1부터: 이 목록의 앞 코드 행 가운데 「건드릴 파일」이 겹치는 행 모두와 [계약] 행 모두(D-36).
+                # 이 목록 밖 기존 task와는 겹침을 보지 않는다(D-40. 그 순서는 설계가 행의 depends_on에 적는다)
+                auto = [e for e, ec in code_in_flow[flow] if rows_overlap(c, ec, appended, dep_names) or contract_row(ec)]
+            for dep in auto:
+                if dep not in depends:
+                    depends.append(dep)
             last_code_in_flow[flow] = tid
+            code_in_flow.setdefault(flow, []).append((tid, c))
         for dep in common_dep:
             if dep not in depends:
                 depends.append(dep)

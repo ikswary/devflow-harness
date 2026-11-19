@@ -23,6 +23,7 @@
 | 반환 전 판정 파일 검사 | `agents/read-judge.md` 「역할 고유 규칙」 | `test_check_judge_*` |
 | 곳 답 없이 승인으로 가는 판본 | `references/main/approval.md` 옛 코드 확인 카드 줄, `references/kinds/verify/main-order.md` 「코드 확인」 | `test_place_answer_version_*` |
 | 최종 CI 이어받음 | `references/formats/judge-run-file.md`, `references/kinds/wrap-up/run-check.md`, `references/kinds/implementation/run-check.md` | `test_inherit_*` |
+| 덧붙이기 파일 줄 | `references/practices/project-recon.md` 「작업 칸의 표지」 | `test_append_files_*` |
 """
 import re
 from datetime import datetime
@@ -624,3 +625,22 @@ def test_inherit_ci_command_in_the_wrap_up_run_check_is_the_script_option(run_di
     one_flow(run_dir)
     p = run_script(script, run_dir.path, WRAP, *options)
     assert p.returncode == 0 and p.stdout.startswith("이어받을 CI: T011 commit "), p.output
+
+
+# ---------------------------------------------------------------- 덧붙이기 파일 줄
+
+PROJECT_RECON = ROOT / "references" / "practices" / "project-recon.md"
+APPEND_FORM = re.compile(r"`(- 덧붙이기 파일: [^`]*)`")
+
+
+def test_append_files_line_in_project_recon_is_read_by_append_line(tmp_path):
+    """project-recon.md가 recon.md에 적으라는 `- 덧붙이기 파일: …` 줄을 `slots.APPEND_LINE`이 받고, 그 줄을 둔 recon.md에서
+    `slots.append_files`가 쉼표로 나눈 값을 경로로 읽는다(자식을 만들 때 겹침에서 빼는 파일)."""
+    import slots
+    forms = [f for line in read(PROJECT_RECON).splitlines() for f in APPEND_FORM.findall(line)]
+    assert len(forms) == 1, forms
+    m = slots.APPEND_LINE.search(forms[0])
+    assert m, forms[0]
+    values = [x.strip() for x in m.group(1).split(",")]
+    write(tmp_path / "recon.md", "# 정찰\n\n" + forms[0] + "\n")
+    assert slots.append_files(str(tmp_path)) == set(values) and len(values) == 2
