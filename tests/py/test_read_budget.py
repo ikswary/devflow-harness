@@ -17,7 +17,7 @@ import kinds
 import reading
 from conftest import ROOT
 
-# (행위자, 상한, 그때 값, 사유). 한도(reading.limit)를 넘겨야 할 때만, 사유와 함께. 1.3.0에서 기준선을 다시 잡으며 비움
+# (행위자, 상한, 그때 값, 사유). 한도(reading.limit)를 넘겨야 할 때만, 사유와 함께. 1.3.1에서 기준선을 다시 잡으며 비움
 PENDING_OVER: list[tuple[str, int, int, str]] = []
 
 AGENT_DIR = ROOT / "agents"
