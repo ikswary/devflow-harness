@@ -63,6 +63,16 @@ def _short(text, n=LINE):
     return text if len(text) <= n else text[:n - 1] + "…"
 
 
+SENTENCE_END = re.compile(r"\.(?=\s)")   # 문장 끝: `.` 뒤 공백(`다. `를 포함)
+
+
+def two_sentences(text):
+    """앞 두 문장을 자르지 않고(HB-54). 문장 끝이 둘보다 적으면 줄 전체."""
+    text = " ".join(text.split())
+    ends = [m.end() for m in SENTENCE_END.finditer(text)]
+    return text[:ends[1]] if len(ends) >= 2 else text
+
+
 def place(t):
     block = kinds.KINDS.get(t.get("kind", ""), None)
     return "{} 중".format(block.block) if block and block.block else "문서 고침"
@@ -345,7 +355,7 @@ def instant(run_dir, b, extra=None):
     out = ["[{}] {}".format(place(t), t.get("title", ""))]
     material = [l for l in (b["screen"].get(REVIEW, "") or "").strip().splitlines() if l.strip() and not l.startswith("#")]
     if material:
-        out.append(_short(material[0], 70))
+        out.append(two_sentences(material[0]))
     out += _blocking(b)
     if b.get("committed"):   # 커밋한 코드 task: 고침은 그 커밋 위에 쌓인다(D-09)
         out += [""] + b["committed"]

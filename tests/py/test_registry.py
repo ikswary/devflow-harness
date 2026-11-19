@@ -247,6 +247,7 @@ HOOK_LITERALS = {
     ("board.py", frozenset({"fix", "reverify"})),                                        # 합칠 흐름의 수정·재검증
     ("devflow_lib.py", frozenset({"flow-verify", "full-verify"})),                       # 자식 수정 세대 0
     ("screen.py", frozenset({"wrap-up", "merge"})),                                      # 보류로 남김 줄
+    ("screen.py", frozenset({"flow-verify", "merge"})),                                  # 짚음 이월을 같은 흐름으로(HB-53)
     ("spawn_children.py", frozenset({"fix", "reverify"})),                               # over-cap 백로그
     ("task_set.py", frozenset({"merge", "wrap-up", "deploy-exec", "probe"})),            # auto_freeze 지점(사전 키)
 }

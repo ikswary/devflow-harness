@@ -5,6 +5,8 @@
 """
 from datetime import datetime
 
+import pytest
+
 import devflow_lib as lib
 import kinds
 import screen
@@ -333,6 +335,65 @@ def test_carried_points_become_numbered_questions_in_the_next_report(run_dir):
     out = shown(run_dir, text=result())
     assert "[앞 일에서 짚음] 다른 화면과 여백이 다름" in out and "  앞 일: 사진 목록 손봄" in out
     assert " ! 다른 화면과 여백이 다름 → 질문 1" in out and "진행, 단" not in out.split("■ 정해 주실 것")[0]
+
+
+# ---------------------------------------------------------------- 짚음 이월을 흐름별로 (HB-53, 설계 harness-defects 5절 E, AC-15)
+
+def carried_point(text):
+    return "- {} | 갈래: 물을 것 | 까닭: (b) | 깨짐: 없음 | 근거: a:1\n".format(text)
+
+
+def between_done(run_dir, tid, flow, points, **more):
+    """흐름 flow에서 끝난 경계 사이 구현 task와 그 판정자의 「다음 경계에서 물음」 짚음."""
+    run_dir.task(tid, "{} 구현".format(tid), kind="implementation", block="구현", status="완료", flow=flow,
+                 approved="2026-11-18 10:00:00", **V130, **more)
+    run_dir.judge(tid, "판정자: rjudge-{} 2026-11-18 09:00:00\n\n## 통과 못 한 기준\n- 없음\n\n## 짚음\n{}\n## 주장-출처 대조\n- 없음\n"
+                  .format(tid, "".join(carried_point(p) for p in points)))
+
+
+def carried_screen(run_dir, kind):
+    """흐름 a·b의 경계 사이 task 짚음: a 둘이 같은 글, a 하나는 고침 task가 있음, b 하나. 흐름 a인 kind 화면의 「정해 주실 것」."""
+    between_done(run_dir, "T010", "a", ["흐름 a 여백이 다름", "두 흐름이 같이 쓰는 이름이 길다"])
+    between_done(run_dir, "T011", "a", ["두 흐름이 같이 쓰는 이름이 길다"])
+    between_done(run_dir, "T012", "a", ["이미 고친 문구"])
+    run_dir.task("T013", "T012 짚음 고침", kind="fix", block="구현", status="진행", flow="a", origin="판정자 T012 짚음")
+    between_done(run_dir, "T014", "b", ["흐름 b 색이 다름"])
+    run_dir.task("T001", "끝", kind=kind, block="구현", status="승인대기", flow="a", **V130)
+    run_dir.result("T001", result())
+    judged(run_dir)
+    return screen.build(str(run_dir.path), "T001")["screen"]["정해 주실 것"]
+
+
+@pytest.mark.parametrize("kind", ["merge", "flow-verify"])
+def test_flow_screens_carry_only_their_flow_points_once_without_fixed_ones(run_dir, kind):
+    decide = carried_screen(run_dir, kind)
+    assert "[앞 일에서 짚음] 흐름 a 여백이 다름" in decide                         # 같은 흐름 짚음(양성 대조)
+    assert decide.count("[앞 일에서 짚음] 두 흐름이 같이 쓰는 이름이 길다") == 1  # 같은 글 둘은 한 번
+    assert "흐름 b 색이 다름" not in decide                                         # 다른 흐름
+    assert "이미 고친 문구" not in decide                                           # origin `판정자 T012 짚음`인 task가 있음
+
+
+def test_wrap_up_screen_still_carries_every_flow(run_dir):
+    decide = carried_screen(run_dir, "wrap-up")
+    assert "[앞 일에서 짚음] 흐름 a 여백이 다름" in decide and "[앞 일에서 짚음] 흐름 b 색이 다름" in decide
+
+
+# ---------------------------------------------------------------- 즉시 질문 둘째 줄 (HB-54, 설계 harness-defects 5절 E, AC-16)
+
+TWO = "사진 목록 화면이 처음 열릴 때 느린 까닭을 찾아 썸네일을 서버에서 미리 만들어 두도록 고친다. 목록은 첫 스무 장만 먼저 받는다."
+
+
+def test_instant_second_line_is_the_first_two_sentences_uncut(run_dir):
+    material = TWO + " 셋째 문장은 둘째 줄에 들지 않는다."
+    run_dir.task("T001", "사진 목록 손봄", kind="implementation", block="구현", status="승인대기", **V130)
+    run_dir.result("T001", result(decide="- 오류 문구를 어디에 둘지: (가) 위 / (나) 아래 [성질: 없음]")
+                   .replace("## 승인 화면\n", "## 승인 화면\n### 리뷰 자료\n{}\n".format(material)))
+    judged(run_dir)
+    p = run_script("screen", run_dir.path, "T001")
+    assert p.returncode == 0, p.output
+    lines = p.stdout.splitlines()
+    assert lines[0] == "[구현 중] 사진 목록 손봄", p.stdout   # 즉시 질문 화면이다(양성 대조)
+    assert lines[1] == TWO and not lines[1].endswith("…")
 
 
 def test_big_growth_asks_to_attach_or_split(run_dir):
