@@ -42,7 +42,7 @@
 2. 비밀값 검색 결과 0건(메인이 같은 검색을 다시 돌림, "메인 실행").
 3. 이번 실행과 무관한 파일이 내보낼 브랜치의 변경에 없다(메인이 `git diff --stat {기준}..{브랜치}`의 파일을 task들의 「건드릴 파일」과 대조, "기록 대조").
 4. 추적표의 모든 인수 기준에 판정이 있다. 배포 메모에 각 task의 미확인 항목이 빠짐없이 있다(읽기 판정이 `unverified-list.md`와 대조).
-5. 문서 커밋한 HEAD의 최종 배포 후보 CI: 전체 검증, 검증 commit = 그 HEAD(실행 판정, `references/kinds/wrap-up/run-check.md`).
+5. 문서 커밋한 HEAD의 최종 배포 후보 CI: 전체 검증 또는 이어받은 전체 검증, 검증 commit = 그 HEAD(실행 판정, `references/kinds/wrap-up/run-check.md`).
 6. 리뷰 자료의 이 실행이 한 일이 `run-map.md`와 어긋나지 않는다(읽기 판정).
 7. 넣기가 있는 실행: `docs-insert.md`의 표가 코드 폴더의 `docs/` 변경과 맞고, 풀리지 않은 `같은 절 두 곳`이 없으며, 넣은 작성 문서마다 지키는 경로가 있다(읽기 판정).
 8. 생성 명령이 있으면 `project_docs.py … --generate {코드 폴더} --check` 통과(실행 판정).

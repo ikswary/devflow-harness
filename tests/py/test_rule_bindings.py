@@ -22,6 +22,7 @@
 | 고침 답의 기록 꼴 | `references/main/approval.md` 「답의 처리」 표의 「산출물을 바꾸는 답」 행 | `test_fix_record_*` |
 | 반환 전 판정 파일 검사 | `agents/read-judge.md` 「역할 고유 규칙」 | `test_check_judge_*` |
 | 곳 답 없이 승인으로 가는 판본 | `references/main/approval.md` 옛 코드 확인 카드 줄, `references/kinds/verify/main-order.md` 「코드 확인」 | `test_place_answer_version_*` |
+| 최종 CI 이어받음 | `references/formats/judge-run-file.md`, `references/kinds/wrap-up/run-check.md`, `references/kinds/implementation/run-check.md` | `test_inherit_*` |
 """
 import re
 from datetime import datetime
@@ -589,3 +590,37 @@ def test_place_answer_version_is_the_same_in_both_documents_and_the_code():
     assert len(approval) == 1 and len(order) == 1, (approval, order)
     assert approval == order
     assert approval[0][0] == lib.RULES_V130
+
+
+# ---------------------------------------------------------------- 최종 CI 이어받음 (D-27 (나), 설계 harness-defects 5절 H2, D-32·D-33, AC-27)
+
+JUDGE_RUN_FILE = ROOT / "references" / "formats" / "judge-run-file.md"
+WRAP_RUN_CHECK = ROOT / "references" / "kinds" / "wrap-up" / "run-check.md"
+CODE_RUN_CHECK = ROOT / "references" / "kinds" / "implementation" / "run-check.md"
+SCOPE_VALUE = re.compile(r"`- 범위: ([^`{}]+)`")
+KEY_BEFORE_SLOT = re.compile(r"`- ([^`:{}]+): \{")
+
+
+def test_inherit_scope_and_record_words_in_the_documents_are_the_script_constants():
+    """judge-run-file.md·wrap-up/run-check.md가 적는 범위 값은 `전체 검증`과 `devflow_lib.INHERITED_SCOPE`뿐이고 둘 다 이어받은 범위를 적는다.
+    서식의 이어받음 줄 키는 `INHERITED_CI`, 코드 task 절 제목은 `FULL_CI_RECORD`이고 코드 task 실행 판정 문서가 같은 절 이름을 쓴다."""
+    for path in (JUDGE_RUN_FILE, WRAP_RUN_CHECK):
+        scopes = set(SCOPE_VALUE.findall(read(path)))
+        assert lib.INHERITED_SCOPE in scopes and scopes <= {lib.FULL_CI_SCOPE, lib.INHERITED_SCOPE}, (path.name, scopes)
+    assert lib.INHERITED_CI in KEY_BEFORE_SLOT.findall(read(JUDGE_RUN_FILE))
+    assert "`## {}`".format(lib.FULL_CI_RECORD) in read(JUDGE_RUN_FILE)
+    assert "「{}」".format(lib.FULL_CI_RECORD) in read(CODE_RUN_CHECK)
+
+
+def test_inherit_ci_command_in_the_wrap_up_run_check_is_the_script_option(run_dir):
+    """wrap-up/run-check.md에 적힌 원천 확인 명령이 task_set.py가 받는 옵션이고, 그 명령을 그대로 돌리면 마무리에서 원천 한 줄을 찍는다."""
+    from test_final_ci_inherit import WRAP, one_flow
+    rows = lines_with(WRAP_RUN_CHECK, task_set.INHERIT_CI)
+    cmds = [c for row in rows for c in re.findall(r"`python \$\{CLAUDE_PLUGIN_ROOT\}/scripts/(\w+)\.py \{실행 폴더\} \{id\} ([^`]*)`", row)]
+    assert len(cmds) == 1, rows
+    script, options = cmds[0][0], cmds[0][1].split()
+    assert (script, options) == ("task_set", [task_set.INHERIT_CI])
+    assert task_set.INHERIT_CI in task_set.__doc__
+    one_flow(run_dir)
+    p = run_script(script, run_dir.path, WRAP, *options)
+    assert p.returncode == 0 and p.stdout.startswith("이어받을 CI: T011 commit "), p.output

@@ -7,7 +7,7 @@ model: sonnet
 
 플러그인 폴더: `${CLAUDE_PLUGIN_ROOT}`. 이 문서와 이 문서가 가리키는 문서에 적힌 `references/…`·`scripts/…`·`agents/…`·`skills/…`·`docs/…` 경로는 이 폴더 기준이다.
 
-판 표지: `def-version: 2026-11-18-c1`
+판 표지: `def-version: 2026-11-18-c2`
 
 # devflow-harness:run-judge — 실행 판정자
 
@@ -25,7 +25,7 @@ model: sonnet
 - 맡은 kind의 실행 판정 파일(있으면): `fe-implementation`·`be-implementation`·`implementation`·`fix` → `${CLAUDE_PLUGIN_ROOT}/references/kinds/implementation/run-check.md`, `wrap-up` → `${CLAUDE_PLUGIN_ROOT}/references/kinds/wrap-up/run-check.md`, `deploy-exec` → `${CLAUDE_PLUGIN_ROOT}/references/kinds/deploy-exec/run-check.md`, `flow-verify` → `${CLAUDE_PLUGIN_ROOT}/references/kinds/verify/run-check.md`
 
 ## 역할 고유 규칙
-1. 프롬프트가 준 코드 폴더에서 `recon.md`의 명령을 독립 최종 검사로 실행한다. 작성자의 개발 검사로 대신하지 않는다. 범위는 `build-and-test`대로 고르고 마지막 출시 후보는 모든 검사를 실행한다.
+1. 프롬프트가 준 코드 폴더에서 `recon.md`의 명령을 독립 최종 검사로 실행한다. 작성자의 개발 검사로 대신하지 않는다. 범위는 `build-and-test`대로 고르고 마지막 출시 후보는 모든 검사를 실행한다(같은 코드의 앞 CI를 이어받는 길은 kind의 실행 판정 파일).
 2. 실패를 `recon.md` 「기준선」과 대조해 "기준선에 있던 실패"와 "새 실패"로 가른다. 테스트 이름과 실패 이유 첫 줄이 모두 같아야 기준선의 실패다. 새 실패만 실패다.
    - 맡은 인수 기준의 테스트가 기준선에 있으면 판정불가로 둔다. 공유 자원 사용 중은 `judge-run-file`의 자원 대기로 적는다. 건너뜀·돌지 않음 수가 늘면 시험 이름을 판정불가로 둔다.
    - 재시도와 흔들림은 `build-and-test` 「흔들림과 재시도」대로 명령별 결과 줄에 보고한다(볼 수단 없이 "재시도 0"이라 쓰지 않는다). "흔들림 판정불가(재시도 기록 없음)"와 재시도로 통과한 시험 이름은 `통과 못 한 기준`에 넣지 않고 결과 줄과 `이상 신호`에 적는다. 판정 기준이 흔들림을 직접 묻는 경우(예: "5회 연속 통과, 재시도 수 기록")에만 그 기준의 판정으로 쓴다.

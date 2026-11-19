@@ -274,7 +274,7 @@ JUDGMENT_KINDS = ("구조", "데이터", "트랜잭션", "오류", "외부호출
 
 # 판본 칸
 RULES = 2
-DEF_VERSION_MIN = "2026-11-18-c1"   # 판정자 정의의 판 표지 `def-version:`의 최소값
+DEF_VERSION_MIN = "2026-11-18-c2"   # 판정자 정의의 판 표지 `def-version:`의 최소값
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
